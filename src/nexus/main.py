@@ -485,7 +485,7 @@ class Web:
     news: KeptReader | None
 
 
-async def _web(
+async def build_web(
     settings: Settings, engine: AsyncEngine, stack: AsyncExitStack, clock: Callable[[], datetime]
 ) -> Web | None:
     """Web search: Tavily's pages with its key, falling back to OpenRouter's web search,
@@ -596,7 +596,13 @@ def _lookup(settings: Settings, overrides: Overrides, web: Web | None) -> WebLoo
         return overrides.lookup
     if web is None:
         return None
-    return WebLookup(web.general, build_web_writer(settings, _travel_model(settings)))
+    return web_lookup(settings, web)
+
+
+def web_lookup(settings: Settings, web: Web, clock: Callable[[], datetime] = utcnow) -> WebLookup:
+    """The chat's web lookup: general's search, answered by the travel research model.
+    The app and the evals' ``--live-web`` both build it here."""
+    return WebLookup(web.general, build_web_writer(settings, _travel_model(settings)), clock=clock)
 
 
 def _queue_memory(
@@ -725,7 +731,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                     log.warning("receipt storage is not configured; receipt photos won't be kept")
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
-                web = await _web(resolved, engine, stack, extra.clock or utcnow)
+                web = await build_web(resolved, engine, stack, extra.clock or utcnow)
                 departments = extra.departments or await _registry(
                     resolved, engine, models, rates, stack, web, news, quotes
                 )

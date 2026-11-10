@@ -21,6 +21,7 @@ from nexus.domain.ledger import Direction
 from nexus.evals import clips, photos, seed
 from nexus.evals.cases import CASES, WRITES, Case
 from nexus.evals.runner import FixedRates, run_cases
+from nexus.evals.web import CannedLookup
 from nexus.infra.db.uow import SqlUnitOfWork
 from tests.fakes import call, say, scripted
 
@@ -472,3 +473,30 @@ async def test_repeat_runs_each_case_in_every_round_as_a_fresh_user(engine: Asyn
     ]
     assert len(seen) == 6
     assert all(r.passed for r in results), [(r.case.id, r.failures, r.error) for r in results]
+
+
+async def test_web_search_works_in_the_evals_with_a_canned_or_given_lookup(
+    engine: AsyncEngine,
+) -> None:
+    ids = ("web-gold-price", "web-skip-capital")
+
+    def script(case: Case) -> BaseChatModel:
+        nothing = (say("Nothing to remember."),) * 2  # the memory pass, and its one retry
+        if case.id == "web-gold-price":
+            return scripted(
+                call("web_search", question="gold price today Singapore"),
+                say("Gold is moving today; the source is Example Daily."),
+                *nothing,
+            )
+        return scripted(say("Canberra."), *nothing)
+
+    # Without a lookup each case gets the canned one, so the tool answers.
+    results = await run_cases(engine, script, _only(*ids), concurrency=2)
+    for result in results:
+        assert result.passed, (result.case.id, result.failures, result.error)
+    assert [name for name, _ in results[0].turns[0].calls] == ["web_search"]
+
+    # A lookup given to the run is the one asked, by every case.
+    given = CannedLookup()
+    await run_cases(engine, script, _only(*ids), lookup=given, first_telegram_id=910_000)
+    assert given.questions == ["gold price today Singapore"]

@@ -56,7 +56,7 @@ from nexus.application.ideas import IdeaFinder
 from nexus.application.places import Places, PlacesError
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.application.routes import Routes
-from nexus.application.web_lookup import WebLookup
+from nexus.application.web_lookup import WebLooker
 from nexus.application.whereabouts import ZoneFinder
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
@@ -122,7 +122,7 @@ class ToolContext:
     # Quick ideas for a trip from the web; None when not set up.
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None when not set up.
-    lookup: WebLookup | None = None
+    lookup: WebLooker | None = None
     # Finds the time zone of a place by name, for set_timezone; None when not set up.
     zones: ZoneFinder | None = None
     # Shared by everything the tools change in one chat turn, so Undo reverses it together.

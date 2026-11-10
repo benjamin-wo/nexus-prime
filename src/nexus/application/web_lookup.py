@@ -18,7 +18,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -76,6 +76,20 @@ class Lookup:
     text: str  # the answer, citing [n]; empty when nothing was found
     sources: list[Source]
     read_pages: bool  # whether the pages themselves were read (else a search's summary)
+
+
+class WebLooker(Protocol):
+    """What the chat's web_search tool needs: a question in, a cited answer out. WebLookup
+    is the real one; the evals use a canned one."""
+
+    async def ask(
+        self,
+        user_id: UserId,
+        question: str,
+        *,
+        recent: Recency | None = None,
+        local_query: str | None = None,
+    ) -> Lookup: ...
 
 
 class WebLookup:

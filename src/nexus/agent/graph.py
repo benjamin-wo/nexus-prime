@@ -61,7 +61,7 @@ from nexus.application.inbound import log_capability_gap
 from nexus.application.places import Places
 from nexus.application.routes import Routes
 from nexus.application.users import get_user, turn_on_menu
-from nexus.application.web_lookup import WebLookup
+from nexus.application.web_lookup import WebLooker
 from nexus.application.whereabouts import ZoneFinder
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
 from nexus.domain.ledger import MenuSection, User, UserId
@@ -225,7 +225,7 @@ class AgentDeps:
     # Quick ideas for a trip from the web; None: not set up.
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None: not set up.
-    lookup: WebLookup | None = None
+    lookup: WebLooker | None = None
     # Finds the time zone of a place by name, for set_timezone; None: not set up.
     zones: ZoneFinder | None = None
 
