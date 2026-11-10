@@ -90,6 +90,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "plans",
     "department_runs",
     "trip_reminders",
+    "serp_searches",
     # Sign-in state, then the invites the user made or used, then the user.
     "web_sessions",
     "login_links",

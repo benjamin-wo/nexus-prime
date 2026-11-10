@@ -41,6 +41,7 @@ from nexus.application.external_cache import KeptAnswers
 from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.limits import RateLimiter
+from nexus.application.live_prices import LivePrices, PriceLooker
 from nexus.application.market import PriceSource
 from nexus.application.moves import Explainer
 from nexus.application.places import Places, PlaceSource
@@ -57,6 +58,7 @@ from nexus.application.quotes import Quotes, QuoteSource
 from nexus.application.rate_store import StoredRates
 from nexus.application.research import NewsSource
 from nexus.application.routes import Routes, RouteSource
+from nexus.application.serp_budget import SerpBudget
 from nexus.application.travel_research import research_kind
 from nexus.application.weather import Weather, WeatherSource
 from nexus.application.web_lookup import WebLookup
@@ -107,7 +109,7 @@ from nexus.infra.photos.wikipedia import WikipediaPhotos
 from nexus.infra.places.google import GooglePlaces
 from nexus.infra.places.routes import GoogleRoutes
 from nexus.infra.search.openrouter_web import OpenRouterWebSearch
-from nexus.infra.search.serpapi import SerpApiTravel
+from nexus.infra.search.serpapi import SerpApiClient, SerpApiPrices, SerpApiTravel
 from nexus.infra.search.tavily import TavilyReader, TavilySearch
 from nexus.infra.speech.openrouter import OpenRouterSpeech
 from nexus.infra.storage.s3 import S3ReceiptStore
@@ -148,6 +150,7 @@ class Overrides:
     weather: WeatherSource | None = None
     ideas: IdeaFinder | None = None
     lookup: WebLookup | None = None
+    live_prices: PriceLooker | None = None  # live fares, product prices and flight status
     statement_pages: StatementPageReader | None = None
     speech: SpeechToText | None = None
 
@@ -379,6 +382,7 @@ async def _telegram_runtime(
     routes: Routes | None = None,
     zones: ZoneFinder | None = None,
     demo: DemoStore | None = None,
+    prices: PriceLooker | None = None,
 ) -> telegram_webhook.TelegramRuntime:
     def uow() -> SqlUnitOfWork:
         return SqlUnitOfWork(engine)
@@ -412,6 +416,7 @@ async def _telegram_runtime(
             routes=routes,
             ideas=ideas,
             lookup=lookup,
+            prices=prices,
             zones=zones,
         )
     )
@@ -532,6 +537,35 @@ def _travel_model(settings: Settings) -> str:
     return settings.travel_research_model or settings.openrouter_model or ""
 
 
+@dataclass(frozen=True, slots=True)
+class Serp:
+    """SerpApi, behind one monthly budget: the client the Travel researcher searches with
+    and the chat's live prices."""
+
+    client: SerpApiClient
+    prices: PriceLooker
+
+
+async def _serp(
+    settings: Settings,
+    overrides: Overrides,
+    engine: AsyncEngine,
+    stack: AsyncExitStack,
+    clock: Callable[[], datetime],
+) -> Serp | None:
+    """The SerpApi searches, which count against ``SERPAPI_MONTHLY_SEARCHES`` however
+    they are made. None without ``SERPAPI_API_KEY``."""
+    key = settings.serpapi_api_key
+    if key is None:
+        return None
+    http = await stack.enter_async_context(timed_client())
+    uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
+    budget = SerpBudget(uow, settings.serpapi_monthly_searches, clock)
+    client = SerpApiClient(http, key.get_secret_value(), budget)
+    prices = overrides.live_prices or LivePrices(SerpApiPrices(client, clock), uow, clock)
+    return Serp(client, prices)
+
+
 async def _registry(
     settings: Settings,
     engine: AsyncEngine,
@@ -541,21 +575,17 @@ async def _registry(
     web: Web | None = None,
     news: NewsSource | None = None,
     quotes: Quotes | None = None,
+    serp: SerpApiClient | None = None,
 ) -> Departments:
     """The departments, with the Investment research team and, with travel's web
     search, the Travel researcher (live flight and hotel prices too with a SerpApi
-    key)."""
+    key, within the same monthly searches as the chat's live prices)."""
     uow = lambda: SqlUnitOfWork(engine)  # noqa: E731
     analyst, lead = build_research_models(settings, models.primary)
     reviewer = build_research_reviewer(settings)
     kinds = [plan_kind(uow, analyst, lead, reviewer, web.news if web else None, news, quotes)]
     if web is not None:
-        http = await stack.enter_async_context(timed_client())
-        prices = (
-            SerpApiTravel(http, settings.serpapi_api_key.get_secret_value())
-            if settings.serpapi_api_key is not None
-            else None
-        )
+        prices = SerpApiTravel(serp) if serp is not None else None
         if prices is None:
             log.warning("SERPAPI_API_KEY is not set; trip research uses web search for prices")
         sorter = build_travel_sorter(settings, _travel_model(settings))
@@ -732,9 +762,11 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 models = extra.models or build_chat_models(resolved)
                 email = await _email_runtime(resolved, extra, stack, models, resolved.public_origin)
                 web = await build_web(resolved, engine, stack, extra.clock or utcnow)
+                serp = await _serp(resolved, extra, engine, stack, extra.clock or utcnow)
                 departments = extra.departments or await _registry(
-                    resolved, engine, models, rates, stack, web, news, quotes
-                )
+                    resolved, engine, models, rates, stack, web, news, quotes,
+                    serp.client if serp else None,
+                )  # fmt: skip
                 kept = KeptAnswers(lambda: SqlUnitOfWork(engine))
                 weather = Weather(
                     await _weather_source(extra, stack), clock=extra.clock or utcnow, kept=kept
@@ -745,6 +777,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                 telegram = await _telegram_runtime(
                     resolved, engine, extra, stack, rates, archive, models, email, departments,
                     places, ideas, _lookup(resolved, extra, web), routes, weather, demo,
+                    serp.prices if serp else extra.live_prices,
                 )  # fmt: skip
                 app.state.telegram = telegram
                 origin = resolved.public_origin

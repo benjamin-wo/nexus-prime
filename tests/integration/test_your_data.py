@@ -564,6 +564,7 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             created_at=now,
         )
         await add(t["trip_reminders"], user_id=user, key=f"passport:{tag}", sent_at=now)
+        await add(t["serp_searches"], user_id=user, day=date(2026, 11, 10), searches=3)
         # The other person: a member of this trip who changed it, and the invite they used.
         invite = uid()
         await add(

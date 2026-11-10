@@ -109,7 +109,7 @@ All secrets are Railway variables on `nexus-app`; none live in the repo. Changin
 | `AGENTMAIL_API_KEY` | New key in AgentMail, set it, delete the old one |
 | `TIINGO_API_KEY` | Regenerate the token in Tiingo's account settings and set it; the old one stops working |
 | `FINNHUB_API_KEY` | Regenerate the key on Finnhub's dashboard and set it |
-| `SERPAPI_API_KEY` | Regenerate the key on SerpApi's dashboard and set it (trip research falls back to web search without it) |
+| `SERPAPI_API_KEY` | Regenerate the key on SerpApi's dashboard and set it (trip research falls back to web search without it, and chat's live fares, product prices and flight status say they aren't set up). `SERPAPI_MONTHLY_SEARCHES` (default 240) is the hard monthly stop on searches, shared by both |
 | `TAVILY_API_KEY` | Create a new key on Tavily's dashboard, set it, delete the old one (research falls back to OpenRouter's web search, without page text, while it's missing, and plans read headlines without their articles) |
 | `GOOGLE_PLACES_API_KEY` | Create a new key in Google Cloud (APIs & Services → Credentials), restrict it to the Places API (New) and the Routes API, set it, delete the old one (trips show no Google Maps data or travel times without it) |
 | `GOOGLE_MAPS_BROWSER_KEY` | Create a new key in Google Cloud restricted to the Maps JavaScript API and to the app's address as a website (`https://<domain>/*`), set it, delete the old one (the trip page shows no map without it; travel times still show). It's seen by the browser by design, so never reuse the server key here: set to the same value as `GOOGLE_PLACES_API_KEY`, it's ignored (no map) and the startup log says so |

@@ -112,6 +112,10 @@ class Settings(BaseSettings):
     # unset, costs come from web search. ---
     travel_research_model: str | None = None
     serpapi_api_key: SecretStr | None = None
+    # Also the chat's live fares, product prices and flight status. SERPAPI_MONTHLY_SEARCHES
+    # is a hard stop on the searches made in a calendar month (UTC), trip research and chat
+    # together: the free plan's 250, less a few spare. 0 makes none.
+    serpapi_monthly_searches: int = Field(240, ge=0)
     # --- Web search with each page's text (Tavily). Unset: research reads only the
     # answer and links from OpenRouter's web search. TAVILY_MONTHLY_CREDITS is the
     # plan's monthly allowance (the free plan's 1,000), shared out between travel,

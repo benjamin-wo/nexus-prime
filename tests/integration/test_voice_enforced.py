@@ -30,9 +30,9 @@ pytestmark = pytest.mark.integration
 # outweigh the persona. Providers cache a request only up to its first difference from an
 # earlier one, so this text must stay the same for everyone on the default voice. Change it
 # on purpose only (and know that it invalidates every cached prefix). Last changed by the
-# rename of the assistant from Nexus to Kaya (four mentions in the prompt).
-DEFAULT_PREFIX_SHA256 = "ca495b35c16a13a464b408bd71cd5c3cc940cc05340c22b6a1e036ca4686f8e6"
-DEFAULT_PREFIX_LENGTH = 12993
+# rule for live fares, product prices and flight status (prefer them over web_search).
+DEFAULT_PREFIX_SHA256 = "52dfa9c8314095d430c3a0effeae2092d96f89219d10b90fc23e2ea392cbbbc6"
+DEFAULT_PREFIX_LENGTH = 13513
 
 
 def prefix_of(prompt: str) -> str:
