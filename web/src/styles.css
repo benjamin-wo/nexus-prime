@@ -222,7 +222,25 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
   color: var(--text-secondary); font-size: 1.25rem; line-height: 1; cursor: pointer;
 }
 .demo-banner-close:hover { background: var(--accent-soft); color: var(--text-primary); }
-.main-viewport { overflow-y: auto; overflow-x: hidden; padding: 40px 48px 96px; }
+.main-viewport { overflow-y: auto; overflow-x: hidden; padding: 40px 48px 96px; overscroll-behavior-y: contain; }
+/* Pull to refresh (usePullToRefresh): the page follows the finger down by --pull, with a spinner in the gap.
+   The transform is only on while pulling or refreshing, so it never changes how fixed buttons sit. */
+.ptr { position: sticky; top: 0; z-index: 5; height: 0; pointer-events: none; }
+.ptr-spinner {
+  position: absolute; left: 50%; top: calc(var(--pull, 0px) / 2 - 14px); width: 28px; height: 28px; margin-left: -14px;
+  box-sizing: border-box; border-radius: 50%; border: 3px solid var(--accent-border); border-top-color: var(--accent);
+  opacity: 0; transform: rotate(calc(var(--pull-ratio, 0) * 270deg));
+}
+.ptr-active .ptr-spinner { opacity: var(--pull-ratio, 0); transition: opacity var(--t-standard); }
+.ptr-ready .ptr-spinner, .ptr-refreshing .ptr-spinner { opacity: 1; }
+.ptr-refreshing .ptr-spinner { animation: ptr-spin 0.8s linear infinite; }
+.ptr-active .content { transform: translateY(var(--pull, 0px)); transition: transform var(--t-standard); }
+.ptr-drag .content { transition: none; }
+/* For keyboards and screen readers: the same refresh as the pull, visible only while focused. */
+.ptr-button:not(:focus-visible) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); padding: 0; border: 0; white-space: nowrap; }
+.ptr-button:focus-visible { position: absolute; top: var(--space-2); right: 0; min-height: 44px; pointer-events: auto; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr-refreshing .ptr-spinner { animation: none; } .ptr-active .content { transition: none; } }
 .content { max-width: 1420px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
 .page-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--space-4); }
 .bottom-nav { display: none; }

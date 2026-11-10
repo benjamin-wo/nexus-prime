@@ -6,7 +6,8 @@ import { DEPARTMENTS, departmentFor, inMenu } from "../departments";
 import { useReveal } from "../motion";
 import { DemoBanner } from "./DemoBanner";
 import { Icon, departmentIcon } from "./Icon";
-import { withMiniApp } from "../telegram";
+import { pullIsSafe, withMiniApp } from "../telegram";
+import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { Kaya } from "./Kaya";
 
@@ -100,6 +101,27 @@ function useTelegramColours(home: boolean) {
   );
 }
 
+/** The pages of money data that can be pulled down to refresh: Home, the Money overview, the Ledger and Budgets. */
+const PULLABLE = new Set(["/", "/accounting", "/accounting/ledger", "/accounting/budgets"]);
+
+/** The spinner that shows while a page is pulled down and refreshed, announced as "Refreshing…" and
+ * "Updated". The button is for keyboards and screen readers (it shows only while focused). */
+function PullIndicator({ status, onRefresh }: { status: PullStatus; onRefresh?: () => void }) {
+  return (
+    <div className={`ptr ptr-${status}`}>
+      <div className="ptr-spinner" aria-hidden="true" />
+      <p className="sr-only" role="status">
+        {status === "refreshing" ? "Refreshing…" : status === "done" ? "Updated" : ""}
+      </p>
+      {onRefresh && (
+        <button type="button" className="btn btn-soft ptr-button" onClick={onRefresh}>
+          Refresh
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** The brand mark, as the rail and a guest's header show it. */
 function BrandMark() {
   return (
@@ -119,11 +141,14 @@ export function Shell({
   me,
   onOpenChat,
   onLogout,
+  onRefresh,
   children,
 }: {
   me: Me;
   onOpenChat: () => void;
   onLogout: () => void;
+  /** Refetches what the page shows; given, Home, Money overview, Ledger and Budgets can be pulled down to refresh. */
+  onRefresh?: () => Promise<unknown>;
   children: ReactNode;
 }) {
   const { pathname, key } = useLocation();
@@ -137,6 +162,8 @@ export function Shell({
   const bar = useRef<HTMLElement>(null);
   useBarHeight(shell, bar);
   useReveal(content);
+  const pullable = onRefresh && PULLABLE.has(pathname) ? onRefresh : undefined;
+  const pull = usePullToRefresh(viewport, pullable, pullIsSafe);
   // The rail names each place in full; the bottom bar on a phone uses a short word under the icon,
   // and its accessible name keeps the full one ("Invest (Investment)").
   const links = (bar: boolean) => [
@@ -216,6 +243,7 @@ export function Shell({
         </button>
       </nav>
       <main className="main-viewport" ref={viewport}>
+        {pullable && <PullIndicator status={pull.status} onRefresh={pull.refresh} />}
         <div className="content" ref={content}>
           {/* One tab is no choice: only show the bar when there are two or more. */}
           {here && here.tabs.length > 1 && (

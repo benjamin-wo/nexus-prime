@@ -9,6 +9,7 @@ import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
+import { refetchActive, useRefreshOnReturn } from "./refreshOnReturn";
 import { DemoPage } from "./pages/DemoPage";
 import { Home } from "./pages/Home";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
@@ -149,9 +150,11 @@ function Cockpit({ me }: { me: Me }) {
   }, [client, refresh, me.demo]);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
+  // Pulling a page down: what it shows, fetched again whatever its staleTime.
+  const pullRefresh = useCallback(() => refetchActive(client, true), [client]);
 
   return (
-    <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout}>
+    <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout} onRefresh={pullRefresh}>
       <Suspense fallback={pageLoading}>
         <Routes>
           <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
@@ -276,6 +279,8 @@ function Gate() {
 
 export function App({ client }: { client?: QueryClient }) {
   const [queryClient] = useState(() => client ?? new QueryClient({ defaultOptions: { queries: { staleTime: 15_000 } } }));
+  // Telegram's WebView doesn't reliably give a window focus on return: refresh when the app is shown again.
+  useRefreshOnReturn(queryClient);
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>

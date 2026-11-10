@@ -13,6 +13,10 @@ type WebApp = {
   disableVerticalSwipes?(): void;
   openLink?(url: string): void;
   platform?: string;
+  /** Bot API 8.0+: "activated" when the Mini App comes back to the front, "deactivated" when it is sent
+   * to the background. Older clients have no such events (and may not have these methods). */
+  onEvent?(event: "activated" | "deactivated" | (string & {}), cb: () => void): void;
+  offEvent?(event: "activated" | "deactivated" | (string & {}), cb: () => void): void;
   BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
   HapticFeedback?: { impactOccurred(style: "light" | "medium"): void; selectionChanged(): void };
 };
@@ -61,6 +65,15 @@ export function openExternal(url: string): void {
   const app = window.Telegram?.WebApp;
   if (app?.openLink) app.openLink(url);
   else window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/** Whether a pull-down gesture at the top of a page can't be mistaken for Telegram's own swipe-down-to-close.
+ * `startMiniApp` turns vertical swipes off (Bot API 7.7+), so a Mini App whose Telegram has that call is safe;
+ * one without it (an older client) keeps its swipe-to-close, so pulling to refresh stays off there. Outside
+ * Telegram there is nothing to collide with. */
+export function pullIsSafe(): boolean {
+  if (!initData) return true;
+  return typeof window.Telegram?.WebApp?.disableVerticalSwipes === "function";
 }
 
 /** Telegram's phone apps show the Mini App in a webview that may swallow a file download. */
