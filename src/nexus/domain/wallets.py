@@ -186,7 +186,9 @@ _ENDING = re.compile(
     r"(?i)\b(?:card|visa|mastercard|amex|credit|debit)\b[^\n.]{0,30}?\bending\s+"
     r"(?:in\s+|with\s+)?[:#]?\s*(\d{4})(?!\d)"
 )
-_MASKED = re.compile(r"(?i)(?<![\w*•])(?:(?:x{2,}|\*{2,}|•{2,})[ -]*)+(\d{4})(?!\d)")
+# Possessive quantifiers: a long run of "*" or "x" (an email's divider line) can only be
+# read one way, so a miss fails at once instead of backtracking for minutes.
+_MASKED = re.compile(r"(?i)(?<![\w*•])(?:(?:x{2,}+|\*{2,}+|•{2,}+)[ -]*+)++(\d{4})(?!\d)")
 _STAR = re.compile(r"(?<![\w*•])[*x•](\d{4})(?!\d)")
 
 
