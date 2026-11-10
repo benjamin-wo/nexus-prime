@@ -3429,6 +3429,21 @@ export async function fakeApi(
         demoLeft -= 1;
         return json(route, [{ text: "Here's what I found in the demo data.", buttons: [] }]);
       }
+      if (String(body.message).startsWith("How much is a PS6")) {
+        // A web answer: its sources come as src: buttons, two to a row, for the chat to draw as chips.
+        return json(route, [
+          {
+            text: "About 500 SGD at most shops, per HardwareZone (11 May). The yen rate is 0.0087 today, per XE.",
+            buttons: [
+              [
+                { label: "HardwareZone ↗", data: "src:https://www.hardwarezone.com.sg/tech-news/console-prices" },
+                { label: "XE ↗", data: "src:https://www.xe.com/currencyconverter/" },
+              ],
+              [{ label: "Embassy of Japan ↗", data: "src:https://www.sg.emb-japan.go.jp/itpr_en/visa.html" }],
+            ],
+          },
+        ]);
+      }
       if (String(body.message).startsWith("For my ")) {
         return json(route, [
           {

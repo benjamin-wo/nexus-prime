@@ -1,8 +1,10 @@
 """``--live-web``: the evals' web_search tool asks the real web, built as the app builds it
 (Tavily's pages, read by the travel research model, within the monthly credits).
 
-The eval clock is fixed (``seed.NOW``, 28 September 2026) but a live search sees today's
-web, so an answer about "today" or "this weekend" is about the real day. Each web case
+The eval clock is fixed (``seed.NOW``, 28 September 2026), because the seeded data and the
+grading are dated by it, but a live search sees today's web. So the cases that search the
+web run on the real time (``run_cases(now=...)``) and "today" or "this weekend" is the
+same day for the agent and for the pages. Each web case
 costs about one search credit and the model's tokens. The credit count lives in the
 throwaway database, so it starts again from zero every run: it is no cap across runs.
 """

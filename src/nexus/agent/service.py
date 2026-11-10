@@ -79,6 +79,7 @@ from nexus.domain.money import Money
 from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.places import quoted
 from nexus.domain.private import hide_card_numbers
+from nexus.domain.source_links import merge as merge_sources
 from nexus.domain.transcript import HEARD_MARK, heard_line, tidy_transcript
 from nexus.infra.llm.factory import text_of
 from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
@@ -422,10 +423,14 @@ class AgentService:
         text = strip_ids(text_of(final.content)) if final else ""
         # Buttons from this turn's tool results (e.g. a rule offer) and from the reply.
         sources = [m for m in new if isinstance(m, ToolMessage)] + ([final] if final else [])
+        # Several web searches in a turn each bring source links: keep 3 in all.
         extra = [
-            [Button(str(label), str(data)) for label, data in row]
-            for m in sources
-            for row in m.additional_kwargs.get(BUTTONS) or []
+            [Button(label, data) for label, data in row]
+            for row in merge_sources(
+                [(str(label), str(data)) for label, data in row]
+                for m in sources
+                for row in m.additional_kwargs.get(BUTTONS) or []
+            )
         ]
         return [Reply(_with_notes(text or "Done.", notes), extra + ([[UNDO]] if wrote else []))]
 

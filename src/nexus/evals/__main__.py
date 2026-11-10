@@ -224,9 +224,9 @@ async def main(argv: list[str] | None = None) -> int:
         "--live-web",
         action="store_true",
         help="search the real web, as the app does (needs TAVILY_API_KEY; about one search "
-        "credit per web case, counted from zero each run). The eval clock stays at "
-        "28 September 2026 while the web is today's, so answers about 'today' are about "
-        "the real day. Default: a canned answer citing one made-up page",
+        "credit per web case, counted from zero each run). The web cases run on the real "
+        "time, so 'today' is the day the web is on (the other cases stay on 28 September "
+        "2026). Default: a canned answer citing one made-up page",
     )
     args = parser.parse_args(argv)
     reasoning = REASONING[args.reasoning]
@@ -287,6 +287,8 @@ async def main(argv: list[str] | None = None) -> int:
                     speech=stt,
                     repeat=args.repeat,
                     lookup=lookup,
+                    # A live search sees today's web: its cases run on today's clock.
+                    now=datetime.now(UTC) if lookup is not None else None,
                 )
                 print(flush=True)
                 label = name

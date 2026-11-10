@@ -29,9 +29,12 @@ from nexus.application.ports import LedgerQuery, ReceiptStore, SpeechToText
 from nexus.application.splits import list_open_ious, split_bill
 from nexus.application.transactions import NewTransaction, list_ledger, log_transaction
 from nexus.application.users import get_user
+from nexus.application.web_lookup import Lookup, WebLooker
+from nexus.application.web_search import Recency
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
+from nexus.domain.travel_research import Source as WebSource
 from nexus.infra.db.tables import capability_gaps
 from tests.fakes import NOW, FakeReceipts, ScriptedModel, call, say, scripted
 from tests.integration.conftest import UowFactory
@@ -53,6 +56,7 @@ def build(
     speech: SpeechToText | None = None,
     limiter: RateLimiter | None = None,
     receipt_text: ReceiptTextReader | None = None,
+    lookup: WebLooker | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -71,6 +75,7 @@ def build(
             clock=clock or (lambda: NOW),
             departments=departments,
             places=places,
+            lookup=lookup,
         )
     )
     graph = agent_graph.compile(InMemorySaver())
@@ -735,3 +740,66 @@ async def test_mixed_actions_in_one_turn_get_a_bullet_per_action(
         "• Delete 28 Sep · SGD 12.00 at Grab (Other)\n"
         "• Change 28 Sep · SGD 12.40 at Kopi Corner (Other): category → Transport"
     )
+
+
+class Pages:
+    """A web lookup that answers each question from its own made-up pages."""
+
+    def __init__(self, found: dict[str, list[str]]) -> None:
+        self.found = found
+
+    async def ask(
+        self,
+        user_id: UserId,
+        question: str,
+        *,
+        recent: Recency | None = None,
+        local_query: str | None = None,
+    ) -> Lookup:
+        sources = [
+            WebSource(n, url, f"Page {n}", NOW.date())
+            for n, url in enumerate(self.found[question], 1)
+        ]
+        return Lookup(question, "It is so [1].", sources, read_pages=True)
+
+
+async def test_web_sources_come_as_at_most_three_link_buttons_over_a_turn(
+    uow: UowFactory, alice: UserId
+) -> None:
+    pages = Pages(
+        {
+            "console prices": [
+                "https://www.hardwarezone.com.sg/a",
+                "https://forums.hardwarezone.com.sg/b",
+                "https://shop.example.com/c",
+            ],
+            "console deals": [
+                "https://forums.hardwarezone.com.sg/d",
+                "https://www.xe.com/e",
+                "https://www.mom.gov.sg/f",
+            ],
+        }
+    )
+    model = scripted(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "web_search", "args": {"question": "console prices"}, "id": "1"},
+                {"name": "web_search", "args": {"question": "console deals"}, "id": "2"},
+            ],
+        ),
+        say("About 500, per HardwareZone."),
+    )
+    reply = only(await build(uow, model, lookup=pages).handle_text(alice, "ps6 price?", "tg:1:1"))
+    assert reply.text == "About 500, per HardwareZone."
+    # Six pages cited over two searches, three sites among them: one button for each
+    # site, three in all, the first search's first.
+    assert [b.data for row in reply.buttons for b in row] == [
+        "src:https://www.hardwarezone.com.sg/a",
+        "src:https://shop.example.com/c",
+        "src:https://www.xe.com/e",
+    ]
+    assert [len(row) for row in reply.buttons] == [2, 1]
+    # The model is told they are shown, and is not handed the addresses to paste.
+    assert "links show as buttons" in tool_results(model)[0]
+    assert not any("https://" in r for r in tool_results(model))
