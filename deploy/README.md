@@ -66,3 +66,22 @@ To start without Railway data instead, run `docker compose up -d --build`.
 | Logs | `docker compose logs -f app` |
 | Restart | `docker compose restart app` |
 | Back up now | `./backup.sh` |
+
+## Running actions from GitHub (optional)
+
+The **Server** workflow (Actions tab → Server → Run workflow) runs one of `health`, `status`, `deploy` or `restart` on the server over SSH. Its key can run only `deploy/remote.sh`, which is enforced on the server as a forced command. Workflow logs are public on a public repo, so the script prints statuses and counts only, never app logs or data.
+
+One-time setup, as root on the server:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C github-actions -f /root/gh-actions
+echo "command=\"/opt/kaya/deploy/remote.sh\",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty $(cat /root/gh-actions.pub)" >> /root/.ssh/authorized_keys
+ssh-keyscan -t ed25519 <server-ip> 2>/dev/null   # → secret DROPLET_KNOWN_HOSTS
+cat /root/gh-actions                              # → secret DROPLET_SSH_KEY, then: rm /root/gh-actions
+```
+
+Then in GitHub, go to Settings → Secrets and variables → Actions and add three repository secrets:
+
+- `DROPLET_HOST`: the server's IP address.
+- `DROPLET_SSH_KEY`: the private key printed above.
+- `DROPLET_KNOWN_HOSTS`: the `ssh-keyscan` line.
