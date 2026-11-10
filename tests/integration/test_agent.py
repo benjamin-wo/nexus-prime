@@ -1,5 +1,6 @@
 """Agent trajectories: a scripted model drives the real graph, tools and database."""
 
+import re
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,6 +25,7 @@ from nexus.application import subscriptions as subscription_cases
 from nexus.application.category_rules import list_rules
 from nexus.application.departments import Departments
 from nexus.application.limits import RateLimiter
+from nexus.application.live_prices import PriceLooker
 from nexus.application.places import Places
 from nexus.application.ports import LedgerQuery, ReceiptStore, SpeechToText
 from nexus.application.splits import list_open_ious, split_bill
@@ -35,6 +37,7 @@ from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.travel_research import Source as WebSource
+from nexus.evals.prices import CannedPrices
 from nexus.infra.db.tables import capability_gaps
 from tests.fakes import NOW, FakeReceipts, ScriptedModel, call, say, scripted
 from tests.integration.conftest import UowFactory
@@ -57,6 +60,7 @@ def build(
     limiter: RateLimiter | None = None,
     receipt_text: ReceiptTextReader | None = None,
     lookup: WebLooker | None = None,
+    prices: PriceLooker | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -76,6 +80,7 @@ def build(
             departments=departments,
             places=places,
             lookup=lookup,
+            prices=prices,
         )
     )
     graph = agent_graph.compile(InMemorySaver())
@@ -803,3 +808,40 @@ async def test_web_sources_come_as_at_most_three_link_buttons_over_a_turn(
     # The model is told they are shown, and is not handed the addresses to paste.
     assert "links show as buttons" in tool_results(model)[0]
     assert not any("https://" in r for r in tool_results(model))
+
+
+async def test_live_prices_come_with_their_time_and_links_as_buttons(
+    uow: UowFactory, alice: UserId
+) -> None:
+    canned = CannedPrices(NOW)
+    model = scripted(
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "flight_prices",
+                    "args": {
+                        "origin": "SIN",
+                        "destination": "Bangkok",
+                        "outbound_date": "2026-12-10",
+                    },
+                    "id": "1",
+                },
+                {"name": "product_prices", "args": {"query": "Switch 2"}, "id": "2"},
+                {"name": "flight_status", "args": {"flight": "SQ12"}, "id": "3"},
+            ],
+        ),
+        say("From SGD 150, as of 12:00; nothing is booked."),
+    )
+    reply = only(await build(uow, model, prices=canned).handle_text(alice, "fares?", "tg:1:1"))
+    assert reply.text == "From SGD 150, as of 12:00; nothing is booked."
+    fares, shops, status = tool_results(model)
+    assert re.search(r"checked 28 Sep \d\d:\d\d", fares)
+    assert "SGD 150" in shops or "S$499.00" in shops
+    assert "Delayed" in status
+    # None of them hands the model a web address; the links are buttons, three at most.
+    assert not any("http" in r for r in tool_results(model))
+    links = [b.data for row in reply.buttons for b in row]
+    assert 1 <= len(links) <= 3
+    assert all(link.startswith("src:https://") for link in links)
+    assert len(canned.asked) == 3

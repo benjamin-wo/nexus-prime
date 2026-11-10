@@ -1476,6 +1476,20 @@ web_credits = Table(
     CheckConstraint("credits >= 0", name="credits_not_negative"),
 )
 
+# How many live fare and price searches (SerpApi) each user made each day, for the daily limit
+# per user: a count, never what was searched for. The app-wide monthly count is a
+# ``web_credits`` row for the product ``serpapi`` (migration 0070).
+serp_searches = Table(
+    "serp_searches",
+    metadata,
+    Column("user_id", UUID(as_uuid=True), nullable=False),
+    Column("day", Date, nullable=False),
+    Column("searches", Integer, nullable=False, server_default=text("0")),
+    PrimaryKeyConstraint("user_id", "day"),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    CheckConstraint("searches >= 0", name="not_negative"),
+)
+
 # What the app did and how it went, for finding failures and slow spots: kinds,
 # names, timings, status codes and error types, and a keyed hash for the user. Never
 # what anyone said, wrote or spent. Kept 30 days (migration 0040).

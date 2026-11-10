@@ -58,6 +58,7 @@ from nexus.application.category_rules import list_rules
 from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
 from nexus.application.inbound import log_capability_gap
+from nexus.application.live_prices import PriceLooker
 from nexus.application.places import Places
 from nexus.application.routes import Routes
 from nexus.application.users import get_user, turn_on_menu
@@ -107,6 +108,11 @@ CORE_TOOLS = (
     "answer_email",
     "set_timezone",
     "web_search",
+    # Fares, shop prices and flight status are asked in passing, and are better from these
+    # than from a web search.
+    "flight_prices",
+    "product_prices",
+    "flight_status",
     "load_skill",
 )
 SKILL_TURNS = 5
@@ -226,6 +232,8 @@ class AgentDeps:
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None: not set up.
     lookup: WebLooker | None = None
+    # Live fares, product prices and flight status; None: not set up.
+    prices: PriceLooker | None = None
     # Finds the time zone of a place by name, for set_timezone; None: not set up.
     zones: ZoneFinder | None = None
 
@@ -470,6 +478,7 @@ class AgentGraph:
             routes=self.deps.routes,
             ideas=self.deps.ideas,
             lookup=self.deps.lookup,
+            prices=self.deps.prices,
             zones=self.deps.zones,
         )
 
@@ -522,6 +531,13 @@ class AgentGraph:
             "where they are (their time zone or trip tells you). Say when the sources were "
             "published. If nothing fresh comes back, say plainly \"I couldn't find anything "
             'from today"; never guess or give older news as current.\n'
+            "- What a flight costs, the cheapest day to fly, what a product costs in Singapore, "
+            "or whether a flight is on time: call flight_prices, product_prices or "
+            "flight_status, not web_search. Say the prices are as of when they were checked, "
+            "that they change, and that Kaya books and buys nothing; you can't book a flight "
+            "or buy anything, so if asked, say so and offer the current fares or prices. If "
+            "a tool says live prices are paused, tell the user plainly until when, and use "
+            "web_search instead.\n"
             "- If anything a change needs is unclear (the amount, which transaction, what "
             "kind, who, which day), ask one short question offering the likely answers. "
             'Never guess. A day of the month on its own ("on the 3rd") means the latest '

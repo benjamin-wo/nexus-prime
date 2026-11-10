@@ -43,6 +43,7 @@ from nexus.domain.source_links import PREFIX as SOURCE_PREFIX
 from nexus.evals import clips, photos, seed
 from nexus.evals.cases import WRITES, Call, Case, Has, Turn, searches_web
 from nexus.evals.checks import World
+from nexus.evals.prices import CannedPrices
 from nexus.evals.web import CannedLookup
 from nexus.infra.db import tables
 from nexus.infra.db.uow import SqlUnitOfWork
@@ -189,6 +190,8 @@ class Agent:
         self.speech = speech
         # Web search: a canned answer unless given the real one (``--live-web``).
         self.lookup: WebLooker = lookup or CannedLookup()
+        # Live fares, product prices and flight status: always canned (see ``prices``).
+        self.prices = CannedPrices()
         # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
         # If the photo can't be read at all, the main model reads the first look's text.
         self.receipts = LlmReceiptReader(vision or model)
@@ -225,6 +228,7 @@ class Agent:
                 rates=FixedRates(),
                 zones=Zones(),
                 lookup=self.lookup,
+                prices=self.prices,
             )
         )
         self.graph = built.compile(InMemorySaver())

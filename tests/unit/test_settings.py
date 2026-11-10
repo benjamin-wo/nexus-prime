@@ -74,3 +74,16 @@ def test_telegram_is_off_without_a_token() -> None:
 def test_llm_provider_is_case_insensitive() -> None:
     settings = Settings(_env_file=None, database_url="postgresql://u:p@db/n", llm_provider="Gemini")
     assert settings.llm_provider.value == "gemini"
+
+
+def test_the_serpapi_monthly_cap_defaults_to_240_and_can_be_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SERPAPI_MONTHLY_SEARCHES", raising=False)
+    url = "postgresql://u:p@db/nexus"
+    assert Settings(_env_file=None, database_url=url).serpapi_monthly_searches == 240
+    monkeypatch.setenv("SERPAPI_MONTHLY_SEARCHES", "100")
+    assert Settings(_env_file=None, database_url=url).serpapi_monthly_searches == 100
+    monkeypatch.setenv("SERPAPI_MONTHLY_SEARCHES", "-1")
+    with pytest.raises(ValidationError, match="serpapi_monthly_searches"):
+        Settings(_env_file=None, database_url=url)

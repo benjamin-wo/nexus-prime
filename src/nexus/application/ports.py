@@ -1153,6 +1153,13 @@ class WebRepository(Protocol):
         ...
 
     async def add_credits(self, month: date, product: str, credits: int) -> None: ...
+    async def reserve_serp(
+        self, month: date, monthly_cap: int, user_id: UUID | None, day: date, daily_cap: int
+    ) -> str:
+        """Count one SerpApi search before it is made: "ok", "day" (the user's limit for the
+        day is reached) or "month" (the app's); the last two count nothing. Atomic:
+        searches at the same moment never pass a cap. The caller commits only on "ok"."""
+        ...
 
 
 class ExternalCacheRepository(Protocol):

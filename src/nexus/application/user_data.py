@@ -81,6 +81,8 @@ NOT_EXPORTED: dict[str, str] = {
     "transaction_sources": "internal keys that stop an imported item being imported twice",
     "budget_alerts": "internal markers that an alert was already sent",
     "trip_reminders": "internal markers that a reminder was already sent",
+    "serp_searches": "how many live fare and price searches you ran each day: a count for "
+    "the daily limit, never what was searched for",
 }
 
 SHARED: dict[str, str] = {

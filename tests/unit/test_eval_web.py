@@ -16,7 +16,9 @@ from nexus.evals.runner import TurnLog, grade
 from nexus.evals.web import DOMAIN, CannedLookup
 
 USER = UserId(uuid4())
-COMPARING = {"web-console-price", "web-savings-rates"}
+COMPARING = {"web-savings-rates"}
+# The price of a product is product_prices's to look up, not a web search's.
+PRODUCT_PRICES = {"web-console-price", "web-phone-price"}
 
 
 async def test_the_canned_lookup_cites_one_made_up_page_and_records_questions() -> None:
@@ -40,10 +42,13 @@ def test_the_web_cases_search_with_a_cap_and_change_nothing() -> None:
     assert len(searching) >= 20
     for case in searching:
         [wanted] = case.calls
-        assert wanted.tool == "web_search" and isinstance(wanted.args["question"], Has)
-        # Two searches, three for a comparison of prices or rates.
+        tool, argument = (
+            ("product_prices", "query") if case.id in PRODUCT_PRICES else ("web_search", "question")
+        )
+        assert wanted.tool == tool and isinstance(wanted.args[argument], Has)
+        # Two searches, three for a comparison of rates.
         most = 3 if case.id in COMPARING else 2
-        assert [(cap.tool, cap.n) for cap in case.at_most] == [("web_search", most)]
+        assert [(cap.tool, cap.n) for cap in case.at_most] == [(tool, most)]
         assert case.unchanged and "create_trip" in case.forbid
     skipping = [c for c in web if c.id.startswith("web-skip-")]
     assert len(skipping) == 3

@@ -6,6 +6,7 @@ declare, including any attempt at ``user_id``, are dropped.
 """
 
 import json
+import logging
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
@@ -16,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from nexus.agent import price_text
 from nexus.agent.confirmation import Ask, entry_text
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
@@ -53,12 +55,15 @@ from nexus.application.departments import Departments
 from nexus.application.fx import Rate, RateSource
 from nexus.application.ideas import KINDS as IDEA_KINDS
 from nexus.application.ideas import IdeaFinder
+from nexus.application.live_prices import PriceLooker
 from nexus.application.places import Places, PlacesError
 from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.application.routes import Routes
+from nexus.application.serp_budget import SearchesPaused
 from nexus.application.web_lookup import WebLooker
+from nexus.application.web_search import WebSearchError
 from nexus.application.whereabouts import ZoneFinder
-from nexus.domain import itinerary
+from nexus.domain import airports, itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import Forbidden, InvalidInput, NexusError, NotFound
@@ -79,6 +84,18 @@ from nexus.domain.ledger import (
     plan_split,
 )
 from nexus.domain.levels import describe as describe_levels
+from nexus.domain.live_prices import (
+    MAX_ADULTS,
+    MAX_CALENDAR_DAYS,
+    MAX_DAYS_AHEAD,
+    MAX_TRIP_DAYS,
+    Cabin,
+    CalendarQuery,
+    FlightQuery,
+    ProductQuery,
+    StatusQuery,
+    flight_number,
+)
 from nexus.domain.market import describe_price_time
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
@@ -100,6 +117,8 @@ from nexus.domain.voice import Emoji, Humour, Length, Preset
 from nexus.domain.wallets import LAST4_KEPT, clean_last4
 from nexus.domain.whereabouts import clock_there, zone_named
 from nexus.domain.whereabouts import label as zone_label
+
+log = logging.getLogger(__name__)
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -124,6 +143,8 @@ class ToolContext:
     ideas: IdeaFinder | None = None
     # Looking things up on the web; None when not set up.
     lookup: WebLooker | None = None
+    # Live fares, product prices and flight status (SerpApi); None when not set up.
+    prices: PriceLooker | None = None
     # Finds the time zone of a place by name, for set_timezone; None when not set up.
     zones: ZoneFinder | None = None
     # Shared by everything the tools change in one chat turn, so Undo reverses it together.
@@ -3432,6 +3453,167 @@ async def _web_search(ctx: ToolContext, a: WebSearchArgs) -> ToolResult:
     )
 
 
+NOT_SET_UP = "Live prices aren't set up (no SerpApi key): use web_search instead."
+
+
+class FlightPricesArgs(Args):
+    origin: str = Field(
+        description="Where from: an airport code ('SIN'), several ('HND,NRT') or a city "
+        "('Bangkok'). Unless the user says otherwise it is where they live (SIN for someone "
+        "in Singapore); ask only if you can't tell."
+    )
+    destination: str = Field(description="Where to: an airport code or a city, as for origin")
+    outbound_date: date | None = Field(
+        default=None,
+        description="The day to fly out, YYYY-MM-DD. Leave it out only when the user has no "
+        "fixed day and wants the cheapest days (then give cheapest_from and cheapest_to).",
+    )
+    return_date: date | None = Field(
+        default=None, description="The day to fly back, YYYY-MM-DD; leave out for one way"
+    )
+    adults: int = Field(default=1, ge=1, le=MAX_ADULTS, description="Passengers (adults)")
+    cabin: Cabin = Field(default="economy", description="The cabin")
+    cheapest_from: date | None = Field(
+        default=None,
+        description="With cheapest_to, instead of outbound_date: the first day of a window to "
+        "find the cheapest days to fly in ('the cheapest day to fly in December': 1 Dec to "
+        "31 Dec). At most two months wide. One lookup, however many days.",
+    )
+    cheapest_to: date | None = Field(
+        default=None, description="The last day of the window (see cheapest_from)"
+    )
+    trip_days: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_TRIP_DAYS,
+        description="With a window: how many days the trip lasts, for return fares ('a week "
+        "in Bangkok': 7). Leave out for one way.",
+    )
+
+
+def _airports(name: str, role: str) -> str:
+    found = airports.resolve(name)
+    if found is None:
+        raise InvalidInput(
+            f"I don't know which airport {name!r} is for the {role}: ask the user which city "
+            "or airport they mean, or give its three-letter code"
+        )
+    return found
+
+
+def _fare_day(raw: date | None, ctx: ToolContext, what: str) -> date:
+    if raw is None:
+        raise InvalidInput(f"{what} is needed: ask the user")
+    today = ctx.today()
+    if raw < today:
+        raise InvalidInput(f"{what} {raw.isoformat()} is in the past (today is {today})")
+    if raw > today + timedelta(days=MAX_DAYS_AHEAD):
+        raise InvalidInput(
+            f"{what} {raw.isoformat()} is too far ahead: fares open about a year out"
+        )
+    return raw
+
+
+async def _price_lookup[T](what: str, lookup: Awaitable[T]) -> T | ToolResult:
+    """The lookup's result, or the text to give the model when no search was made or it
+    failed. The allowance is only ever counted inside the lookup, before a search."""
+    try:
+        return await lookup
+    except SearchesPaused as exc:
+        return ToolResult(price_text.paused(exc, what=what))
+    except WebSearchError as exc:
+        log.warning("live %s lookup failed: %s", what, exc)
+        return ToolResult(price_text.unavailable(what))
+
+
+async def _flight_prices(ctx: ToolContext, a: FlightPricesArgs) -> ToolResult:
+    if ctx.prices is None:
+        return ToolResult(NOT_SET_UP)
+    origin = _airports(a.origin, "departure")
+    destination = _airports(a.destination, "arrival")
+    if origin == destination:
+        raise InvalidInput("the departure and arrival are the same place: ask where to")
+    currency = ctx.user.home_currency
+    today = ctx.today()
+    if a.outbound_date is None and a.cheapest_from is not None:
+        start = max(a.cheapest_from, today)
+        end = a.cheapest_to or (start + timedelta(days=MAX_CALENDAR_DAYS - 1))
+        end = min(end, today + timedelta(days=MAX_DAYS_AHEAD))
+        if end < start:
+            raise InvalidInput("that window has already passed or is too far ahead: ask again")
+        if (end - start).days >= MAX_CALENDAR_DAYS:
+            raise InvalidInput("the window is wider than two months: ask for a narrower one")
+        calendar = CalendarQuery(
+            origin, destination, start, end, a.trip_days, a.adults, a.cabin, currency
+        )
+        got = await _price_lookup("fares", ctx.prices.calendar(ctx.user.id, calendar, today))
+        if isinstance(got, ToolResult):
+            return got
+        return ToolResult(price_text.calendar_text(got, ctx.tz))
+    outbound = _fare_day(a.outbound_date, ctx, "the outbound date")
+    back = _fare_day(a.return_date, ctx, "the return date") if a.return_date else None
+    if back is not None and back < outbound:
+        raise InvalidInput("the return date is before the outbound date: ask the user")
+    query = FlightQuery(origin, destination, outbound, back, a.adults, a.cabin, currency)
+    fares = await _price_lookup("fares", ctx.prices.flights(ctx.user.id, query, today))
+    if isinstance(fares, ToolResult):
+        return fares
+    return ToolResult(
+        price_text.fares_text(fares, ctx.tz),
+        buttons=source_rows([(fares.url, "Google Flights")]) if fares.url else None,
+    )
+
+
+class ProductPricesArgs(Args):
+    query: str = Field(
+        min_length=2,
+        max_length=100,
+        description="The product, as a shopper would search for it ('Nintendo Switch 2 "
+        "console', 'Dyson V15 vacuum'): brand, model, and the kind of item. Never put the "
+        "user's own details in it.",
+    )
+
+
+async def _product_prices(ctx: ToolContext, a: ProductPricesArgs) -> ToolResult:
+    if ctx.prices is None:
+        return ToolResult(NOT_SET_UP)
+    query = ProductQuery(" ".join(a.query.split()).casefold())
+    found = await _price_lookup("prices", ctx.prices.products(ctx.user.id, query, ctx.today()))
+    if isinstance(found, ToolResult):
+        return found
+    pages = [(o.link, o.store or "") for o in found.offers if o.link]
+    return ToolResult(price_text.offers_text(found, ctx.tz), buttons=source_rows(pages) or None)
+
+
+class FlightStatusArgs(Args):
+    flight: str = Field(
+        description="The flight number ('SQ12', 'BA 285'): the airline's two-letter code and "
+        "the number"
+    )
+    day: date | None = Field(
+        default=None,
+        description="The day it flies, YYYY-MM-DD, when the user named one; otherwise today's "
+        "flight is looked up",
+    )
+
+
+async def _flight_status(ctx: ToolContext, a: FlightStatusArgs) -> ToolResult:
+    if ctx.prices is None:
+        return ToolResult(NOT_SET_UP)
+    number = flight_number(a.flight)
+    if number is None:
+        raise InvalidInput(
+            f"{a.flight!r} isn't a flight number: it's the airline's two-letter code and "
+            "the number, like SQ12. Ask the user"
+        )
+    query = StatusQuery(number, a.day)
+    found = await _price_lookup("flight status", ctx.prices.status(ctx.user.id, query, ctx.today()))
+    if isinstance(found, ToolResult):
+        return found
+    pages = [(found.source_url, found.source or "")] if found.source_url else []
+    return ToolResult(price_text.status_text(found, ctx.tz), buttons=source_rows(pages) or None)
+
+
 class PlaceInfoArgs(TripNameArgs):
     place: str = Field(
         description="The place: an itinerary entry's name ('Ichiran'), a place id from "
@@ -4657,6 +4839,40 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "user's own money, trips or stocks: use their own tools.",
             WebSearchArgs,
             _web_search,
+        ),
+        ToolSpec(
+            "flight_prices",
+            "Live airfares from Google Flights for a route and day: the cheapest few options "
+            "(airline, stops, duration, times, price) in the user's home currency, and whether "
+            "the price is low, typical or high for the route. For 'the cheapest day to fly' "
+            "give cheapest_from and cheapest_to (a window up to two months) instead of "
+            "outbound_date and it finds the cheapest days in one lookup. Use this, not "
+            "web_search, for what a flight costs; for a trip's research use research_trip. "
+            "Each lookup uses a small shared allowance (a few a day for each user), so look up "
+            "what the user asked for, not every date. Read-only: Kaya can't book flights. "
+            "Asked to book one, say so, and give the fares if useful.",
+            FlightPricesArgs,
+            _flight_prices,
+        ),
+        ToolSpec(
+            "product_prices",
+            "Live prices of a product in Singapore from Google Shopping: up to five offers, "
+            "cheapest first, with store, price and rating, and links as buttons. Use this, "
+            "not web_search, for what something costs and where it's cheapest ('cheapest "
+            "Switch 2', 'how much is the Dyson V15'). Each lookup uses a small shared "
+            "allowance (a few a day for each user). Read-only: Kaya can't buy things.",
+            ProductPricesArgs,
+            _product_prices,
+        ),
+        ToolSpec(
+            "flight_status",
+            "A flight's live status from Google's flight tracking: on time or delayed, "
+            "scheduled and estimated times, gate and terminal when there are any. For a flight "
+            "number the user names ('is SQ12 on time', 'where's my flight BA285'). Use this, "
+            "not web_search, for a flight's status. Each lookup uses a small shared "
+            "allowance (a few a day for each user). Read-only.",
+            FlightStatusArgs,
+            _flight_status,
         ),
         ToolSpec(
             "place_info",

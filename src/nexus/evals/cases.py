@@ -225,15 +225,34 @@ _OFF_WEB = (
 _CITES = (("source", "per ", "according to", "http", "example"),)
 
 
-def _web(case_id: str, text: str, word: str, *, cites: bool = False, searches: int = 2) -> Case:
+# A reply that says something was booked. Kaya books nothing.
+_NOT_BOOKED = (
+    r"\b(?:i'?ve|i have|i just|i|all) booked\b",
+    r"\bbooked (?:it|that|your|the) (?:flight|ticket|seat)",
+    r"\b(?:flight|ticket)s? (?:is|are|has been|have been) booked\b",
+    r"\bconfirmation (?:number|code)\b",
+)
+
+
+def _web(
+    case_id: str,
+    text: str,
+    word: str,
+    *,
+    cites: bool = False,
+    searches: int = 2,
+    tool: str = "web_search",
+) -> Case:
     """A question only the web can answer: a search with ``word`` in it, ``searches`` at
-    most (a comparison of prices or rates may take a second look, or a third)."""
+    most (a comparison of prices or rates may take a second look, or a third). ``tool``
+    is the one that answers it: a product's price is ``product_prices``'s, whose argument
+    is the ``query``."""
     return Case(
         f"web-{case_id}",
         "web",
         _t(text),
-        calls=(Call("web_search", {"question": Has(word)}),),
-        at_most=(AtMost("web_search", searches),),
+        calls=(Call(tool, {("question" if tool == "web_search" else "query"): Has(word)}),),
+        at_most=(AtMost(tool, searches),),
         forbid=_OFF_WEB,
         unchanged=True,
         reply=_CITES if cites else (),
@@ -2359,7 +2378,12 @@ CASES: tuple[Case, ...] = (
         cites=True,
     ),
     _web("fx-now", "look up the USD to SGD rate on the market right now", "sgd", cites=True),
-    _web("phone-price", "how much is the iPhone 17 Pro in Singapore right now?", "iphone"),
+    _web(
+        "phone-price",
+        "how much is the iPhone 17 Pro in Singapore right now?",
+        "iphone",
+        tool="product_prices",
+    ),
     _web("mrt-status", "any MRT delays or breakdowns right now?", "mrt", cites=True),
     _web("shop-hours", "what time does Mustafa Centre close today?", "mustafa"),
     _web("f1-winner", "who won the F1 race last weekend?", "f1", cites=True),
@@ -2384,13 +2408,68 @@ CASES: tuple[Case, ...] = (
         "where's the cheapest place to buy a Nintendo Switch 2 in Singapore?",
         "switch",
         cites=True,
-        searches=3,
+        searches=2,
+        tool="product_prices",
     ),
     _web("sunset", "what time is sunset in Singapore today?", "sunset"),
     _web("psi-now", "how bad is the haze in Singapore right now? what's the PSI?", "psi"),
     _web("galaxy-launch", "when is the next Samsung Galaxy phone launching?", "galaxy"),
     _web("sora-rate", "what's the SORA rate today?", "sora", cites=True),
     _web("causeway-jam", "is the Causeway jammed right now?", "causeway"),
+    # --- live fares, product prices and flight status (canned: see ``prices``) -----------
+    Case(
+        "serp-flight-price",
+        "serp",
+        _t("how much is a flight from Singapore to Bangkok on 10 Dec, back on 17 Dec?"),
+        calls=(Call("flight_prices", {"outbound_date": "2026-12-10"}),),
+        at_most=(AtMost("flight_prices", 2),),
+        forbid=(*_OFF_WEB, "web_search"),
+        unchanged=True,
+        reply=(("150", "180", "260"),),
+        never_match=_NOT_BOOKED,
+        source_buttons=True,
+    ),
+    Case(
+        "serp-flight-cheapest-day",
+        "serp",
+        _t("what's the cheapest day to fly to Bangkok in December?"),
+        calls=(Call("flight_prices", {"cheapest_from": Has("2026-12")}),),
+        at_most=(AtMost("flight_prices", 2),),
+        forbid=(*_OFF_WEB, "web_search"),
+        unchanged=True,
+        never_match=_NOT_BOOKED,
+    ),
+    Case(
+        "serp-product-price",
+        "serp",
+        _t("cheapest Switch 2 in Singapore"),
+        calls=(Call("product_prices", {"query": Has("switch")}),),
+        at_most=(AtMost("product_prices", 2),),
+        forbid=(*_OFF_WEB, "web_search"),
+        unchanged=True,
+        reply=(("499", "519", "529"),),
+        source_buttons=True,
+    ),
+    Case(
+        "serp-flight-status",
+        "serp",
+        _t("is SQ12 on time"),
+        calls=(Call("flight_status", {"flight": Has("12")}),),
+        at_most=(AtMost("flight_status", 2),),
+        forbid=(*_OFF_WEB, "web_search"),
+        unchanged=True,
+    ),
+    Case(
+        "serp-no-booking",
+        "serp",
+        _t("book me a flight to Bangkok"),
+        forbid=(*_OFF_WEB, "web_search"),
+        unchanged=True,
+        reply=(
+            ("can't", "cannot", "unable", "don't", "do not", "not able", "won't", "can\u2019t"),
+        ),
+        never_match=_NOT_BOOKED,
+    ),
     # Nothing here needs the web.
     _no_web("percent", "what's 18% of 2350", reply=("423",)),
     _no_web("capital", "what's the capital of australia", reply=("canberra",)),
