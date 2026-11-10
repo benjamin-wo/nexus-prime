@@ -1,6 +1,7 @@
 """Card details and picking the card someone means: pure rules, no database. Every name and
 digit is made up."""
 
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -75,3 +76,13 @@ def test_a_card_is_found_by_name_issuer_product_or_last_four_and_only_if_unique(
     assert pick("amex") == [] and pick("my card") == [] and pick("") == []
     assert pick("savings") == []  # a savings wallet can't pay
     assert pick("citi 9999") == []
+
+
+@pytest.mark.parametrize(
+    "text", ["*" * 20_000 + "a", "x" * 20_000 + "!", "•" * 20_000, "** " * 5_000]
+)
+def test_a_long_divider_line_is_read_at_once(text: str) -> None:
+    # A row of stars in an email once backtracked for hours and froze the app.
+    started = time.perf_counter()
+    assert card_last4_in(text) is None
+    assert time.perf_counter() - started < 2
