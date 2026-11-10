@@ -36,10 +36,12 @@ from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import LlmTripReader
 from nexus.application.fx import Rate
 from nexus.application.ports import SpeechToText, UnitOfWork
+from nexus.application.web_lookup import WebLooker
 from nexus.domain.ledger import User
 from nexus.evals import clips, photos, seed
 from nexus.evals.cases import WRITES, Call, Case, Has, Turn
 from nexus.evals.checks import World
+from nexus.evals.web import CannedLookup
 from nexus.infra.db import tables
 from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.llm.factory import text_of
@@ -167,6 +169,7 @@ class Agent:
         vision: BaseChatModel | None = None,
         memory: BaseChatModel | None = None,
         speech: SpeechToText | None = None,
+        lookup: WebLooker | None = None,
     ) -> None:
         self.engine = engine
         self.model = model
@@ -175,6 +178,8 @@ class Agent:
         self.photo_cache = photo_cache
         # Voice clips are heard by this (the real speech model); None: no voice cases.
         self.speech = speech
+        # Web search: a canned answer unless given the real one (``--live-web``).
+        self.lookup: WebLooker = lookup or CannedLookup()
         # Receipt photos: a separate model if given, like OPENROUTER_VISION_MODEL.
         # If the photo can't be read at all, the main model reads the first look's text.
         self.receipts = LlmReceiptReader(vision or model)
@@ -208,6 +213,7 @@ class Agent:
                 clock=lambda: self.now,
                 rates=FixedRates(),
                 zones=Zones(),
+                lookup=self.lookup,
             )
         )
         self.graph = built.compile(InMemorySaver())
@@ -441,10 +447,11 @@ async def run_case(
     vision: BaseChatModel | None = None,
     memory: BaseChatModel | None = None,
     speech: SpeechToText | None = None,
+    lookup: WebLooker | None = None,
 ) -> CaseResult:
     seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared)
     user = seeded.user
-    agent = Agent(engine, model, photo_cache, vision, memory, speech)
+    agent = Agent(engine, model, photo_cache, vision, memory, speech, lookup)
     world = World(
         agent.uow,
         user,
@@ -475,10 +482,12 @@ async def run_cases(
     memory: BaseChatModel | None = None,
     speech: SpeechToText | None = None,
     repeat: int = 1,
+    lookup: WebLooker | None = None,
 ) -> list[CaseResult]:
     """Run the cases, a few at a time, each as its own user. With ``repeat`` above 1 every
     case runs that many times (rounds), each time as a fresh user; results come back
-    round by round, in the order of ``cases``."""
+    round by round, in the order of ``cases``. ``lookup`` is the web search every case
+    shares; without it each case gets its own canned one."""
     gate = asyncio.Semaphore(concurrency)
 
     async def one(n: int, case: Case, round_no: int) -> CaseResult:
@@ -491,6 +500,7 @@ async def run_cases(
                 vision=vision,
                 memory=memory,
                 speech=speech,
+                lookup=lookup,
             )
         result.round_no = round_no
         if on_result:

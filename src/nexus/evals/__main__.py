@@ -10,6 +10,10 @@ never printed. Every case uses made-up data only.
 
     python -m nexus.evals ... --repeat 3            # every case 3 times: pass rates, flaky cases
     python -m nexus.evals compare main.json branch.json   # two result files, side by side
+
+Web search (the web_search tool) is canned by default: offline, free, the same every time.
+
+    python -m nexus.evals ... --area web --live-web   # the real web; needs TAVILY_API_KEY
 """
 
 import argparse
@@ -19,7 +23,7 @@ import os
 import sys
 import uuid
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -34,6 +38,7 @@ from sqlalchemy.engine import make_url
 
 from nexus.evals.cases import CASES, Case
 from nexus.evals.compare import main as compare_main
+from nexus.evals.live_web import live_lookup, live_settings
 from nexus.evals.runner import CaseResult, Pricing, Summary, run_cases
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import alembic_config
@@ -215,6 +220,14 @@ async def main(argv: list[str] | None = None) -> int:
         default="default",
         help="the main model's reasoning, as CHAT_REASONING (default: the model's own)",
     )
+    parser.add_argument(
+        "--live-web",
+        action="store_true",
+        help="search the real web, as the app does (needs TAVILY_API_KEY; about one search "
+        "credit per web case, counted from zero each run). The eval clock stays at "
+        "28 September 2026 while the web is today's, so answers about 'today' are about "
+        "the real day. Default: a canned answer citing one made-up page",
+    )
     args = parser.parse_args(argv)
     reasoning = REASONING[args.reasoning]
 
@@ -222,6 +235,7 @@ async def main(argv: list[str] | None = None) -> int:
     admin_url = os.environ.get("EVAL_DATABASE_URL") or os.environ.get("TEST_DATABASE_URL")
     if not api_key:
         sys.exit("OPENROUTER_API_KEY is not set")
+    live = live_settings(api_key, args.model[0]) if args.live_web else None
     if not admin_url:
         sys.exit("EVAL_DATABASE_URL is not set")
 
@@ -240,10 +254,11 @@ async def main(argv: list[str] | None = None) -> int:
         or DEFAULT_STT_FALLBACK_MODEL,
     )  # fmt: skip
 
-    async with throwaway_database(admin_url) as url:
+    async with AsyncExitStack() as stack, throwaway_database(admin_url) as url:
         await asyncio.to_thread(_migrate, url)
         engine = make_engine(url)
         try:
+            lookup = await live_lookup(live, engine, stack) if live is not None else None
             for offset, name in enumerate(args.model):
                 providers = [p.strip() for p in args.providers.split(",") if p.strip()]
                 model = openrouter_model(
@@ -271,6 +286,7 @@ async def main(argv: list[str] | None = None) -> int:
                     else None,
                     speech=stt,
                     repeat=args.repeat,
+                    lookup=lookup,
                 )
                 print(flush=True)
                 label = name

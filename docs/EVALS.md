@@ -29,6 +29,21 @@ It prints each case's pass rate in both, side by side, and flags the cases whose
 
 **Use:** run the areas a change touches with `--repeat 3`, and before calling a failure a regression, run main the same way and compare. A case that is flaky or always failing on main is not the branch's doing; a case that falls by 2 or more out of 3 or 4 is.
 
+## Web search in evals
+
+The `web_search` tool works in evals. By default it is **canned**: offline, free and the same every time. Every question gets one short made-up answer that cites a single made-up page (`news.example.com`, dated the eval clock's day) with `[1]`, and `CannedLookup` (`src/nexus/evals/web.py`) remembers each question asked. The `web` area (`--area web`) has 20 cases that need a search (weather, news, exchange rate, prices, MRT status, opening hours, F1, COE, gold, events, visa rules, Changi T5, savings rates, console prices, sunset, PSI, a phone launch, SORA, the Causeway) and 3 that must not search (a percentage, a capital city, compound interest). Each searching case wants a `web_search` call with a key word in the question, at most 2 searches, and no change to the user's data or trips. Some also want the reply to name the source ("Example" or "source"); that check only makes sense with the canned answer.
+
+```
+python -m nexus.evals --model deepseek/deepseek-v4.1-flash --area web
+python -m nexus.evals --model deepseek/deepseek-v4.1-flash --area web --live-web
+```
+
+`--live-web` searches the real web instead, built exactly as the app builds it (`build_web` and `web_lookup` in `nexus.main`): Tavily's pages read by the travel research model. It needs `TAVILY_API_KEY` (and uses `TAVILY_MONTHLY_CREDITS` and `TRAVEL_RESEARCH_MODEL` if set, else the first `--model` writes the answers); without a Tavily key the run stops at once with an error. Things to know:
+
+- **Cost:** about one Tavily credit per web case (two for a search with a local-language twin), plus the answer-writing model's tokens. A whole `web` area run is roughly 20 credits.
+- **Clock:** the eval clock is fixed at 28 September 2026 but a live search sees today's web, so "today", "this weekend" and "latest" answers describe the real day, and the agent may remark on dates that don't match. Judge a live run mainly by the tool calls; the source checks accept a link, "source" or "according to", so they hold on real pages.
+- **Credits:** they are counted in the throwaway eval database, so the monthly cap does not carry across runs.
+
 ## M8a baseline (30 September 2026)
 
 ### First set: 103 cases

@@ -200,6 +200,47 @@ _ASKS_JUMBO_AMOUNT = (
 
 _HEARD = (f"{HEARD_MARK} heard:",)
 
+# Web search cases: no logging, no trips. A reply that says where the answer came from
+# names the page (the canned lookup's is Example Daily, see ``web``), links it, or says
+# "source" or "according to", so the check holds for real pages in ``--live-web`` too.
+_OFF_WEB = (
+    "log_expense",
+    "record_income",
+    "create_trip",
+    "research_trip",
+    "find_ideas",
+    "find_places",
+    "add_to_itinerary",
+)
+_CITES = (("example", "source", "http", "according to"),)
+
+
+def _web(case_id: str, text: str, word: str, *, cites: bool = False) -> Case:
+    """A question only the web can answer: one search (two at most) with ``word`` in it."""
+    return Case(
+        f"web-{case_id}",
+        "web",
+        _t(text),
+        calls=(Call("web_search", {"question": Has(word)}),),
+        at_most=(AtMost("web_search", 2),),
+        forbid=_OFF_WEB,
+        unchanged=True,
+        reply=_CITES if cites else (),
+    )
+
+
+def _no_web(case_id: str, text: str, *, reply: tuple[str, ...] = ()) -> Case:
+    """A question the assistant answers itself: no search."""
+    return Case(
+        f"web-skip-{case_id}",
+        "web",
+        _t(text),
+        forbid=("web_search",),
+        unchanged=True,
+        reply=reply,
+    )
+
+
 CASES: tuple[Case, ...] = (
     # --- logging an expense -----------------------------------------------------------
     Case("log-grab", "log", _t("grab 12"), checks=(Logged("12", "grab", "Transport", day=TODAY),)),
@@ -2296,4 +2337,44 @@ CASES: tuple[Case, ...] = (
         reply=(seed.SEPT_GRAB,),
         never_match=(r"heard:",),
     ),
+    # --- web search: the web_search tool (canned answers unless --live-web) -------------
+    _web("weather-today", "what's the weather in Singapore today?", "weather", cites=True),
+    _web("weather-tomorrow", "what will the weather be like in Singapore tomorrow?", "weather"),
+    _web(
+        "news-topic",
+        "what's the latest news on the Singapore property cooling measures?",
+        "cooling",
+        cites=True,
+    ),
+    _web("fx-now", "look up the USD to SGD rate on the market right now", "sgd", cites=True),
+    _web("phone-price", "how much is the iPhone 17 Pro in Singapore right now?", "iphone"),
+    _web("mrt-status", "any MRT delays or breakdowns right now?", "mrt", cites=True),
+    _web("shop-hours", "what time does Mustafa Centre close today?", "mustafa"),
+    _web("f1-winner", "who won the F1 race last weekend?", "f1", cites=True),
+    _web("coe-result", "what were the results of the latest COE bidding?", "coe"),
+    _web("gold-price", "what's the gold price today?", "gold", cites=True),
+    _web("events-weekend", "any events in Singapore this weekend?", "event"),
+    _web(
+        "visa-japan",
+        "do Singaporeans need a visa for Japan? what are the current rules?",
+        "japan",
+        cites=True,
+    ),
+    _web("changi-t5", "what's the latest on Changi Terminal 5?", "changi"),
+    _web("savings-rates", "which banks have the best high-yield savings accounts now?", "savings"),
+    _web(
+        "console-price",
+        "where's the cheapest place to buy a Nintendo Switch 2 in Singapore?",
+        "switch",
+        cites=True,
+    ),
+    _web("sunset", "what time is sunset in Singapore today?", "sunset"),
+    _web("psi-now", "how bad is the haze in Singapore right now? what's the PSI?", "psi"),
+    _web("galaxy-launch", "when is the next Samsung Galaxy phone launching?", "galaxy"),
+    _web("sora-rate", "what's the SORA rate today?", "sora", cites=True),
+    _web("causeway-jam", "is the Causeway jammed right now?", "causeway"),
+    # Nothing here needs the web.
+    _no_web("percent", "what's 18% of 2350", reply=("423",)),
+    _no_web("capital", "what's the capital of australia", reply=("canberra",)),
+    _no_web("compound-interest", "explain compound interest"),
 )
