@@ -429,7 +429,8 @@ test("bulk delete asks first and can be undone", async ({ page }, info) => {
   await page.getByRole("checkbox", { name: /Select Grab/ }).check();
   await page.getByRole("button", { name: "Delete selected" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText(
+  // The page also has pull-to-refresh's (empty) status line: find the toast by its words.
+  await expect(page.getByRole("status").filter({ hasText: "Deleted" })).toContainText(
     "Deleted 1 transaction.",
   );
   await expect(page.getByRole("button", { name: "Grab" })).toBeHidden();
