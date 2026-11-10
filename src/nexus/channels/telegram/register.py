@@ -1,13 +1,12 @@
 """python -m nexus.channels.telegram.register [--url URL] [--yes]
 
-Point the bot at a webhook URL. By default: this service's public domain
-(RAILWAY_PUBLIC_DOMAIN) + /telegram/webhook. It prints the current webhook first;
+Point the bot at a webhook URL. By default: the app's public address (WEB_ORIGIN, else
+RAILWAY_PUBLIC_DOMAIN) + /telegram/webhook. It prints the current webhook first;
 running it again with --url set to the old address is the rollback.
 """
 
 import argparse
 import asyncio
-import os
 import sys
 
 import httpx
@@ -16,14 +15,14 @@ from nexus.channels.telegram.client import HttpTelegramClient
 from nexus.settings import Settings
 
 
-def default_url() -> str | None:
-    domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
-    return f"https://{domain}/telegram/webhook" if domain else None
+def default_url(settings: Settings) -> str | None:
+    origin = settings.public_origin
+    return f"{origin}/telegram/webhook" if origin else None
 
 
 async def main(argv: list[str], http: httpx.AsyncClient | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m nexus.channels.telegram.register")
-    parser.add_argument("--url", help="webhook URL (default: this service's public domain)")
+    parser.add_argument("--url", help="webhook URL (default: WEB_ORIGIN or the Railway domain)")
     parser.add_argument("--yes", action="store_true", help="change it (default: only show)")
     args = parser.parse_args(argv)
 
@@ -31,9 +30,9 @@ async def main(argv: list[str], http: httpx.AsyncClient | None = None) -> int:
     if settings.telegram_bot_token is None or settings.telegram_webhook_secret is None:
         print("TELEGRAM_BOT_TOKEN and TELEGRAM_WEBHOOK_SECRET must be set", file=sys.stderr)
         return 2
-    url = args.url or default_url()
+    url = args.url or default_url(settings)
     if not url or not url.startswith("https://"):
-        print("need an https:// --url (RAILWAY_PUBLIC_DOMAIN is not set)", file=sys.stderr)
+        print("need an https:// --url (WEB_ORIGIN is not set)", file=sys.stderr)
         return 2
 
     async with http or httpx.AsyncClient() as client_http:

@@ -13,6 +13,7 @@ def env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "shh")
     monkeypatch.setenv("ADMIN_TELEGRAM_CHAT_ID", "1")
     monkeypatch.setenv("RAILWAY_PUBLIC_DOMAIN", "nexus.example.app")
+    monkeypatch.delenv("WEB_ORIGIN", raising=False)
 
 
 def fake_api(calls: list[tuple[str, dict[str, object]]]) -> httpx.AsyncClient:
@@ -59,3 +60,13 @@ async def test_rollback_and_https_only() -> None:
     assert await register.main(["--yes", "--url", old], fake_api(calls)) == 0
     assert calls[1][1]["url"] == old
     assert await register.main(["--url", "http://insecure"], fake_api([])) == 2
+
+
+async def test_web_origin_is_the_default_off_railway(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("RAILWAY_PUBLIC_DOMAIN")
+    monkeypatch.setenv("WEB_ORIGIN", "https://kaya.example.app/")
+    calls: list[tuple[str, dict[str, object]]] = []
+    assert await register.main([], fake_api(calls)) == 0
+    assert "would set: https://kaya.example.app/telegram/webhook" in capsys.readouterr().out

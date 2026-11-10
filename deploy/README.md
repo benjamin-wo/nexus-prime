@@ -49,7 +49,7 @@ To start without Railway data instead, run `docker compose up -d --build`.
 
 ## 4. Point Telegram and Google at the new address
 
-- **Telegram webhook:** this points it at `WEB_ORIGIN`. Run it without `--yes` first to see the change.
+- **Telegram webhook:** this points it at `https://<site>/telegram/webhook` (from `WEB_ORIGIN`). Run it without `--yes` first to see the change.
 
   ```sh
   docker compose exec app python -m nexus.channels.telegram.register --yes
