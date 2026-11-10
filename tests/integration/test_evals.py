@@ -4,7 +4,7 @@ real models are scored on demand with ``python -m nexus.evals``)."""
 
 import re
 from collections.abc import Callable
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
@@ -500,3 +500,35 @@ async def test_web_search_works_in_the_evals_with_a_canned_or_given_lookup(
     given = CannedLookup()
     await run_cases(engine, script, _only(*ids), lookup=given, first_telegram_id=910_000)
     assert given.questions == ["gold price today Singapore"]
+
+
+async def test_only_the_web_cases_run_on_the_clock_a_live_run_gives(engine: AsyncEngine) -> None:
+    ids = ("web-gold-price", "log-grab")
+    models: dict[str, BaseChatModel] = {}
+
+    def script(case: Case) -> BaseChatModel:
+        nothing = (say("Nothing to remember."),) * 2
+        steps = {
+            "web-gold-price": (
+                call("web_search", question="gold price today Singapore"),
+                say("Gold is moving, per Example Daily."),
+            ),
+            "log-grab": (call("log_expense", amount="12", merchant="Grab"), say("Logged.")),
+        }
+        models[case.id] = scripted(*steps[case.id], *nothing)
+        return models[case.id]
+
+    real = datetime(2027, 3, 4, 6, 30, tzinfo=UTC)  # a Thursday, in Singapore's 14:30
+    results = await run_cases(engine, script, _only(*ids), now=real, concurrency=2)
+    assert [r.passed for r in results] == [True, True], [r.failures for r in results]
+
+    def clock(case_id: str) -> str:
+        seen = models[case_id].seen[0]  # type: ignore[attr-defined]
+        now = next(m for m in seen if "Now:" in str(m.content)).content.split("Now: ")[1]
+        return " ".join(now.split()[:2])
+
+    assert clock("web-gold-price") == "Thursday 2027-03-04"
+    assert clock("log-grab") == "Monday 2026-09-28"
+    # And the pages the canned lookup cites reach the reply as source buttons.
+    web = next(r for r in results if r.case.id == "web-gold-price")
+    assert web.turns[0].source_links == ["https://news.example.com/kaya-evals/latest"]

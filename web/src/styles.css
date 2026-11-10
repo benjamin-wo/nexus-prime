@@ -437,6 +437,17 @@ table.ledger { width: 100%; border-collapse: collapse; }
 }
 @media (prefers-reduced-motion: reduce) { .typing-dots span { animation: none; opacity: 0.6; } }
 .msg .choices { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+/* Where a web answer came from: light link chips, not buttons. The ::after is a bigger tap target
+   (40px) around the 32px chip. */
+.msg .msg-sources { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0 0; padding: 0; white-space: normal; }
+.src-chip {
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-height: 32px;
+  padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border-card); background: var(--bg-card-hover);
+  color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.2; text-decoration: none;
+  white-space: nowrap; transition: background var(--t-micro), border-color var(--t-micro), color var(--t-micro);
+}
+.src-chip::after { content: ""; position: absolute; inset: -4px 0; }
+.src-chip:hover { border-color: var(--accent-border); color: var(--accent-text); }
 .toast {
   position: fixed; left: 50%; bottom: var(--space-6); transform: translateX(-50%); z-index: 40;
   width: max-content; max-width: calc(100vw - 32px);

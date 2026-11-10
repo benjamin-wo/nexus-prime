@@ -3,7 +3,9 @@ from typing import Any, Protocol
 import httpx
 
 from nexus.agent.service import Button
+from nexus.domain.source_links import PREFIX as SOURCE
 
+LINK = "url:"
 MAX_TEXT = 4096
 MAX_DOWNLOAD = 10 * 1024 * 1024
 
@@ -37,9 +39,11 @@ class TelegramClient(Protocol):
 
 
 def _button(button: Button) -> dict[str, str]:
-    """``url:`` buttons open a link (in the phone's browser); the rest call back."""
-    if button.data.startswith("url:"):
-        return {"text": button.label, "url": button.data.removeprefix("url:")}
+    """``url:`` and ``src:`` (a web answer's source) buttons open a link (in the phone's
+    browser); the rest call back."""
+    for prefix in (LINK, SOURCE):
+        if button.data.startswith(prefix):
+            return {"text": button.label, "url": button.data.removeprefix(prefix)}
     return {"text": button.label, "callback_data": button.data}
 
 

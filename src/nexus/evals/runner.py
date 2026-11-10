@@ -15,6 +15,7 @@ import unicodedata
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, ClassVar
@@ -38,8 +39,9 @@ from nexus.application.fx import Rate
 from nexus.application.ports import SpeechToText, UnitOfWork
 from nexus.application.web_lookup import WebLooker
 from nexus.domain.ledger import User
+from nexus.domain.source_links import PREFIX as SOURCE_PREFIX
 from nexus.evals import clips, photos, seed
-from nexus.evals.cases import WRITES, Call, Case, Has, Turn
+from nexus.evals.cases import WRITES, Call, Case, Has, Turn, searches_web
 from nexus.evals.checks import World
 from nexus.evals.web import CannedLookup
 from nexus.infra.db import tables
@@ -100,6 +102,7 @@ class FixedRates:
 class TurnLog:
     text: str
     replies: list[str] = field(default_factory=list)
+    buttons: list[str] = field(default_factory=list)  # the data of the last reply's buttons
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     confirmations: int = 0
     seconds: float = 0.0
@@ -115,6 +118,11 @@ class TurnLog:
     @property
     def last_reply(self) -> str:
         return self.replies[-1] if self.replies else ""
+
+    @property
+    def source_links(self) -> list[str]:
+        """The pages the last reply links to, as web answers do (``src:`` buttons)."""
+        return [b.removeprefix(SOURCE_PREFIX) for b in self.buttons if b.startswith(SOURCE_PREFIX)]
 
 
 @dataclass
@@ -170,6 +178,7 @@ class Agent:
         memory: BaseChatModel | None = None,
         speech: SpeechToText | None = None,
         lookup: WebLooker | None = None,
+        now: datetime = seed.NOW,
     ) -> None:
         self.engine = engine
         self.model = model
@@ -189,7 +198,9 @@ class Agent:
         # The first look at each image: the main model without reasoning, with the
         # photo model as its fallback, as in production.
         self.looker = LlmImageLooker(quick(model), quick(vision) if vision else None)
-        self.now = seed.NOW  # the clock; a turn may move it on (``Turn.later``)
+        # The clock; a turn may move it on (``Turn.later``). The seeded data and the
+        # grading are dated by ``seed.NOW``; only a live web search is run on the real time.
+        self.now = now
         self.skills = SkillLibrary.load()
         self.tools = build_tools(self.skills.body)
         self.new_conversation()
@@ -284,6 +295,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
         log.memory_input_tokens += agent.memory.input_tokens - before_tokens[0]
         log.memory_output_tokens += agent.memory.output_tokens - before_tokens[1]
     log.replies = [r.text for r in all_replies]
+    log.buttons = [b.data for row in (all_replies[-1].buttons if all_replies else []) for b in row]
     log.model_down = any(r.text.startswith(MODEL_DOWN) for r in all_replies)
     for message in [m for m in await agent.messages(user) if m.id not in before]:
         if not isinstance(message, AIMessage) or message.additional_kwargs.get(KERNEL):
@@ -402,6 +414,8 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
     for wanted in case.reply:
         if not _in_reply(last.last_reply, wanted):
             failures.append(f"reply lacks {wanted!r}")
+    if case.source_buttons and not last.source_links:
+        failures.append("reply has no source link buttons")
     for phrase in case.never_say:
         if any(phrase.casefold() in r.casefold() for t in turns for r in t.replies):
             failures.append(f"said {phrase!r}")
@@ -448,10 +462,11 @@ async def run_case(
     memory: BaseChatModel | None = None,
     speech: SpeechToText | None = None,
     lookup: WebLooker | None = None,
+    now: datetime = seed.NOW,
 ) -> CaseResult:
     seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared)
     user = seeded.user
-    agent = Agent(engine, model, photo_cache, vision, memory, speech, lookup)
+    agent = Agent(engine, model, photo_cache, vision, memory, speech, lookup, now)
     world = World(
         agent.uow,
         user,
@@ -483,11 +498,14 @@ async def run_cases(
     speech: SpeechToText | None = None,
     repeat: int = 1,
     lookup: WebLooker | None = None,
+    now: datetime | None = None,
 ) -> list[CaseResult]:
     """Run the cases, a few at a time, each as its own user. With ``repeat`` above 1 every
     case runs that many times (rounds), each time as a fresh user; results come back
     round by round, in the order of ``cases``. ``lookup`` is the web search every case
-    shares; without it each case gets its own canned one."""
+    shares; without it each case gets its own canned one. ``now`` is the clock of the
+    cases that search the web (a live run gives the real time, so "today" is the day
+    the web is on); every other case, and every case without it, is on ``seed.NOW``."""
     gate = asyncio.Semaphore(concurrency)
 
     async def one(n: int, case: Case, round_no: int) -> CaseResult:
@@ -501,6 +519,7 @@ async def run_cases(
                 memory=memory,
                 speech=speech,
                 lookup=lookup,
+                now=now if now is not None and searches_web(case) else seed.NOW,
             )
         result.round_no = round_no
         if on_result:

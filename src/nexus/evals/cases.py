@@ -142,10 +142,17 @@ class Case:
     never_match: tuple[str, ...] = ()  # regexes (any case) that match no reply at all
     last_never_match: tuple[str, ...] = ()  # regexes (any case) the last turn's replies avoid
     at_most: tuple[AtMost, ...] = ()  # caps on tool calls in the last turn
+    # The last reply has the source links of a web answer (``src:`` buttons).
+    source_buttons: bool = False
     checks: tuple[Check, ...] = ()
     target: str | None = None  # the M8 part expected to make this pass
     # The user is a member of Alex's Japan trip (not its owner): see ``seed.seed_user``.
     shared: bool = False
+
+
+def searches_web(case: Case) -> bool:
+    """Whether the case is about the web: a web case, or one that wants a web_search."""
+    return case.area == "web" or any(c.tool == "web_search" for c in case.calls)
 
 
 def _t(*texts: str | Turn) -> tuple[Turn, ...]:
@@ -212,20 +219,25 @@ _OFF_WEB = (
     "find_places",
     "add_to_itinerary",
 )
-_CITES = (("example", "source", "http", "according to"),)
+# A web answer names where it came from, in the words a model likes: "per HardwareZone",
+# "according to", "the source", or a link. Loose on purpose: the links themselves come as
+# buttons (``source_buttons``). "example" is the canned page's name (Example Daily).
+_CITES = (("source", "per ", "according to", "http", "example"),)
 
 
-def _web(case_id: str, text: str, word: str, *, cites: bool = False) -> Case:
-    """A question only the web can answer: one search (two at most) with ``word`` in it."""
+def _web(case_id: str, text: str, word: str, *, cites: bool = False, searches: int = 2) -> Case:
+    """A question only the web can answer: a search with ``word`` in it, ``searches`` at
+    most (a comparison of prices or rates may take a second look, or a third)."""
     return Case(
         f"web-{case_id}",
         "web",
         _t(text),
         calls=(Call("web_search", {"question": Has(word)}),),
-        at_most=(AtMost("web_search", 2),),
+        at_most=(AtMost("web_search", searches),),
         forbid=_OFF_WEB,
         unchanged=True,
         reply=_CITES if cites else (),
+        source_buttons=cites,
     )
 
 
@@ -2361,12 +2373,18 @@ CASES: tuple[Case, ...] = (
         cites=True,
     ),
     _web("changi-t5", "what's the latest on Changi Terminal 5?", "changi"),
-    _web("savings-rates", "which banks have the best high-yield savings accounts now?", "savings"),
+    _web(
+        "savings-rates",
+        "which banks have the best high-yield savings accounts now?",
+        "savings",
+        searches=3,
+    ),
     _web(
         "console-price",
         "where's the cheapest place to buy a Nintendo Switch 2 in Singapore?",
         "switch",
         cites=True,
+        searches=3,
     ),
     _web("sunset", "what time is sunset in Singapore today?", "sunset"),
     _web("psi-now", "how bad is the haze in Singapore right now? what's the PSI?", "psi"),

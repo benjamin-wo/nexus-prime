@@ -91,6 +91,7 @@ from nexus.domain.prep import CoverDraft, CoverKind, clean_cover
 from nexus.domain.rules import clean_pattern
 from nexus.domain.settle import Debt as SettleDebt
 from nexus.domain.settle import PersonBalance, describe_balance
+from nexus.domain.source_links import site_name, source_rows
 from nexus.domain.split_habits import parse_share
 from nexus.domain.travel_research import published_note
 from nexus.domain.trip_access import clean_name, without_money
@@ -3408,9 +3409,11 @@ async def _web_search(ctx: ToolContext, a: WebSearchArgs) -> ToolResult:
                 if s.published
                 else ""
             )
-            lines.append(f"[{s.id}] {s.title}{when}: {s.url}")
+            lines.append(f"[{s.id}] {s.title} ({site_name(s.url, s.title)}){when}")
     lines.append(
-        "Answer in your own words and say where it came from; web pages can be out of date."
+        "Answer in your own words and name the source briefly, with its date when it "
+        "matters ('per HardwareZone, 11 May'). No web addresses: the links show as buttons "
+        "under your reply. Web pages can be out of date."
     )
     if a.recent:
         window = _WINDOW[a.recent]
@@ -3424,7 +3427,9 @@ async def _web_search(ctx: ToolContext, a: WebSearchArgs) -> ToolResult:
                 "Say when the sources were published; anything older than the period asked "
                 "about, or with no date, isn't current."
             )
-    return ToolResult("\n".join(lines))
+    return ToolResult(
+        "\n".join(lines), buttons=source_rows((s.url, s.title) for s in found.sources) or None
+    )
 
 
 class PlaceInfoArgs(TripNameArgs):
@@ -4643,12 +4648,13 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "web_search",
             "Look something up on the web: current facts the app doesn't hold, such as a "
             "fee, a rule, an opening date or news. Answers in a few sentences with its "
-            "sources, in about 10 seconds. For anything happening now (a protest, strike, "
-            "disruption, closure, weather warning, event tonight) set recent='today' (or "
-            "'week') to search the latest news with each source's publication time, name "
-            "the city or area in the question and give local_query: the same question in "
-            "the local language of where the user is. Not for the user's own money, trips "
-            "or stocks: use their own tools.",
+            "sources, in about 10 seconds; their links show as buttons under your reply, so "
+            "name the source in words and paste no address. For anything happening now (a "
+            "protest, strike, disruption, closure, weather warning, event tonight) set "
+            "recent='today' (or 'week') to search the latest news with each source's "
+            "publication time, name the city or area in the question and give local_query: "
+            "the same question in the local language of where the user is. Not for the "
+            "user's own money, trips or stocks: use their own tools.",
             WebSearchArgs,
             _web_search,
         ),

@@ -51,6 +51,39 @@ const SUGGESTIONS = [
 // After this long, the typing bubble also says it's still going.
 const STILL_WORKING_MS = 10_000;
 
+type Button = { label: string; data: string };
+const isSource = (b: Button) => b.data.startsWith("src:");
+
+/** The pages a web answer came from (`src:<https url>`): small link chips under the reply,
+ * not big buttons. The label ends in an arrow; the chip draws its own, hidden from readers. */
+function Sources({ buttons }: { buttons: Button[] }) {
+  const sources = buttons.filter((b) => isSource(b) && b.data.startsWith("src:https://"));
+  if (sources.length === 0) return null;
+  return (
+    <div className="msg-sources" role="group" aria-label="Sources">
+      {sources.map((b) => {
+        const url = b.data.slice(4);
+        return (
+          <a
+            key={b.data}
+            className="src-chip"
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => {
+              e.preventDefault();
+              openExternal(url);
+            }}
+          >
+            {b.label.replace(/\s*↗$/, "")}
+            <span aria-hidden="true">↗</span>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Kaya's side of the chat while a reply is worked out: three dots, then a word
  * that it's still going, so a slow reply never looks like nothing is happening. */
 function Typing() {
@@ -334,35 +367,40 @@ export function ChatDrawer({
             {m.text}
             {m.telegram && <span className="msg-via">on Telegram</span>}
             {m.buttons.length > 0 && (
-              <div className="choices">
-                {m.buttons.flat().map((b) =>
-                  b.data.startsWith("url:") ? (
-                    <a
-                      key={b.data}
-                      className="btn btn-primary"
-                      href={b.data.slice(4)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        openExternal(b.data.slice(4));
-                      }}
-                    >
-                      {b.label}
-                    </a>
-                  ) : (
-                    <button
-                      key={b.data}
-                      type="button"
-                      className="btn"
-                      disabled={busy}
-                      onClick={() => press(i, b.data, b.label)}
-                    >
-                      {b.label}
-                    </button>
-                  ),
+              <>
+                {m.buttons.flat().some((b) => !isSource(b)) && (
+                <div className="choices">
+                  {m.buttons.flat().filter((b) => !isSource(b)).map((b) =>
+                    b.data.startsWith("url:") ? (
+                      <a
+                        key={b.data}
+                        className="btn btn-primary"
+                        href={b.data.slice(4)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          openExternal(b.data.slice(4));
+                        }}
+                      >
+                        {b.label}
+                      </a>
+                    ) : (
+                      <button
+                        key={b.data}
+                        type="button"
+                        className="btn"
+                        disabled={busy}
+                        onClick={() => press(i, b.data, b.label)}
+                      >
+                        {b.label}
+                      </button>
+                    ),
+                  )}
+                </div>
                 )}
-              </div>
+                <Sources buttons={m.buttons.flat()} />
+              </>
             )}
           </div>
         ))}
