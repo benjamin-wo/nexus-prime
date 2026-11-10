@@ -47,6 +47,32 @@ The script asks for Railway's `DATABASE_PUBLIC_URL`. You'll find it under Railwa
 
 To start without Railway data instead, run `docker compose up -d --build`.
 
+## Catching up after the move (one-off)
+
+Use this if Railway's app kept serving users after the dump in step 3, so some expenses and edits exist only in Railway's database, and users have since written to the new server too. It copies the Railway rows that changed after the dump, and never overwrites a row that also changed here.
+
+1. **Open Railway's database to the internet.** In Railway, open Postgres → **Settings** → **Networking** → **TCP proxy**, and add one. Build the URL from the Variables tab: `postgresql://postgres:<PGPASSWORD>@<host>:<port>/railway`. The host and port are the proxy's; `PGPASSWORD` is Postgres's password. Keep the Railway app stopped.
+2. **Update the app, so its image has the tool.** From `/opt/kaya/deploy`, run `git pull && docker compose up -d --build`.
+3. **Run it.**
+
+   ```sh
+   cd /opt/kaya/deploy && ./catch-up-from-railway.sh
+   ```
+
+   It shows the cutoff (the time of `/root/railway.dump` minus 10 minutes) for you to confirm, then reads the URL silently. It never saves the URL, and the URL never appears in `ps`.
+4. **Read the dry run first.** It prints counts per table (inserted, updated, already identical, conflicts, possibly deleted on Railway), and for each conflict only the table, the primary key and a reason. It never prints row contents and writes nothing.
+5. **Apply.** Type `yes` at the prompt. The script takes a fresh backup first (`/opt/kaya-backups/kaya-<today>.dump`, to roll back to), then writes everything in one transaction, in foreign-key order, and moves the id sequences up.
+6. **Remove the TCP proxy** on Railway's Postgres.
+
+What it does and doesn't do:
+
+- It merges every user-data table. It skips caches, telemetry, public market data, login sessions and links, the job queue and LangGraph checkpoints (the reason for each is in `EXCLUDED_TABLES` in `src/nexus/infra/db/catch_up.py`).
+- A row that changed on both sides after the cutoff is a **conflict**: the new server's version stays, and you sort it out by hand. The same goes for a row that would break a unique key.
+- Rows missing on Railway but present here are only counted ("possibly deleted on Railway"). It never deletes anything.
+- It connects as `postgres` on both sides, which bypasses row-level security. The app's own role would only see one user's rows.
+- It is safe to run again: rows already copied show as identical.
+- To run it by hand, put the Railway URL in `CATCH_UP_SOURCE_URL`, then run `docker compose exec -T -e CATCH_UP_SOURCE_URL app python -m nexus.infra.db.catch_up --since <ISO time with zone> [--apply]`. Without `--apply` it is a dry run.
+
 ## 4. Point Telegram and Google at the new address
 
 - **Telegram webhook:** this points it at `https://<site>/telegram/webhook` (from `WEB_ORIGIN`). Run it without `--yes` first to see the change.
