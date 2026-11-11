@@ -331,7 +331,13 @@ The roadmap at the end turns these into 1–2-day fixes, 1–2-week refactors an
 1. **The Referer fallback prefix-matches the origin** (Low; defence-in-depth). `check_origin` (`security.py:88-95`) accepts `referer[:len(origin)]` when `referer.startswith(origin)`. With `WEB_ORIGIN=https://kaya.app`, a Referer of `https://kaya.app.attacker.net/…` passes. On authenticated routes the CSRF token still blocks the request. On the **pre-session routes that rely on the origin check alone** (Telegram login, `POST /api/demo`, `docs/OPERATIONS.md:723`), the guard is weaker than intended. Exploitability requires a client that omits `Origin`, which is rare in modern browsers. **Fix:**
    ```python
    from urllib.parse import urlsplit
-   def _origin_of(url: str) -> str: p = urlsplit(url); return f"{p.scheme}://{p.netloc}"
+
+
+   def _origin_of(url: str) -> str:
+       p = urlsplit(url)
+       return f"{p.scheme}://{p.netloc}"
+
+
    origin = request.headers.get("origin") or _origin_of(request.headers.get("referer", ""))
    ```
 2. **The LangGraph checkpoint tables have no RLS.** `checkpoints`, `checkpoint_writes` and `checkpoint_blobs` (all chat history) are not RLS-protected (`pg_class.relrowsecurity = false`). Isolation relies on `thread_id(actor)` (`agent/service.py:377`) being correct in application code. The same applies to `jobs` (payloads contain `user_id`) and `ops_events`. This breaks the README's claim that isolation is "enforced by the database itself" (`README.md:68`) for the most sensitive data, the conversations. **Fix:** a generated column `user_id` extracted from `thread_id`, plus a policy. Alternatively, document the explicit exception in `docs/SECURITY.md`.
@@ -372,9 +378,18 @@ The roadmap at the end turns these into 1–2-day fixes, 1–2-week refactors an
 1. **The integration suite's cost grows with every migration.** The `engine` fixture runs `alembic upgrade head` per test (`tests/integration/conftest.py:20-34`), and the throwaway DB is created and dropped per test (`tests/conftest.py:12-41`). I measured 3.7 s for a cold upgrade and about 2.7 s per test overall (131 tests in ~6 min, concurrent with other work), so the 1,463 tests project to about 66 min serial. Every new migration makes every test slower. There is no `pytest-xdist`. **Fix:** migrate once into `nexus_template` per session, then `CREATE DATABASE t_<uuid> TEMPLATE nexus_template` per test (~50–150 ms), and add `-n auto`.
    ```python
    @pytest.fixture(scope="session")
-   async def template_db(server_url): await create_db("nexus_template"); await upgrade(url_for("nexus_template")); yield
+   async def template_db(server_url):
+       await create_db("nexus_template")
+       await upgrade(url_for("nexus_template"))
+       yield
+
+
    @pytest.fixture
-   async def empty_database_url(template_db): name=f"t_{uuid4().hex}"; await exec(f'CREATE DATABASE "{name}" TEMPLATE nexus_template'); yield url_for(name); await drop(name)
+   async def empty_database_url(template_db):
+       name = f"t_{uuid4().hex}"
+       await exec(f'CREATE DATABASE "{name}" TEMPLATE nexus_template')
+       yield url_for(name)
+       await drop(name)
    ```
    The migration-path tests that use `admin_engine` (`tests/integration/conftest.py:37-46`) keep the slow path.
 2. **Vitest spends 41% of its time creating jsdom** (68 environments, as reported by Vitest itself). Set `pool: 'vmThreads'` or `isolate: false` in `web/vite.config.ts:17-21` for an estimated 30–40% faster unit runs.
