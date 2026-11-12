@@ -43,6 +43,11 @@ from nexus.domain.wallets import PAYING_KINDS
 MAX_PAGE = 500
 
 
+class KeyTaken(Exception):
+    """create_transaction found the user's client key already used (a request with it
+    committed in between): nothing was written."""
+
+
 class _Unset(Enum):
     UNSET = "unset"
 
@@ -74,6 +79,9 @@ class NewTransaction:
     # what the user enters themselves (the web form, chat, a photo of a receipt); never for
     # an import, which names its own.
     use_usual_card: bool = False
+    # The client's idempotency key. Only with log_transaction_once, which returns the
+    # transaction already made with this key instead of making another.
+    client_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,8 +151,12 @@ async def create_transaction(
         updated_at=now,
         category_rule_id=rule_id,
         paid_with_wallet_id=paid_with,
+        client_ref=cmd.client_ref,
     )
-    await repo.insert_transaction(tx)
+    if tx.client_ref is None:
+        await repo.insert_transaction(tx)
+    elif not await repo.insert_transaction_once(tx):
+        raise KeyTaken
     if cmd.external_id is not None:
         external_id = clean_name(cmd.external_id, field_name="external id")
         await repo.claim_source(actor, tx.source, external_id, tx.id)
@@ -213,6 +225,33 @@ async def log_transaction(uow: UnitOfWork, actor: UserId, cmd: NewTransaction) -
         tx = await create_transaction(uow.ledger, actor, cmd, now=utcnow())
         await uow.commit()
     return tx
+
+
+async def log_transaction_once(
+    uow: UnitOfWork, actor: UserId, cmd: NewTransaction
+) -> tuple[Transaction, bool]:
+    """Record money in or out, once per ``cmd.client_ref``: with a key the user already used,
+    return that transaction unchanged and False; otherwise make it and return True.
+
+    Two requests with the same key at once make one transaction: the loser's insert waits for
+    the winner's commit, finds the key taken and writes nothing, and its re-read sees the
+    winner's row. Another user's key never matches.
+    """
+    ref = cmd.client_ref
+    async with uow:
+        if ref is not None:
+            before = await uow.ledger.transaction_by_client_ref(actor, ref)
+            if before is not None:
+                return before, False
+        try:
+            tx = await create_transaction(uow.ledger, actor, cmd, now=utcnow())
+        except KeyTaken:
+            won = await uow.ledger.transaction_by_client_ref(actor, ref) if ref else None
+            if won is None:  # not reachable: the key was taken a moment ago
+                raise Conflict("this entry is being saved; try again") from None
+            return won, False
+        await uow.commit()
+    return tx, True
 
 
 async def _live_transaction(repo: LedgerRepository, actor: UserId, tx_id: UUID) -> Transaction:

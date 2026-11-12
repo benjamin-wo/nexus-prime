@@ -18,11 +18,13 @@ import { Icon } from "../components/Icon";
 import { Kaya } from "../components/Kaya";
 import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
+import { PendingEntries } from "../components/PendingEntries";
 import { Sheet } from "../components/Sheet";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
 import { dayHeading, formatDate, formatMoney, isoDay, moveLabel, relativeDay, txName } from "../format";
+import { outboxUser, useOutbox } from "../outbox";
 import { payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const PAGE = 50;
@@ -254,6 +256,15 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const viewLabel = VIEWS.find((v) => v.key === view)?.label ?? "";
   const cardName = paidWith === "none" ? "No card set" : paidWithWallet ? walletLabel(paidWithWallet) : "…";
   const total = page.data?.total;
+  // Expenses saved on this phone with no connection, above the list until they are sent. Only on the first page,
+  // and only while nothing narrows the list but the money in / money out choice.
+  const owner = outboxUser(me);
+  const saved = useOutbox(owner);
+  const plain = !(debounced || start || end || category || paidWith);
+  const pendingHere =
+    offset === 0 && plain && (view === "all" || view === "out" || view === "in")
+      ? saved.filter((e) => view === "all" || (e.body.direction === "in" ? "in" : "out") === view)
+      : [];
   // The list comes newest first (the ledger has no other sort), so a phone groups it under day headings and a
   // wide screen writes "Today" or "Yesterday" in the Date column. Days are the user's own, not the browser's.
   const today = isoDay(new Date().toISOString(), me.user.timezone);
@@ -409,12 +420,14 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           </div>
         )}
 
+        <PendingEntries user={owner} entries={pendingHere} />
+
         {page.isLoading && <p className="state">Loading…</p>}
         {page.isError && <p className="state error-text">Couldn't load transactions.</p>}
         {page.data && items.length === 0 && (
           filtered ? (
             <p className="state">Nothing matches these filters.</p>
-          ) : (
+          ) : pendingHere.length > 0 ? null : (
             <p className="state state-kaya">
               <Kaya size={44} lazy />
               <span>No transactions yet. Just ask Kaya to log one, e.g. "kopi 4.20".</span>
