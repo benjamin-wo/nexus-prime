@@ -1,8 +1,9 @@
 import { QueryClient } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App";
+import { App, retryQuery } from "./App";
+import { ApiError } from "./api";
 
 const member = { user: { telegram_user_id: 2, role: "member", home_currency: "SGD", timezone: "Asia/Singapore" }, csrf_token: "c" };
 
@@ -90,5 +91,36 @@ describe("where pages live now", () => {
     await open("/investment/plans", "Trade plans");
     const tabs = screen.getByRole("navigation", { name: "Investment pages" });
     expect(within(tabs).getByRole("link", { name: "Trade plans" })).toHaveAttribute("aria-current", "page");
+  });
+});
+
+describe("an address that matches no page", () => {
+  it("says so, keeps the shell, and links back to Home", async () => {
+    await open("/no/such/page", "This page doesn't exist");
+    expect(window.location.pathname).toBe("/no/such/page");
+    expect(screen.getByText("It may have moved, or the link is old.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
+  });
+
+  it("leaves for Home by its link", async () => {
+    await open("/nope", "This page doesn't exist");
+    fireEvent.click(screen.getByRole("link", { name: "Back to Home" }));
+    expect(window.location.pathname).toBe("/");
+    expect(screen.queryByRole("heading", { name: "This page doesn't exist" })).toBeNull();
+  });
+});
+
+describe("which failed queries are tried again", () => {
+  it.each([400, 403, 404, 422])("not a %s", (status) => {
+    expect(retryQuery(0, new ApiError(status, "no"))).toBe(false);
+  });
+
+  it("a dropped connection or a server error, twice", () => {
+    for (const error of [new ApiError(0, "offline"), new ApiError(503, "down"), new TypeError("x")]) {
+      expect(retryQuery(0, error)).toBe(true);
+      expect(retryQuery(1, error)).toBe(true);
+      expect(retryQuery(2, error)).toBe(false);
+    }
   });
 });
