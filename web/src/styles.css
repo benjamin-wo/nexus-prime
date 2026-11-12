@@ -1462,7 +1462,35 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 /* Long suggestions wrap inside their pill rather than pushing the card wider on a narrow phone. */
 .ask-panel .ask-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .ask-panel .ask { align-items: center; gap: var(--space-2); padding: 4px 4px 4px var(--space-4); border-radius: 16px; background: var(--bg-input); border: 1px solid var(--border-card); }
-.ask-panel .ask:focus-within { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Focus on the ask box: the same 2px accent ring as the rest of the app, on the pill (the input
+   itself has no outline of its own), so it clears 3:1 against the card and the page. */
+.ask:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ask-panel .ask:focus-within { border-color: var(--accent); }
+/* Home on a phone: the page sits in one flex column (a sticky box only travels inside its parent,
+   and a grid item's parent is just its own row) and the ask box is docked above the bottom bar,
+   sticky at the end of the page: always in view while it scrolls, and in the flow at the very end,
+   so the page's own bottom padding still clears it and the bar. Wider, .home adds no box. */
+.home { display: contents; }
+@media (max-width: 900px) {
+  .home-docked { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+  .home-docked > * { min-width: 0; }
+  .ask-dock {
+    position: sticky; z-index: 10; bottom: var(--bar-h, calc(68px + env(safe-area-inset-bottom)));
+    margin: 0 calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4);
+    background: var(--bg-shell); box-shadow: 0 -10px 16px -14px rgba(27, 35, 51, 0.5);
+  }
+  .ask-dock .ask {
+    align-items: center; gap: 0; height: 48px; padding: 0 0 0 var(--space-4); border-radius: 999px;
+    background: var(--bg-input); border: 2px solid var(--accent);
+  }
+  .ask-dock .ask-input { height: 44px; }
+  .ask-dock .ask-send { border-radius: 999px; }
+  /* Focusing something else on the page scrolls it clear of the dock and the bar. */
+  .main-viewport:has(.ask-dock) { scroll-padding-bottom: calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + 72px); }
+  /* With the keyboard up the bar is hidden (viewport.ts), so the dock drops to the bottom edge. */
+  html.keyboard .ask-dock { bottom: 0; }
+}
+@media (max-width: 720px) { .home-docked { gap: var(--space-4); } }
 .glance { display: grid; gap: var(--space-2); align-content: start; }
 .glance > .meter { margin: var(--space-1) 0; }
 .glance > p { margin: 0; }
