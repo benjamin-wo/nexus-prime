@@ -27,7 +27,9 @@ export CATCH_UP_SOURCE_URL
 
 run() {
   # -e NAME (no value) passes the variable through from this shell, not through argv.
-  docker compose exec -T -e CATCH_UP_SOURCE_URL app python -m nexus.infra.db.catch_up --since "$SINCE" "$@"
+  # </dev/null: otherwise docker reads this script's stdin and swallows the answers to
+  # the prompts after it (a piped "yes" never reached the Apply question).
+  docker compose exec -T -e CATCH_UP_SOURCE_URL app python -m nexus.infra.db.catch_up --since "$SINCE" "$@" </dev/null
 }
 
 echo "==> Dry run (nothing is written)"
