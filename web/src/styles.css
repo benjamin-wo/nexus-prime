@@ -344,20 +344,9 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
   font-size: 1.0625rem; font-weight: 600; color: var(--text-strong); margin-bottom: var(--space-6);
 }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; }
-/* Kaya, the mascot (components/Kaya.tsx): the images are roughly square cut-outs, so they are shown whole. */
-.kaya { display: block; flex: none; object-fit: contain; height: auto; }
-.kaya-hero { justify-self: center; margin: 0 auto; transform-origin: 50% 90%; animation: kaya-wave 1.4s ease-in-out 0.3s 1 both; }
-@keyframes kaya-wave {
-  0% { transform: rotate(0) translateY(0); }
-  20% { transform: rotate(-8deg) translateY(-8px); }
-  40% { transform: rotate(7deg) translateY(0); }
-  60% { transform: rotate(-5deg) translateY(-4px); }
-  80% { transform: rotate(3deg) translateY(0); }
-  100% { transform: rotate(0) translateY(0); }
-}
-.title-kaya { display: inline-flex; align-items: center; gap: var(--space-2); }
-.state-kaya, .budget-first-text { display: flex; align-items: center; gap: var(--space-3); }
-.state-kaya > span, .budget-first-text > span { min-width: 0; }
+.title-mark { display: inline-flex; align-items: center; gap: var(--space-2); }
+.state-mark, .budget-first-text { display: flex; align-items: center; gap: var(--space-3); }
+.state-mark > span, .budget-first-text > span { min-width: 0; }
 .brand-accent { color: var(--accent-text); }
 .nav-link {
   display: flex; align-items: center; min-height: 46px; padding: 0 14px; border-radius: 14px;
@@ -644,14 +633,14 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .msg { padding: var(--space-3); border-radius: 10px; max-width: 90%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg-user { justify-self: end; background: var(--accent-soft); border: 1px solid var(--accent-border); }
 .msg-bot { justify-self: start; position: relative; margin-left: 36px; max-width: calc(90% - 36px); background: var(--bg-card); border: 1px solid var(--border-card); }
-/* Kaya sits beside each of its replies, and bobs while it thinks. */
+/* The Nexus mark sits beside each reply, and bobs while Nexus thinks. */
 .msg-avatar { position: absolute; left: -36px; top: 6px; }
-.typing .msg-avatar { animation: kaya-bob 1.1s ease-in-out infinite; }
-@keyframes kaya-bob {
+.typing .msg-avatar { animation: mark-bob 1.1s ease-in-out infinite; }
+@keyframes mark-bob {
   0%, 100% { transform: translateY(0) rotate(0); }
   50% { transform: translateY(-4px) rotate(-4deg); }
 }
-@media (prefers-reduced-motion: reduce) { .typing .msg-avatar, .kaya-hero { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .typing .msg-avatar { animation: none; } }
 .msg-via { display: block; margin-top: var(--space-1); font-size: 0.8125rem; color: var(--text-muted); }
 .messages .earlier { justify-self: center; }
 .typing { display: flex; align-items: center; gap: var(--space-2); }
@@ -689,7 +678,6 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: var(--space-4); }
 .login .card { width: min(420px, 100%); padding: var(--space-8); display: grid; gap: var(--space-4); text-align: center; }
 .login .landing-cta { min-height: 48px; text-decoration: none; }
-.login .kaya-hero { margin-bottom: calc(-1 * var(--space-2)); }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
@@ -854,7 +842,7 @@ a.btn { text-decoration: none; }
   .cal-bar { flex-basis: 12px; }
 }
 
-/* What Kaya remembers (Settings) */
+/* What Nexus remembers (Settings) */
 .memory-group + .memory-group { margin-top: 12px; }
 .memory-group h3 { margin: 0 0 4px; }
 .memory-list { list-style: none; margin: 0; padding: 0; }
@@ -1747,7 +1735,7 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .block-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 34px; padding: 0 var(--space-1); }
 .block-head h2 { font-size: 1.0625rem; }
 
-/* Kaya: in the rail on a wide screen, in the middle of the bar on a phone. */
+/* The Nexus button: in the rail on a wide screen, in the middle of the bar on a phone. */
 .nexus-button {
   border: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--on-accent);
   background: linear-gradient(180deg, var(--nexus-from) 0%, var(--nexus-to) 100%); box-shadow: 0 8px 20px -8px rgba(var(--accent-rgb), 0.7);
@@ -1756,7 +1744,6 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .nexus-button:active { transform: scale(0.96); }
 .nexus-button.in-rail { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: var(--space-3); padding: 0 var(--space-4); border-radius: 14px; }
 .nexus-button.in-bar { display: none; }
-.nexus-button .kaya { flex: none; }
 .rail { background: var(--bg-card); }
 
 @media (max-width: 900px) {
@@ -1778,7 +1765,7 @@ table.ledger tbody tr.day-row:hover { background: none; }
   .bottom-nav .nav-link.active .nav-label { font-weight: 700; }
   .bottom-nav .nav-glyph { width: 24px; height: 24px; }
   .nexus-button.in-bar { display: grid; place-items: center; flex: 0 0 auto; width: 64px; height: 44px; border-radius: 999px; color: var(--on-accent); }
-  /* The places sit in two equal halves either side of Kaya, so it stays in the middle whether the
+  /* The places sit in two equal halves either side of the Nexus button, so it stays in the middle whether the
      bar has three, four or five items (Invest and Travel are in the menu only when turned on). */
   .bottom-nav .bar-side { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: space-around; gap: var(--space-1); }
   .bottom-nav .bar-side .nav-link { max-width: 88px; }
@@ -2842,7 +2829,7 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .tz-picker select { min-height: 9.5rem; }
 .tz-picker .actions { margin-top: 0; }
 
-/* Settings: the How Kaya talks card. */
+/* Settings: the How Nexus talks card. */
 .voice-card { grid-column: 1 / -1; }
 .voice-card .card-head { margin-bottom: var(--space-1); }
 .voice-lead { margin: 0 0 var(--space-4); }
@@ -2925,7 +2912,7 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .page-error, .not-found { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; }
 .page-error p, .not-found p { margin: 0; }
 .page-error-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-/* What Kaya is doing while a turn runs: one line a step, a spinner then a check. */
+/* What Nexus is doing while a turn runs: one line a step, a spinner then a check. */
 .steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .steps-list li { display: flex; align-items: center; gap: var(--space-2); }
 .step-running { color: var(--text-primary); }
@@ -2935,5 +2922,19 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .step-check { color: var(--emerald-accent); font-weight: 700; font-size: 0.875rem; }
 @keyframes step-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .step-spin { animation: none; border-right-color: var(--accent); opacity: 0.6; } }
-.steps .msg-avatar { animation: kaya-bob 1.1s ease-in-out infinite; }
+.steps .msg-avatar { animation: mark-bob 1.1s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .steps .msg-avatar { animation: none; } }
+
+/* ===== Nexus mark and wordmark (components/NexusMark.tsx; assets in docs/brand/README.md) =====
+   The mark's colours are the brand palette, fixed on purpose. Only its Midnight pixels change with the
+   theme: on a dark surface the left stroke turns Blue, the diagonal's edge and the inner blue turn Teal. */
+.nexus-mark, .nexus-wordmark { display: block; flex: none; }
+.nexus-mark-big { margin: 0 auto; }
+.brand-hero { display: grid; justify-items: center; gap: var(--space-3); }
+.brand-hero .nexus-wordmark { color: var(--text-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nexus-mark .nm-K { fill: #2563EB; }
+  :root:not([data-theme="light"]) .nexus-mark .nm-k, :root:not([data-theme="light"]) .nexus-mark .nm-b { fill: #22D3EE; }
+}
+:root[data-theme="dark"] .nexus-mark .nm-K { fill: #2563EB; }
+:root[data-theme="dark"] .nexus-mark .nm-k, :root[data-theme="dark"] .nexus-mark .nm-b { fill: #22D3EE; }

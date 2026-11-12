@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "../api";
-import { Kaya } from "../components/Kaya";
+import { NexusMark, NexusWordmark } from "../components/NexusMark";
 import { TelegramLogin } from "../components/TelegramLogin";
 
 type Step = "working" | "off" | "limited" | "error";
@@ -46,9 +46,12 @@ export function DemoPage() {
   return (
     <div className="login">
       <section className="card" aria-live="polite">
-        <Kaya big size={150} className="kaya-hero" />
+        <div className="brand-hero">
+          <NexusMark big size={134} />
+          <NexusWordmark height={26} alt="Nexus" />
+        </div>
         <p className="caption">
-          Just ask <span style={{ color: "var(--accent)" }}>Nexus</span>
+          Just ask <span style={{ color: "var(--accent-text)" }}>Nexus</span>
         </p>
         {step === "working" && (
           <>

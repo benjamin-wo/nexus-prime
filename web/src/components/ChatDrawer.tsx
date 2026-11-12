@@ -14,7 +14,7 @@ import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
 import { Icon } from "./Icon";
-import { Kaya } from "./Kaya";
+import { NexusMark } from "./NexusMark";
 
 type Message = {
   from: "user" | "bot";
@@ -110,7 +110,7 @@ function finish(steps: Progress[], label: string): Progress[] {
 function Steps({ steps }: { steps: Progress[] }) {
   return (
     <div className="msg msg-bot steps" role="status" aria-label="What Nexus is doing">
-      <Kaya size={28} className="msg-avatar" lazy />
+      <NexusMark size={28} className="msg-avatar" />
       <ul className="steps-list">
         {steps.map((step, i) => (
           <li key={i} className={step.done ? "step-done" : "step-running"}>
@@ -142,7 +142,7 @@ function Typing({ note }: { note?: string }) {
       role="status"
       aria-label="Nexus is typing"
     >
-      <Kaya size={28} className="msg-avatar" lazy />
+      <NexusMark size={28} className="msg-avatar" />
       <span className="typing-dots" aria-hidden="true">
         <span />
         <span />
@@ -451,7 +451,7 @@ export function ChatDrawer({
             className={`msg msg-${m.from}`}
             title={m.at ? WHEN.format(new Date(m.at)) : undefined}
           >
-            {m.from === "bot" && <Kaya size={28} className="msg-avatar" lazy />}
+            {m.from === "bot" && <NexusMark size={28} className="msg-avatar" />}
             {m.text}
             {m.telegram && <span className="msg-via">on Telegram</span>}
             {m.buttons.length > 0 && (

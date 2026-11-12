@@ -15,7 +15,7 @@ import {
   type Wallet,
 } from "../api";
 import { Icon } from "../components/Icon";
-import { Kaya } from "../components/Kaya";
+import { NexusMark } from "../components/NexusMark";
 import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
 import { PendingEntries } from "../components/PendingEntries";
@@ -428,8 +428,8 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           filtered ? (
             <p className="state">Nothing matches these filters.</p>
           ) : pendingHere.length > 0 ? null : (
-            <p className="state state-kaya">
-              <Kaya size={44} lazy />
+            <p className="state state-mark">
+              <NexusMark size={44} />
               <span>No transactions yet. Just ask Nexus to log one, e.g. "kopi 4.20".</span>
             </p>
           )
