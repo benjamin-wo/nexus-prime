@@ -167,7 +167,7 @@ describe("ChatDrawer", () => {
 });
 
 describe("ChatDrawer while a reply is worked out", () => {
-  it("shows Kaya typing, says it's still working after a while, and goes with the reply", async () => {
+  it("shows Nexus typing, says it's still working after a while, and goes with the reply", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let answer: (replies: Reply[]) => void = () => {};
     mockApi({ "POST /chat": () => new Promise<Reply[]>((resolve) => (answer = resolve)) });
@@ -175,13 +175,13 @@ describe("ChatDrawer while a reply is worked out", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await user.type(screen.getByLabelText("Message"), "how much on food this month?");
     await user.click(screen.getByRole("button", { name: "Send" }));
-    const typing = await screen.findByRole("status", { name: "Kaya is typing" });
+    const typing = await screen.findByRole("status", { name: "Nexus is typing" });
     expect(typing).not.toHaveTextContent("Still working");
     act(() => vi.advanceTimersByTime(10_000));
     expect(typing).toHaveTextContent("Still working on it…");
     act(() => answer([{ text: "S$412 on food so far.", buttons: [] }]));
     expect(await screen.findByText("S$412 on food so far.")).toBeInTheDocument();
-    expect(screen.queryByRole("status", { name: "Kaya is typing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Nexus is typing" })).not.toBeInTheDocument();
     vi.useRealTimers();
   });
 });
@@ -205,7 +205,7 @@ describe("ChatDrawer in browsers where scrollIntoView returns a promise", () => 
 });
 
 describe("A trip's Type it in browsers where scrollIntoView returns a promise", () => {
-  it("shows Kaya's reply and its buttons instead of crashing", async () => {
+  it("shows Nexus's reply and its buttons instead of crashing", async () => {
     Element.prototype.scrollIntoView = function () {
       return Promise.resolve() as unknown as void;
     };
@@ -219,7 +219,7 @@ describe("A trip's Type it in browsers where scrollIntoView returns a promise", 
     );
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Type it" }));
-    await user.type(screen.getByLabelText("Tell Kaya about a booking"), "Hotel Ume 13 to 15 Nov");
+    await user.type(screen.getByLabelText("Tell Nexus about a booking"), "Hotel Ume 13 to 15 Nov");
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByText("Add Hotel Ume, 2 nights, to your Tokyo trip?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();

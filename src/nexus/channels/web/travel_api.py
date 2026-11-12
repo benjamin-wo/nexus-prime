@@ -1885,7 +1885,7 @@ class CurrencyOut(Model):
 @router.get("/currency")
 async def currency_for(auth: TripAuth, web: Runtime, place: str = "") -> CurrencyOut:
     """The currency spent where a trip goes ("Tokyo" is JPY), so a new trip needn't ask.
-    Both null when the place isn't found, or its country isn't one Kaya knows."""
+    Both null when the place isn't found, or its country isn't one Nexus knows."""
     del auth  # signed in only; nothing of the user's is read
     if web.weather is None or not place.strip():
         return CurrencyOut(currency=None, country=None)
@@ -2081,7 +2081,7 @@ async def delete_cover(trip_id: str, cover_id: str, auth: TripAuth, web: Runtime
 @router.post("/trips/{trip_id}/covers/{cover_id}/log")
 async def log_cover(trip_id: str, cover_id: str, auth: Auth, web: Runtime) -> CoverOut:
     """Records the cover's cost as an expense (Travel, to the cover's name) that counts
-    towards the trip. Owner only. Kaya pays nothing: this only records. 409 when it is
+    towards the trip. Owner only. Nexus pays nothing: this only records. 409 when it is
     logged already, 422 when the cover has no cost."""
     opened = await _open(web, auth, trip_id, owner_only=True)
     cover, _ = await prep_cases.log_cover(

@@ -162,7 +162,7 @@ async def test_every_users_prompt_starts_with_the_same_fixed_text() -> None:
     )
     assert head_of(other) == head_of(ann)
     # The fixed text is the persona, every rule and the skill list: the bulk of the prompt.
-    assert head.startswith("You are Kaya, a personal finance assistant")
+    assert head.startswith("You are Nexus, an AI lifestyle manager")
     for fixed in (
         "Rules:\n",
         "- Use tools for every read or change.",

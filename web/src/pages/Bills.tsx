@@ -339,7 +339,7 @@ export function BillsSection({ me }: { me: Me }) {
         </p>
       )}
       <p className="caption">
-        Kaya only reminds you; it never pays, invests or moves money.
+        Nexus only reminds you; it never pays, invests or moves money.
       </p>
     </section>
   );

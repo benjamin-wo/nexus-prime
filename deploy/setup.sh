@@ -33,7 +33,7 @@ ENV="$DIR/deploy/.env"
 if [ ! -f "$ENV" ]; then
   IP=$(curl -fsS https://api.ipify.org || hostname -I | awk '{print $1}')
   {
-    echo "# Kaya server settings. Never commit or share this file."
+    echo "# Nexus server settings. Never commit or share this file."
     echo "SITE_ADDRESS=${IP//./-}.sslip.io"
     echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
     echo
@@ -49,4 +49,4 @@ CRON
 
 echo
 echo "Done. Next: add your settings with   nano $ENV"
-echo "then start Kaya with   cd $DIR/deploy && docker compose up -d --build"
+echo "then start Nexus with   cd $DIR/deploy && docker compose up -d --build"

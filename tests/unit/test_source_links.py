@@ -19,7 +19,7 @@ A = "https://www.hardwarezone.com.sg/tech-news/console-prices"
 B = "https://forums.hardwarezone.com.sg/threads/console-deals.1"
 C = "https://www.xe.com/currencyconverter/"
 D = "https://sg.emb-japan.go.jp/visa/"
-E = "https://news.example.com/kaya-evals/latest"
+E = "https://news.example.com/nexus-evals/latest"
 F = "https://www.mom.gov.sg/passes"
 
 

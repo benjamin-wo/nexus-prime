@@ -27,9 +27,9 @@ from nexus.domain.live_prices import (
 from nexus.evals import seed
 
 DOMAIN = "example.com"
-FARES_URL = f"https://flights.{DOMAIN}/kaya-evals/search"
-SHOP_URL = f"https://shop.{DOMAIN}/kaya-evals"
-STATUS_URL = f"https://tracker.{DOMAIN}/kaya-evals/flight"
+FARES_URL = f"https://flights.{DOMAIN}/nexus-evals/search"
+SHOP_URL = f"https://shop.{DOMAIN}/nexus-evals"
+STATUS_URL = f"https://tracker.{DOMAIN}/nexus-evals/flight"
 
 
 class CannedPrices:
@@ -112,7 +112,7 @@ class CannedPrices:
                 "SGD",
                 "Sample Store",
                 4.5,
-                f"https://store.{DOMAIN}/kaya-evals/bundle",
+                f"https://store.{DOMAIN}/nexus-evals/bundle",
             ),
             ProductOffer(
                 f"{name}",
@@ -121,10 +121,10 @@ class CannedPrices:
                 "SGD",
                 "Demo Electronics",
                 None,
-                f"https://electronics.{DOMAIN}/kaya-evals/item",
+                f"https://electronics.{DOMAIN}/nexus-evals/item",
             ),
         ]
-        return ProductPrices(q, offers, f"https://shopping.{DOMAIN}/kaya-evals", self._now)
+        return ProductPrices(q, offers, f"https://shopping.{DOMAIN}/nexus-evals", self._now)
 
     async def status(self, user: UserId, q: StatusQuery, today: date) -> FlightStatus:
         self.asked.append(q)

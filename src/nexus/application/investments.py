@@ -234,7 +234,7 @@ class Row:
 class Valuation:
     """The portfolio at the latest prices (live while the market is open, else the last
     close), in the user's home currency. Gains use the exchange rate of the prices' day
-    for cost and value alike: Kaya doesn't know when each share was bought, so it can't
+    for cost and value alike: Nexus doesn't know when each share was bought, so it can't
     know the rate paid."""
 
     rows: list[Row]
@@ -377,7 +377,7 @@ DIVIDEND_LOOKBACK_DAYS = 30
 
 async def collect_dividends(uow: UowFactory, *, now: datetime) -> int:
     """Records the dividends on shares users held when each went ex, and tells them.
-    Only from when Kaya knew of the holding (its first save or the first trade
+    Only from when Nexus knew of the holding (its first save or the first trade
     recorded): before that, it can't know they held it. Returns how many."""
     async with uow() as tx:
         symbols = await tx.investments.held_symbols()

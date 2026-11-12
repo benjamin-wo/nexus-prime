@@ -1,4 +1,4 @@
-# Kaya on one small server: the app, its Postgres, and Caddy for HTTPS.
+# Nexus on one small server: the app, its Postgres, and Caddy for HTTPS.
 # Run from this folder:  docker compose up -d --build
 # Settings live in deploy/.env (never committed); see deploy/README.md.
 services:

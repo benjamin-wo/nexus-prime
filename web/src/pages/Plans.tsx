@@ -40,7 +40,7 @@ export function PlanStatus({ plan }: { plan: PlanBrief }) {
   return <span className={`badge status-${plan.status}`}>{label}</span>;
 }
 
-/** A small tag on an open plan that Kaya makes again by itself. */
+/** A small tag on an open plan that Nexus makes again by itself. */
 export function FreshTag({ plan }: { plan: PlanBrief }) {
   if (plan.status !== "open" || !plan.keep_fresh) return null;
   return <span className="badge badge-fresh">Fresh</span>;
@@ -341,7 +341,7 @@ function Following({ brief }: { brief: PlanBrief }) {
         ? "It's being followed after each US close: you'll get a message if it reaches its target or its stop, or runs out."
         : "It's being followed after each US close: you'll get a message when it dips into the buy zone, and again at its target or stop."
       : brief.status === "refreshed"
-        ? "Kaya made a newer plan to replace it, so this one isn't scored."
+        ? "Nexus made a newer plan to replace it, so this one isn't scored."
         : `It finished on ${formatShortDate(brief.outcome_day!, "UTC")}${brief.outcome_price ? ` at ${usd(brief.outcome_price)}` : ""}.`;
   return (
     <section className="card following" aria-labelledby="following">
@@ -359,7 +359,7 @@ function Following({ brief }: { brief: PlanBrief }) {
   );
 }
 
-/** The switch that has Kaya make an open plan again by itself when it goes stale. The change shows
+/** The switch that has Nexus make an open plan again by itself when it goes stale. The change shows
  * at once and is put back, with the reason, if the server refuses it. */
 export function KeepFresh({ brief }: { brief: PlanBrief }) {
   const client = useQueryClient();
@@ -395,7 +395,7 @@ export function KeepFresh({ brief }: { brief: PlanBrief }) {
         Keep this plan fresh
       </label>
       <p className="caption" id={`keep-fresh-${brief.id}`}>
-        Kaya re-runs it when the price moves a lot, after earnings, or once a week.
+        Nexus re-runs it when the price moves a lot, after earnings, or once a week.
       </p>
       {error && (
         <p className="error-text" role="alert">

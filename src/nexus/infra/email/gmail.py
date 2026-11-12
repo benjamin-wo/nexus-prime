@@ -149,7 +149,7 @@ class GmailMailbox:
             raise InvalidInput("Google didn't accept that sign-in; please try again")
         body = response.json()
         if READ_SCOPE not in str(body.get("scope", "")).split() or not body.get("refresh_token"):
-            raise InvalidInput("Kaya needs permission to read your email to find receipts")
+            raise InvalidInput("Nexus needs permission to read your email to find receipts")
         profile = await self._get(str(body["access_token"]), "/profile")
         return MailboxGrant(str(profile["emailAddress"]).lower(), str(body["refresh_token"]))
 

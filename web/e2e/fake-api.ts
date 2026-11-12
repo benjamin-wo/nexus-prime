@@ -412,7 +412,7 @@ export async function fakeApi(
     coverItems: Record<string, FakeItem[]>;
     /** Whether Settings tells the user when someone changes a trip they share (GET and PUT /trip-alerts). */
     tripAlerts: boolean;
-    /** How Kaya talks (GET and PUT /settings/voice); the server resets the dials when the preset changes alone. */
+    /** How Nexus talks (GET and PUT /settings/voice); the server resets the dials when the preset changes alone. */
     voice: VoiceSettings;
     /** The bodies of PUT /settings/voice, in order. */
     voicePuts: Record<string, unknown>[];

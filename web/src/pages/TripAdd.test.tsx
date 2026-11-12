@@ -30,7 +30,7 @@ describe("the add sheet", () => {
     renderWithProviders(sheet({ trip: { ...trip, role: "member" } as unknown as Trip }));
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Type it" }));
-    await user.type(screen.getByLabelText("Tell Kaya about a booking"), "Dinner at Sushi Ten on Saturday at 7pm");
+    await user.type(screen.getByLabelText("Tell Nexus about a booking"), "Dinner at Sushi Ten on Saturday at 7pm");
     await user.click(screen.getByRole("button", { name: "Send" }));
     await screen.findByText("Added.");
     expect(calls.find((c) => c.path === "/chat")?.body).toEqual({

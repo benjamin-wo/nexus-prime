@@ -1,4 +1,4 @@
-"""Taking emoji out of a text, for a user who chose "no emoji" in How Kaya talks.
+"""Taking emoji out of a text, for a user who chose "no emoji" in How Nexus talks.
 
 Pure rules, no I/O. Only pictographic emoji go (with the joiners, skin tones, flags and
 variation selectors that belong to them); ordinary symbols such as •, ·, —, →, ★, ✓ and

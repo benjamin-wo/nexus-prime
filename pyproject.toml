@@ -1,7 +1,7 @@
 [project]
 name = "nexus-prime"
 version = "0.1.0"
-description = "Personal finance assistant: Telegram capture and a web cockpit over one agent."
+description = "AI lifestyle manager: Telegram capture and a web cockpit over one agent."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

@@ -1,4 +1,4 @@
-"""How Kaya talks to a user: reading and changing their voice (see ``domain.voice``).
+"""How Nexus talks to a user: reading and changing their voice (see ``domain.voice``).
 
 Used by the settings page, the chat tools and every chat turn (which loads it once).
 

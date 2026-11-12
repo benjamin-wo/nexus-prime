@@ -74,7 +74,7 @@ test.describe("Notifications", () => {
     await fakeApi(page);
     await page.clock.setFixedTime(new Date("2026-10-22T04:00:00Z"));
     await page.goto("/");
-    const hero = page.getByRole("region", { name: "Kaya", exact: true });
+    const hero = page.getByRole("region", { name: "Nexus", exact: true });
     const bell = hero.getByRole("link", { name: "Notifications" });
     await expect(bell).toBeVisible();
     // The three round buttons (Log expense, Notifications and Settings) stay inside the hero and apart from each other.
@@ -252,7 +252,7 @@ test("the bottom bar on a phone has a short label under each icon, and nothing s
     // The names a screen reader hears still say what each is.
     const names = await bar.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent));
     expect(names).toEqual(["Home", "Money", "Invest (Investment)", "Travel"]);
-    await expect(bar.getByRole("button", { name: "Ask Kaya", exact: true })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Ask Nexus", exact: true })).toBeVisible();
 
     const problems = await bar.evaluate((el, w) => {
       const out: string[] = [];

@@ -1,4 +1,4 @@
-"""The fixed messages Kaya sends without asking a model, worded for the user's voice.
+"""The fixed messages Nexus sends without asking a model, worded for the user's voice.
 
 A "Logged 4.50 at Kopi Corner." or a "📧 From your email: ..." is a template, so the
 model's reply style can't reach it. ``phrase`` gives the same message in the wording of the

@@ -134,7 +134,7 @@ function NotificationRow({ entry, timeZone }: { entry: NotificationEntry; timeZo
   );
 }
 
-/** What Kaya sent (or meant to send) the user on Telegram in the last 30 days, a day at a time. */
+/** What Nexus sent (or meant to send) the user on Telegram in the last 30 days, a day at a time. */
 export function NotificationsPage({ me }: { me: Me }) {
   const history = useQuery({
     queryKey: ["notification-history"],

@@ -1,6 +1,6 @@
 # Free automatic HTTPS (Let's Encrypt) for SITE_ADDRESS, e.g. 178-128-26-229.sslip.io.
 {$SITE_ADDRESS} {
-	# The chat's event stream (steps as Kaya works, then the reply) must reach the browser
+	# The chat's event stream (steps as Nexus works, then the reply) must reach the browser
 	# as it is written: not compressed, which would hold it back, and flushed at once.
 	@chat_stream path /api/chat/stream
 	handle @chat_stream {

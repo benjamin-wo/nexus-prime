@@ -795,7 +795,8 @@ async def test_export_is_a_zip_of_only_my_rows(pair: Pair) -> None:
     response = await pair.a.get("/api/me/export")
     assert response.headers["content-type"] == "application/zip"
     assert (
-        response.headers["content-disposition"] == 'attachment; filename="kaya-export-20260928.zip"'
+        response.headers["content-disposition"]
+        == 'attachment; filename="nexus-export-20260928.zip"'
     )
     assert response.headers["content-length"] == str(len(response.content))
     archive = unzip(response)

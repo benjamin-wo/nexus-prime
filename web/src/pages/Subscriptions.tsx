@@ -85,7 +85,7 @@ function SubscriptionRow({
   );
 }
 
-/** Recurring payments Kaya spotted in the ledger; tracked only once the user agrees. */
+/** Recurring payments Nexus spotted in the ledger; tracked only once the user agrees. */
 export function SubscriptionsSection() {
   const client = useQueryClient();
   const subs = useQuery({ queryKey: ["subscriptions"], queryFn: () => api<Subscriptions>("/subscriptions") });

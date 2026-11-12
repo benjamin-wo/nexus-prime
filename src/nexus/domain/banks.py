@@ -4,7 +4,7 @@ This is only a label: it names a card the bank's alert mentions ("UOB card"), an
 between two cards that end in the same four digits. A sender address can be forged, so it is
 never used to decide whether to trust an email, to log an expense or to change what is paid.
 The one rule that leans on the sender is narrowing: only a bank or a payment service may be
-read as money received (``can_pay_you``); a forged sender can at most make Kaya ask "Log it
+read as money received (``can_pay_you``); a forged sender can at most make Nexus ask "Log it
 as money in?", which the user still answers.
 """
 

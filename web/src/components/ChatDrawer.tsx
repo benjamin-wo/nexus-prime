@@ -14,7 +14,7 @@ import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
 import { Icon } from "./Icon";
-import { Kaya } from "./Kaya";
+import { NexusMark } from "./NexusMark";
 
 type Message = {
   from: "user" | "bot";
@@ -93,7 +93,7 @@ function Sources({ buttons }: { buttons: Button[] }) {
   );
 }
 
-/** What Kaya is doing, as it goes: a spinner on the step running now, a check on those done. */
+/** What Nexus is doing, as it goes: a spinner on the step running now, a check on those done. */
 type Progress = { label: string; done: boolean };
 
 /** Shown when the reply stream broke after the turn began: the turn goes on, its reply is fetched. */
@@ -105,12 +105,12 @@ function finish(steps: Progress[], label: string): Progress[] {
   return at === -1 ? steps : steps.map((s, i) => (i === at ? { ...s, done: true } : s));
 }
 
-/** Kaya's side of the chat while a turn runs, once it has said what it is doing. The list sits
+/** Nexus's side of the chat while a turn runs, once it has said what it is doing. The list sits
  * inside the chat's polite live region, so a screen reader hears each step as it starts. */
 function Steps({ steps }: { steps: Progress[] }) {
   return (
-    <div className="msg msg-bot steps" role="status" aria-label="What Kaya is doing">
-      <Kaya size={28} className="msg-avatar" lazy />
+    <div className="msg msg-bot steps" role="status" aria-label="What Nexus is doing">
+      <NexusMark size={28} className="msg-avatar" />
       <ul className="steps-list">
         {steps.map((step, i) => (
           <li key={i} className={step.done ? "step-done" : "step-running"}>
@@ -128,7 +128,7 @@ function Steps({ steps }: { steps: Progress[] }) {
   );
 }
 
-/** Kaya's side of the chat while a reply is worked out: three dots, then a word
+/** Nexus's side of the chat while a reply is worked out: three dots, then a word
  * that it's still going, so a slow reply never looks like nothing is happening. */
 function Typing({ note }: { note?: string }) {
   const [long, setLong] = useState(false);
@@ -140,9 +140,9 @@ function Typing({ note }: { note?: string }) {
     <div
       className="msg msg-bot typing"
       role="status"
-      aria-label="Kaya is typing"
+      aria-label="Nexus is typing"
     >
-      <Kaya size={28} className="msg-avatar" lazy />
+      <NexusMark size={28} className="msg-avatar" />
       <span className="typing-dots" aria-hidden="true">
         <span />
         <span />
@@ -432,7 +432,7 @@ export function ChatDrawer({
         )}
         {messages.length === 0 && (
           <p className="muted">
-            Just ask Kaya. Try "coffee 5.50", "split dinner 90 with Ann and Ben" or "what did I
+            Just ask Nexus. Try "coffee 5.50", "split dinner 90 with Ann and Ben" or "what did I
             spend on food?"
           </p>
         )}
@@ -451,7 +451,7 @@ export function ChatDrawer({
             className={`msg msg-${m.from}`}
             title={m.at ? WHEN.format(new Date(m.at)) : undefined}
           >
-            {m.from === "bot" && <Kaya size={28} className="msg-avatar" lazy />}
+            {m.from === "bot" && <NexusMark size={28} className="msg-avatar" />}
             {m.text}
             {m.telegram && <span className="msg-via">on Telegram</span>}
             {m.buttons.length > 0 && (

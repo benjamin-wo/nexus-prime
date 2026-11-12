@@ -172,7 +172,7 @@ function SetAside({ detail }: { detail: TripDetail }) {
   const a = detail.saving;
   if (!a) return null;
   return !a.pay_schedule ? (
-    <p className="muted">Set your pay schedule (Money, Budgets) and Kaya can plan an amount to put aside each payday.</p>
+    <p className="muted">Set your pay schedule (Money, Budgets) and Nexus can plan an amount to put aside each payday.</p>
   ) : positive(a.per_payday) ? (
     <>
       <p>{setAsideText(a, a.next_payday ? day(a.next_payday) : null)}</p>
@@ -188,7 +188,7 @@ function SetAside({ detail }: { detail: TripDetail }) {
       Put aside about {formatMoney(a.suggested)} on each of the {a.paydays_left} paydays before the trip to cover the budget. Edit the trip to plan it.
     </p>
   ) : (
-    <p className="muted">Add a budget, or an amount to set aside, and Kaya plans it into your paydays.</p>
+    <p className="muted">Add a budget, or an amount to set aside, and Nexus plans it into your paydays.</p>
   );
 }
 
@@ -251,7 +251,7 @@ export const partsTotal = (parts: BalancePart[]) => sumByCurrency(parts.map((p) 
 
 const moneyList = (list: Money[]) => list.map(formatMoney).join(" + ");
 
-/** What Mark settled will record, before it is confirmed. Kaya only writes down what the
+/** What Mark settled will record, before it is confirmed. Nexus only writes down what the
  * user says happened; it never moves money. */
 export function settleConfirmText(b: Balance, log: boolean): string {
   const owedToYou = b.owes_you.length > 0 ? moneyList(partsTotal(b.owes_you)) : null;
@@ -266,7 +266,7 @@ export function settleConfirmText(b: Balance, log: boolean): string {
         : `${lead}marks the ${owedByYou} you owe ${b.person} as paid, without adding it to what you've spent.`,
     );
   }
-  sentences.push("Kaya doesn't move any money.");
+  sentences.push("Nexus doesn't move any money.");
   return sentences.join(" ");
 }
 
@@ -734,7 +734,7 @@ function TodoCard({ detail, onChange }: { detail: TripDetail; onChange: () => vo
   return (
     <section className="card money-todo" aria-labelledby="money-todo">
       <h2 id="money-todo">To do</h2>
-      {balances.length > 0 && <p className="money-note">Kaya records what you say happened. It doesn't move money.</p>}
+      {balances.length > 0 && <p className="money-note">Nexus records what you say happened. It doesn't move money.</p>}
       {outcome && (
         <div className="split-outcome" role="status">
           {outcome.result.done.length > 0 && (
@@ -1007,7 +1007,7 @@ function ExpensesPanel({
 
   return (
     <>
-      <p className="money-note">To count something else, like flights paid earlier, tell Kaya "add it to {trip.destination}"</p>
+      <p className="money-note">To count something else, like flights paid earlier, tell Nexus "add it to {trip.destination}"</p>
       {detail.items.length === 0 ? (
         <p className="money-note">None yet.</p>
       ) : (

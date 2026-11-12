@@ -1,6 +1,6 @@
 import type { VoiceDials, VoicePresetId } from "./api";
 
-/** The three made-up exchanges the "How Kaya talks" card previews. Written here, in the browser:
+/** The three made-up exchanges the "How Nexus talks" card previews. Written here, in the browser:
  * no API call, so the preview follows every tap at once. */
 
 /** An emoji that the Emoji dial may drop; `plain` is what stands in its place (usually a full stop). */
@@ -164,7 +164,7 @@ function compose(sample: Sample, scenario: Scenario, dials: VoiceDials): string 
   return out;
 }
 
-/** The three sample replies for a voice: what Kaya would say with this preset and these dials. */
+/** The three sample replies for a voice: what Nexus would say with this preset and these dials. */
 export function previewReplies(preset: VoicePresetId, dials: VoiceDials): PreviewReply[] {
   return SCENARIOS.map((scenario) => ({ said: scenario.said, text: compose(scenario.samples[preset], scenario, dials) }));
 }

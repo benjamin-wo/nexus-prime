@@ -126,7 +126,7 @@ describe("Getting ready", () => {
       "PUT /travel/trips/t1/todos": () => ({ todos: [todo("n1", "Book the taxi", { due: "2099-12-08" })], covers: [], prep_suggestions: [] }),
     });
     const { onChange } = show(detail());
-    expect(within(ready()).getByText("With a date, Kaya reminds you the day before.")).toBeInTheDocument();
+    expect(within(ready()).getByText("With a date, Nexus reminds you the day before.")).toBeInTheDocument();
     await userEvent.type(within(ready()).getByLabelText("To-do"), "Book the taxi");
     await userEvent.type(within(ready()).getByLabelText("By (optional)"), "2099-12-08");
     await userEvent.click(within(ready()).getByRole("button", { name: /^Add$/ }));
@@ -222,13 +222,13 @@ describe("Getting ready", () => {
 });
 
 describe("Cover and documents", () => {
-  it("is empty with one line, a way to add and what to tell Kaya", async () => {
+  it("is empty with one line, a way to add and what to tell Nexus", async () => {
     mockApi({ ...me });
     show(detail());
     const card = coverCard();
     expect(within(card).getByText("Travel insurance, visas and other documents go here.")).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Add cover or a document" })).toBeInTheDocument();
-    expect(plain(card.textContent)).toContain('Or tell Kaya: "Add travel insurance, Harbour Cover, SGD 89, policy TX-4471".');
+    expect(plain(card.textContent)).toContain('Or tell Nexus: "Add travel insurance, Harbour Cover, SGD 89, policy TX-4471".');
   });
 
   it("a row has its icon's name, one line, the cost, a Log it, a call link and a copy button", async () => {
@@ -268,7 +268,7 @@ describe("Cover and documents", () => {
     const row = within(coverCard()).getByRole("listitem");
     await userEvent.click(within(row).getByRole("button", { name: "Log it: Harbour Cover" }));
     const box = within(row).getByRole("group", { name: "Log Harbour Cover" });
-    expect(plain(box.textContent)).toContain("Record SGD 89.00 as spent on Travel? Kaya only records it.");
+    expect(plain(box.textContent)).toContain("Record SGD 89.00 as spent on Travel? Nexus only records it.");
     await userEvent.click(within(box).getByRole("button", { name: "Not now" }));
     expect(within(row).queryByRole("group")).toBeNull();
     expect(calls.filter((c) => c.method === "POST")).toEqual([]);
@@ -442,7 +442,7 @@ describe("Money: Bookings paid", () => {
     expect(plain(rows[1].textContent)).toContain("Insurance · from Prep");
     await userEvent.click(within(rows[1]).getByRole("button", { name: "Log it: Harbour Cover" }));
     const box = within(rows[1]).getByRole("group", { name: "Log Harbour Cover" });
-    expect(plain(box.textContent)).toContain("Record SGD 89.00 as spent on Travel? Kaya only records it.");
+    expect(plain(box.textContent)).toContain("Record SGD 89.00 as spent on Travel? Nexus only records it.");
     await userEvent.click(within(box).getByRole("button", { name: "Log it" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/travel/trips/t1/covers/c2/log")).toBe(true));
     await waitFor(() => expect(onChange).toHaveBeenCalled());

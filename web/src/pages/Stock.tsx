@@ -303,7 +303,7 @@ export function StockPage() {
         <section className="card" aria-labelledby="news">
           <div className="card-head">
             <h2 id="news">News</h2>
-            <span className="caption">From news sources, not Kaya</span>
+            <span className="caption">From news sources, not Nexus</span>
           </div>
           {data.news.length === 0 ? (
             <p className="state">{data.news_enabled ? "No recent news yet." : "News isn't set up."}</p>

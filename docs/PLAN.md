@@ -2,7 +2,7 @@
 
 ## Summary
 
-Nexus Prime is a personal finance assistant with two surfaces over one agent:
+Nexus is an AI lifestyle manager with two surfaces over one agent:
 
 - **Telegram** is used on the phone for quick capture: text and photo expenses, splitting bills, quick questions about spending.
 - **Web cockpit** is used to manage and review money: ledger, analytics, bulk edits, import, export and chat.
