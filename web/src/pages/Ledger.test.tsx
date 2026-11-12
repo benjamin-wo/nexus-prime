@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Me, Page, Transaction } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
@@ -276,18 +276,94 @@ describe("the Ledger filters", () => {
   });
 });
 
+// 12:00 on Thursday 12 Nov 2026 in Singapore.
+const NOW = new Date("2026-11-12T04:00:00Z");
+
 describe("the Ledger rows", () => {
-  it("name the category and the date in one line under the merchant, and leave the category out when there is none", async () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("name the category in one line under the merchant, and leave the category out when there is none", async () => {
     setup();
     const cafe = (await screen.findByRole("button", { name: "Corner Cafe" })).closest("tr")!;
     const meta = cafe.querySelector("td.merchant .tx-meta")!;
     expect(meta.querySelector(".category-line")).toHaveTextContent("Dining Out");
-    expect(meta.querySelector(".date-line")).toHaveTextContent(/Oct/);
+    // The day is in the heading above the row, not repeated on it.
+    expect(meta.querySelector(".date-line")).toBeNull();
     // The merchant button comes first, then that one line.
     expect(meta.previousElementSibling).toBe(within(cafe).getByRole("button", { name: "Corner Cafe" }));
     const mystery = screen.getByRole("button", { name: "Mystery shop" }).closest("tr")!;
     expect(mystery.querySelector(".category-line")).toBeNull();
-    expect(mystery.querySelector(".tx-meta .date-line")).toBeInTheDocument();
+  });
+
+  it("badge only money in, a transfer and a pending entry, not plain money out, and have no Type column", async () => {
+    setup([
+      tx({ id: "o", counterparty: "Plain spend" }),
+      tx({ id: "i", direction: "in", counterparty: "Acme Pay" }),
+      tx({ id: "m", direction: "move", counterparty: null, to_wallet: { id: "w", name: "IBKR", kind: "investment" } }),
+      tx({ id: "p", counterparty: "Held spend", status: "pending" }),
+    ]);
+    const rowOf = async (name: string) => (await screen.findByRole("button", { name })).closest("tr")!;
+    expect(screen.queryByRole("columnheader", { name: "Type" })).toBeNull();
+    expect((await rowOf("Plain spend")).querySelector(".badge")).toBeNull();
+    // The badge sits in the merchant cell, beside the name.
+    expect((await rowOf("Acme Pay")).querySelector("td.merchant .badge-in")).toHaveTextContent("Money in");
+    expect((await rowOf("→ IBKR")).querySelector("td.merchant .badge-move")).toHaveTextContent("Transfer");
+    expect((await rowOf("Held spend")).querySelector("td.merchant .badge-pending")).toHaveTextContent("Pending");
+    expect(document.querySelector(".badge-out")).toBeNull();
+    // Money in keeps its own colour and sign.
+    const income = (await rowOf("Acme Pay")).querySelector("td.amount")!;
+    expect(income).toHaveClass("amount-in");
+    expect(income.textContent).toMatch(/^\+/);
+  });
+
+  it("group under day headings in the user's own day, and write Today and Yesterday in the Date column", async () => {
+    setup([
+      tx({ id: "a", counterparty: "Late tonight", occurred_at: "2026-11-11T17:00:00Z" }), // 01:00 on the 12th in Singapore
+      tx({ id: "b", counterparty: "This morning", occurred_at: "2026-11-12T01:00:00Z" }),
+      tx({ id: "c", counterparty: "Last night", occurred_at: "2026-11-11T15:30:00Z" }), // 23:30 on the 11th
+      tx({ id: "d", counterparty: "Monday lunch", occurred_at: "2026-11-09T04:00:00Z" }),
+      tx({ id: "e", counterparty: "Last year", occurred_at: "2025-11-09T04:00:00Z" }),
+    ]);
+    await screen.findByText("Last year");
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    expect(headings.map((h) => h.textContent)).toEqual(["Today", "Yesterday", "Mon, Nov 9", "Sun, Nov 9, 2025"]);
+    // One heading per day, ahead of that day's rows.
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows.map((r) => r.querySelector("h3")?.textContent ?? r.querySelector("button.tx-name")?.textContent)).toEqual([
+      "Today",
+      "Late tonight",
+      "This morning",
+      "Yesterday",
+      "Last night",
+      "Mon, Nov 9",
+      "Monday lunch",
+      "Sun, Nov 9, 2025",
+      "Last year",
+    ]);
+    const date = (name: string) => screen.getByRole("button", { name }).closest("tr")!.querySelector("td.date")!.textContent;
+    expect(date("Late tonight")).toBe("Today");
+    expect(date("Last night")).toBe("Yesterday");
+    expect(date("Monday lunch")).toBe("Nov 9, 2026");
+    expect(date("Last year")).toBe("Nov 9, 2025");
+  });
+
+  it("keep selecting rows, not headings", async () => {
+    setup([
+      tx({ id: "a", counterparty: "One", occurred_at: "2026-11-12T01:00:00Z" }),
+      tx({ id: "b", counterparty: "Two", occurred_at: "2026-11-11T01:00:00Z" }),
+    ]);
+    await screen.findByText("One");
+    await userEvent.click(screen.getByRole("button", { name: "Select" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select all on this page" }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox", { checked: true })).toHaveLength(3);
+    await userEvent.click(screen.getByRole("checkbox", { name: /Select One/ }));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 
   it("put the receipt link in that line, still a link to the receipt", async () => {

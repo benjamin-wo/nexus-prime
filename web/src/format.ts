@@ -102,6 +102,34 @@ export function isoDay(iso: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(iso));
 }
 
+/** The day before or after a YYYY-MM-DD, by the calendar (no clock, so no daylight-saving slip). */
+export function shiftDay(day: string, by: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + by);
+  return date.toISOString().slice(0, 10);
+}
+
+/** "Today" or "Yesterday" for those two days (both YYYY-MM-DD, in the user's timezone), else null. */
+export function relativeDay(day: string, today: string): "Today" | "Yesterday" | null {
+  if (day === today) return "Today";
+  if (day === shiftDay(today, -1)) return "Yesterday";
+  return null;
+}
+
+/** A day's heading: Today, Yesterday, then "Mon, Nov 9", with the year once it isn't this one ("Mon, Nov 9, 2025"). */
+export function dayHeading(day: string, today: string): string {
+  return (
+    relativeDay(day, today) ??
+    new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: day.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${day}T00:00:00Z`))
+  );
+}
+
 /** A signed change: "+USD 12.30", "−SGD 4.00". */
 export function formatChange(money: Money): string {
   const value = Number(money.amount);
