@@ -16,9 +16,10 @@ export function setCsrf(token: string): void {
 /** Shown when a request times out or never reaches the server. */
 export const NETWORK_ERROR_MESSAGE = "Couldn't reach Kaya. Check your connection and try again.";
 
-/** How long a request may take before it is given up on. Uploads (receipt photos, PDF statements) get longer. */
-const REQUEST_TIMEOUT_MS = 30_000;
-const UPLOAD_TIMEOUT_MS = 120_000;
+/** How long a read may take before it is given up on. Only reads: a write (a chat message, a receipt
+ * photo, a statement) is never abandoned on a timer, because the server may still finish it, and the
+ * person would then send it again and record it twice. */
+const READ_TIMEOUT_MS = 30_000;
 
 export async function api<T>(
   path: string,
@@ -34,13 +35,13 @@ export async function api<T>(
     headers,
     init.body === undefined ? undefined : JSON.stringify(init.body),
     init.signal,
-    REQUEST_TIMEOUT_MS,
+    method === "GET" ? READ_TIMEOUT_MS : null,
   );
 }
 
 /** POST a multipart form (a file upload). The browser sets the Content-Type, with its boundary. */
 export async function apiForm<T>(path: string, form: FormData, init: { signal?: AbortSignal } = {}): Promise<T> {
-  return request<T>(path, "POST", { "X-CSRF-Token": csrfToken }, form, init.signal, UPLOAD_TIMEOUT_MS);
+  return request<T>(path, "POST", { "X-CSRF-Token": csrfToken }, form, init.signal, null);
 }
 
 /** A message fit to show for the `detail` of an error response. FastAPI sends a string for its own
@@ -62,14 +63,14 @@ async function request<T>(
   headers: Record<string, string>,
   body: BodyInit | undefined,
   signal: AbortSignal | undefined,
-  timeoutMs: number,
+  timeoutMs: number | null,
 ): Promise<T> {
   // The caller's signal and the timeout are joined by hand: AbortSignal.any is missing from older WebViews.
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) abort();
   else signal?.addEventListener("abort", abort, { once: true });
-  const timer = setTimeout(abort, timeoutMs);
+  const timer = timeoutMs === null ? undefined : setTimeout(abort, timeoutMs);
   try {
     const response = await fetch(`/api${path}`, {
       method,

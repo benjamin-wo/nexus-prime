@@ -92,16 +92,16 @@ describe("api timeouts and aborts", () => {
     expect(await result).toMatchObject({ status: 0, message: NETWORK_ERROR_MESSAGE });
   });
 
-  it("gives an upload two minutes", async () => {
+  it("never gives up on a write or an upload on a timer: the server may still finish it", async () => {
     vi.useFakeTimers();
     hangingFetch();
     let settled = false;
-    const result = apiForm("/import", new FormData()).catch((e: unknown) => e);
-    void result.then(() => (settled = true));
-    await vi.advanceTimersByTimeAsync(100_000);
+    const sent = api("/chat", { method: "POST", body: { message: "lunch 8.40" } }).catch((e: unknown) => e);
+    const uploaded = apiForm("/import", new FormData()).catch((e: unknown) => e);
+    void sent.then(() => (settled = true));
+    void uploaded.then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(21_000);
-    expect(await result).toMatchObject({ status: 0, message: NETWORK_ERROR_MESSAGE });
   });
 
   it("gives up when the body never finishes arriving", async () => {
