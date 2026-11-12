@@ -46,6 +46,11 @@ export async function apiForm<T>(path: string, form: FormData, init: { signal?: 
   return request<T>(path, "POST", { "X-CSRF-Token": csrfToken }, form, init.signal, null);
 }
 
+/** The CSRF header every write carries, for a request made with `fetch` directly (the chat stream). */
+export function csrfHeader(): Record<string, string> {
+  return { "X-CSRF-Token": csrfToken };
+}
+
 /** A message fit to show for the `detail` of an error response. FastAPI sends a string for its own
  * errors and a list of problems for a request it could not validate: the first one, named by its field. */
 export function messageFromDetail(detail: unknown, fallback: string): string {
