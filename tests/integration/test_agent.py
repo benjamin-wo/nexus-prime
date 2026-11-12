@@ -1,9 +1,11 @@
 """Agent trajectories: a scripted model drives the real graph, tools and database."""
 
+import asyncio
 import re
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -14,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.graph import MAX_STEPS, AgentDeps, AgentGraph
 from nexus.agent.holdings_reader import HoldingsReader
 from nexus.agent.image_look import ImageLooker
+from nexus.agent.progress import Step
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader
 from nexus.agent.service import AgentService, Reply
 from nexus.agent.skills import SkillLibrary
@@ -33,6 +36,7 @@ from nexus.application.transactions import NewTransaction, list_ledger, log_tran
 from nexus.application.users import get_user
 from nexus.application.web_lookup import Lookup, WebLooker
 from nexus.application.web_search import Recency
+from nexus.channels.web.chat_stream import stream_turn
 from nexus.domain.ledger import Direction, ShareRequest, Source, UserId
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
@@ -845,3 +849,134 @@ async def test_live_prices_come_with_their_time_and_links_as_buttons(
     assert 1 <= len(links) <= 3
     assert all(link.startswith("src:https://") for link in links)
     assert len(canned.asked) == 3
+
+
+# --- progress and Stop ---------------------------------------------------------------------
+
+
+async def test_steps_are_reported_in_order_and_replies_are_unchanged(
+    uow: UowFactory, alice: UserId, bob: UserId
+) -> None:
+    def script() -> ScriptedModel:
+        return scripted(
+            call("list_categories"),
+            call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
+            say("Logged 5.50 at Starbucks."),
+        )
+
+    steps: list[Step] = []
+
+    async def on_step(step: Step) -> None:
+        steps.append(step)
+
+    seen = only(
+        await build(uow, script()).handle_text(alice, "coffee 5.50", "web:1:1", on_step=on_step)
+    )
+    plain = only(await build(uow, script()).handle_text(bob, "coffee 5.50", "web:1:2"))
+    assert steps == [
+        Step("Checking your categories", "running"),
+        Step("Checking your categories", "done"),
+        Step("Logging the expense", "running"),
+        Step("Logging the expense", "done"),
+    ]
+    assert (seen.text, seen.buttons) == (plain.text, plain.buttons)
+    assert await ledger(uow, alice) == await ledger(uow, bob)
+
+
+async def test_a_step_that_cannot_be_shown_does_not_stop_the_turn(
+    uow: UowFactory, alice: UserId
+) -> None:
+    async def broken(step: Step) -> None:
+        raise RuntimeError("the screen is gone")
+
+    model = scripted(call("log_expense", amount="4", merchant="Kopi"), say("Logged."))
+    reply = only(await build(uow, model).handle_text(alice, "kopi 4", "web:1:1", on_step=broken))
+    assert reply.text == "Logged."
+    assert await ledger(uow, alice) == [("out", Decimal("4"))]
+
+
+async def test_a_tool_that_does_not_exist_is_not_shown_as_a_step(
+    uow: UowFactory, alice: UserId
+) -> None:
+    steps: list[Step] = []
+
+    async def on_step(step: Step) -> None:
+        steps.append(step)
+
+    model = scripted(call("zzz_unrelated"), say("Sorry."))
+    await build(uow, model).handle_text(alice, "do it", "web:1:1", on_step=on_step)
+    assert steps == []
+
+
+async def test_stop_between_steps_ends_the_turn_and_says_what_was_done(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
+        call("list_categories"),  # never asked for: the turn is stopped first
+    )
+    agent = build(uow, model)
+
+    async def on_step(step: Step) -> None:
+        if step.state == "done":
+            agent.request_stop(alice)  # as if Stop was pressed while the first tool ran
+
+    reply = only(await agent.handle_text(alice, "coffee 5.50", "web:1:1", on_step=on_step))
+    assert len(model.seen) == 1  # no second model call
+    assert reply.text.startswith("Stopped, as you asked. Already done: Logged: 2026-09-28")
+    assert "Starbucks" in reply.text
+    assert reply.text.endswith("Tell me if anything else needs changing.")
+    assert [b.data for row in reply.buttons for b in row] == ["act:undo"]
+    assert await ledger(uow, alice) == [("out", Decimal("5.5"))]
+
+
+async def test_stop_before_anything_was_changed_says_so(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(call("list_categories"), call("list_categories"))
+    agent = build(uow, model)
+
+    async def on_step(step: Step) -> None:
+        agent.request_stop(alice)
+
+    reply = only(await agent.handle_text(alice, "what categories", "web:1:1", on_step=on_step))
+    assert reply.text == "Stopped, as you asked. Nothing was changed."
+    assert not reply.buttons
+
+
+async def test_a_stop_does_not_carry_over_to_the_next_turn(uow: UowFactory, alice: UserId) -> None:
+    model = scripted(say("First."), say("Second."))
+    agent = build(uow, model)
+    agent.request_stop(alice)  # nothing is running
+    assert only(await agent.handle_text(alice, "one", "web:1:1")).text == "First."
+    assert only(await agent.handle_text(alice, "two", "web:1:2")).text == "Second."
+
+
+async def test_stop_only_stops_the_person_who_pressed_it(
+    uow: UowFactory, alice: UserId, bob: UserId
+) -> None:
+    model = scripted(call("list_categories"), say("Here they are."))
+    agent = build(uow, model)
+    agent.request_stop(bob)
+    reply = only(await agent.handle_text(alice, "categories", "web:1:1"))
+    assert reply.text == "Here they are."
+
+
+async def test_a_browser_that_leaves_does_not_cancel_the_streamed_turn(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(call("log_expense", amount="4", merchant="Kopi"), say("Logged 4 at Kopi."))
+    agent = build(uow, model)
+    response = stream_turn(agent, alice, "kopi 4", "web:1:1", replies=lambda done: [])
+    frames = cast(AsyncGenerator[str, None], response.body_iterator)
+    assert await anext(frames) == ": open\n\n"
+    await frames.aclose()  # the client is gone before the first step
+
+    async def kept() -> list[str]:
+        async with uow() as tx:
+            return [line.text for line in await tx.memory.chat(alice, 10, None)]
+
+    for _ in range(100):
+        if len(await kept()) == 2:
+            break
+        await asyncio.sleep(0.05)
+    assert await kept() == ["kopi 4", "Logged 4 at Kopi."]
+    assert await ledger(uow, alice) == [("out", Decimal("4"))]

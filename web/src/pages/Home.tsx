@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -21,6 +21,7 @@ import { brief, notableMove, pace, standing, suggestions } from "../brief";
 import { Block } from "../components/Block";
 import { GetStarted } from "../components/GetStarted";
 import { Icon, departmentIcon } from "../components/Icon";
+import { Toast } from "../components/Toast";
 import { DEPARTMENTS } from "../departments";
 import { formatMoney } from "../format";
 import { livePolling } from "../prices";
@@ -165,8 +166,25 @@ function Hero({
   );
 }
 
-/** One-tap questions and a box to ask anything or log an expense in words; each opens the chat. */
-function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => void }) {
+/** The width at which the shell swaps its rail for the bottom bar (the same query as in styles.css). */
+const PHONE = "(max-width: 900px)";
+
+function usePhone(): boolean {
+  return useSyncExternalStore(
+    (changed) => {
+      if (typeof window.matchMedia !== "function") return () => undefined;
+      const query = window.matchMedia(PHONE);
+      query.addEventListener("change", changed);
+      return () => query.removeEventListener("change", changed);
+    },
+    () => typeof window.matchMedia === "function" && window.matchMedia(PHONE).matches,
+    () => false,
+  );
+}
+
+/** The box to ask anything or log an expense in words; submitting opens the chat with it. It sits
+ * in the Just ask Kaya card on a wide screen and docked above the bottom bar on a phone. */
+function AskForm({ onAsk }: { onAsk: (text: string) => void }) {
   const [draft, setDraft] = useState("");
   function ask(event: FormEvent) {
     event.preventDefault();
@@ -176,23 +194,32 @@ function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => 
     onAsk(text);
   }
   return (
+    <form className="ask" onSubmit={ask}>
+      <label className="sr-only" htmlFor="ask-input">
+        Ask Kaya
+      </label>
+      <input
+        id="ask-input"
+        className="ask-input"
+        value={draft}
+        maxLength={2000}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder='Just ask Kaya… e.g. "kopi 4.20"'
+      />
+      <button type="submit" className="ask-send" aria-label="Ask" disabled={!draft.trim()}>
+        <Icon name="send" size={18} />
+      </button>
+    </form>
+  );
+}
+
+/** One-tap questions, and on a wide screen the box to ask anything above them; each opens the
+ * chat. On a phone the box is docked at the bottom of the page instead (see Home), so the card
+ * holds only the questions. */
+function AskPanel({ chips, onAsk, form }: { chips: string[]; onAsk: (text: string) => void; form: ReactNode }) {
+  return (
     <Block id="ask" title="Just ask Kaya" className="ask-panel">
-      <form className="ask" onSubmit={ask}>
-        <label className="sr-only" htmlFor="ask-input">
-          Ask Kaya
-        </label>
-        <input
-          id="ask-input"
-          className="ask-input"
-          value={draft}
-          maxLength={2000}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder='Just ask Kaya… e.g. "kopi 4.20"'
-        />
-        <button type="submit" className="ask-send" aria-label="Ask" disabled={!draft.trim()}>
-          <Icon name="send" size={18} />
-        </button>
-      </form>
+      {form}
       <div className="chips" aria-label="Suggested questions">
         {chips.map((c) => (
           <button key={c} type="button" className="ask-chip" onClick={() => onAsk(c)}>
@@ -204,10 +231,18 @@ function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => 
   );
 }
 
+/** What an action's response says in words (marking a bill paid says what was logged), if anything. */
+function messageOf(response: unknown): string | undefined {
+  if (typeof response !== "object" || response === null) return undefined;
+  const { message } = response as { message?: unknown };
+  return typeof message === "string" && message !== "" ? message : undefined;
+}
+
 /** One thing that needs you: a link to where it's settled, and any buttons that settle it
- * right here. Each button calls the API as given, then everything it may have changed
- * is fetched again. An item that needs you now says so; one about today says Today. */
-function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: () => void }) {
+ * right here. Each button calls the API as given (with its body, if it has one), then
+ * everything it may have changed is fetched again, and what the API said is passed on to be
+ * shown. An item that needs you now says so; one about today says Today. */
+function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: (message?: string) => void }) {
   const dept = DEPARTMENTS.find((d) => d.name === item.department);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,8 +251,11 @@ function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: () => void 
     setBusy(true);
     setError(null);
     try {
-      await api(action.path, { method: action.method });
-      onSettled();
+      const done = await api<unknown>(action.path, {
+        method: action.method,
+        body: action.body ?? undefined,
+      });
+      onSettled(messageOf(done));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't do that");
     } finally {
@@ -272,7 +310,7 @@ function NeedsYou({
   onSettled,
 }: {
   feed: { data?: FeedItem[]; isLoading: boolean; isError: boolean };
-  onSettled: () => void;
+  onSettled: (message?: string) => void;
 }) {
   const [all, setAll] = useState(false);
   const items = feed.data ?? [];
@@ -382,17 +420,25 @@ export function Home({
     void client.invalidateQueries({ queryKey: ["runs"] });
   }
 
-  // A button on a needs-you item may have logged or skipped something: refresh what shows it.
-  function settled() {
-    for (const key of ["home", "transactions", "bills", "budgets", "summary", "spending-months"])
+  // A button on a needs-you item may have logged, skipped or merged something: refresh what
+  // shows it, here and on the other pages ("transactions" also holds the ledger's possible
+  // duplicates; "email" is the Email page). What the API said (what a bill's payment logged) is
+  // shown for a moment, as the item it was about is gone.
+  const [notice, setNotice] = useState<string | null>(null);
+  function settled(message?: string) {
+    for (const key of ["home", "transactions", "email", "bills", "budgets", "summary", "spending-months"])
       void client.invalidateQueries({ queryKey: [key] });
+    setNotice(message ?? null);
   }
 
   const going = (runs.data ?? []).slice(0, 3);
   const detail = trip.data;
   const tripOn = detail && detail.trip.status === "ongoing" ? detail : null;
+  // On a phone the ask box is docked above the bottom bar, sticky at the end of the page (a
+  // sticky box only travels inside its parent, so the page sits in one flex column then).
+  const docked = usePhone();
   return (
-    <>
+    <div className={docked ? "home home-docked" : "home"}>
       <Hero
         date={today(me.user.timezone)}
         greeting={greeting(me.user.timezone)}
@@ -417,7 +463,11 @@ export function Home({
               </ul>
             </Block>
           )}
-          <AskPanel chips={suggestions({ trip: detail, holdings: held })} onAsk={onAsk} />
+          <AskPanel
+            chips={suggestions({ trip: detail, holdings: held })}
+            onAsk={onAsk}
+            form={docked ? null : <AskForm onAsk={onAsk} />}
+          />
         </div>
         <div className="stack">
           <MoneyGlance
@@ -429,6 +479,12 @@ export function Home({
           {!tripOn && <TripGlance detail={trip.isLoading ? undefined : (detail ?? null)} />}
         </div>
       </div>
-    </>
+      {docked && (
+        <div className="ask-dock">
+          <AskForm onAsk={onAsk} />
+        </div>
+      )}
+      {notice && <Toast message={notice} onClose={() => setNotice(null)} />}
+    </div>
   );
 }

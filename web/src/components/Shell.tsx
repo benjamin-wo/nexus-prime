@@ -7,6 +7,7 @@ import { useReveal } from "../motion";
 import { DemoBanner } from "./DemoBanner";
 import { Icon, departmentIcon } from "./Icon";
 import { pullIsSafe, withMiniApp } from "../telegram";
+import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { Kaya } from "./Kaya";
@@ -86,18 +87,17 @@ function useTelegramBack(pathname: string, first: boolean) {
 
 /** Telegram's header (and the bar under the app) in the page's own colour: the
  * hero's indigo on Home, the page colour elsewhere. */
-const SHELL_BG = "#f1f4f8";
-const HERO_TOP = "#3e52b6";
-const BAR_BG = "#1b2333";
 function useTelegramColours(home: boolean) {
+  const scheme = useScheme();
   useEffect(
     () =>
       withMiniApp((app) => {
-        app.setHeaderColor?.(home ? HERO_TOP : SHELL_BG);
-        app.setBackgroundColor?.(SHELL_BG);
-        app.setBottomBarColor?.(BAR_BG);
+        const colours = CHROME[scheme];
+        app.setHeaderColor?.(home ? colours.hero : colours.shell);
+        app.setBackgroundColor?.(colours.shell);
+        app.setBottomBarColor?.(colours.bar);
       }),
-    [home],
+    [home, scheme],
   );
 }
 
@@ -142,6 +142,7 @@ export function Shell({
   onOpenChat,
   onLogout,
   onRefresh,
+  offlineWaiting = 0,
   children,
 }: {
   me: Me;
@@ -149,6 +150,8 @@ export function Shell({
   onLogout: () => void;
   /** Refetches what the page shows; given, Home, Money overview, Ledger and Budgets can be pulled down to refresh. */
   onRefresh?: () => Promise<unknown>;
+  /** While the phone is offline: how many expenses saved on it are waiting to sync. A notice shows above the page. */
+  offlineWaiting?: number;
   children: ReactNode;
 }) {
   const { pathname, key } = useLocation();
@@ -228,6 +231,14 @@ export function Shell({
   return (
     <div className={`shell${scrolling ? " scrolling-down" : ""}`} ref={shell}>
       {me.demo && <DemoBanner expiresAt={me.demo.expires_at} onSignIn={onLogout} />}
+      {offlineWaiting > 0 && (
+        <div className="offline-notice" role="status">
+          <p>
+            You're offline. {offlineWaiting} {offlineWaiting === 1 ? "expense" : "expenses"} will sync when you're
+            back.
+          </p>
+        </div>
+      )}
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <BrandMark />

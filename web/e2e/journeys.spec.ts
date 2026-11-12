@@ -806,14 +806,14 @@ test("cash flow shows logged and expected days, with detail on tap", async ({ pa
   await expect(page.getByRole("heading", { name: "Cash flow", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
   const days = page.getByRole("group", { name: "Days" });
-  await expect(days.getByRole("button", { name: /^2026-09-25, net SGD\s4,200\.00/ })).toContainText("+4,200");
-  await expect(days.getByRole("button", { name: /^2026-09-12, net -SGD\s42\.10/ })).toContainText("-42.1");
-  await days.getByRole("button", { name: "2026-09-30, 1 expected" }).click();
+  await expect(days.getByRole("button", { name: /^September 25, money in SGD\s4,200\.00$/ })).toBeVisible();
+  await expect(days.getByRole("button", { name: /^September 12, spent SGD\s42\.10$/ })).toBeVisible();
+  await days.getByRole("button", { name: /^September 30, expected out SGD\s1,800\.00$/ }).click();
   const detail = page.getByRole("region", { name: /Wednesday, (30 September|September 30)/ });
   await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Scheduled payment");
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
-  await expect(days.getByRole("button", { name: "2026-10-12, 1 expected" })).toContainText("-17.98");
+  await expect(days.getByRole("button", { name: /^October 12, expected out SGD\s17\.98$/ })).toBeVisible();
 });
 
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
@@ -2049,6 +2049,8 @@ test("places from Google Maps: saved, linked, rated, and flagged when usually cl
 });
 
 test("a plan with no place says there is no travel time, and linking one brings it", async ({ page }) => {
+  // Its dates are fixed, so is the clock: on those very days the trip would be on, and Plan reads differently.
+  await page.clock.setFixedTime(new Date("2026-11-01T04:00:00Z"));
   const state = await fakeApi(page);
   state.mapKey = "test-browser-key";
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
@@ -2337,6 +2339,8 @@ test("ideas from guides and articles: asked for in words, credited, saved to the
 });
 
 test("the trip on a map, coloured by day, with travel times between stops", async ({ page }, info) => {
+  // Its dates are fixed, so is the clock: on those very days the trip would be on, and Plan reads differently.
+  await page.clock.setFixedTime(new Date("2026-11-01T04:00:00Z"));
   const state = await fakeApi(page);
   state.mapKey = "test-browser-key";
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
@@ -3244,6 +3248,8 @@ test("Next up names a free day while planning, and its button opens the Ideas ta
 });
 
 test("an idea is put on a day from Ideas, shows on that day of Plan, and is taken off again", async ({ page }) => {
+  // Its dates are fixed, so is the clock: on those very days the trip would be on, and Plan reads differently.
+  await page.clock.setFixedTime(new Date("2026-11-01T04:00:00Z"));
   const state = await fakeApi(page);
   await addTrip(page, "Seoul", "2026-11-10", "2026-11-13");
   state.plans.push(idea("pl1", "Lantern Alley", { list_name: "Nightlife" }), planOn("pl2", "Old Temple", "2026-11-11", { at: "10:00" }));

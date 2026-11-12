@@ -1,14 +1,15 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { api, ApiError, type EditedTransaction, type Me, type RuleSuggestion, setCsrf, type Transaction } from "./api";
 import { ChatDrawer } from "./components/ChatDrawer";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ErrorBoundary, pageFallback } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
+import { isWaiting, outboxUser, useOnline, useOutbox, useOutboxSync } from "./outbox";
 import { refetchActive, useRefreshOnReturn } from "./refreshOnReturn";
 import { DemoPage } from "./pages/DemoPage";
 import { Home } from "./pages/Home";
@@ -36,6 +37,7 @@ const WatchlistPage = lazyNamed(() => import("./pages/Watchlist"), "WatchlistPag
 const BudgetsPage = lazyNamed(() => import("./pages/BudgetsPage"), "BudgetsPage");
 const NotificationsPage = lazyNamed(() => import("./pages/Notifications"), "NotificationsPage");
 const ImportPage = lazyNamed(() => import("./pages/Import"), "ImportPage");
+const NotFound = lazyNamed(() => import("./pages/NotFound"), "NotFound");
 const Ledger = lazyNamed(() => import("./pages/Ledger"), "Ledger");
 const Settings = lazyNamed(() => import("./pages/Settings"), "Settings");
 const SettingsSection = lazyNamed(() => import("./pages/Settings"), "SettingsSection");
@@ -43,6 +45,17 @@ const TripInvite = lazyNamed(() => import("./pages/TripInvite"), "TripInvite");
 const Upcoming = lazyNamed(() => import("./pages/Upcoming"), "Upcoming");
 
 const pageLoading = <p className="state">Loading…</p>;
+
+/** The routed page, with its own error boundary: a page that crashes shows a notice in its place while
+ * the rail, bottom bar and chat around it keep working, and going to another page tries again. */
+function RoutedPage({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  return (
+    <ErrorBoundary resetKey={pathname} fallback={pageFallback}>
+      <Suspense fallback={pageLoading}>{children}</Suspense>
+    </ErrorBoundary>
+  );
+}
 
 /** Inside Telegram, sign in with the Mini App's launch data instead of the widget. */
 async function miniAppSignIn(): Promise<Me | null> {
@@ -114,13 +127,13 @@ function GuestApp({ me }: { me: Me }) {
   const closeNotice = useCallback(() => setNotice(null), [setNotice]);
   return (
     <Shell me={me} onOpenChat={() => undefined} onLogout={logout}>
-      <Suspense fallback={pageLoading}>
+      <RoutedPage>
         <Routes>
           <Route path="/travel" element={<TripsPage />} />
           <Route path="/travel/trips/:id" element={<TripPage />} />
           <Route path="*" element={<Navigate to="/travel" replace />} />
         </Routes>
-      </Suspense>
+      </RoutedPage>
       {notice && <Toast message={notice} onClose={closeNotice} />}
     </Shell>
   );
@@ -152,10 +165,21 @@ function Cockpit({ me }: { me: Me }) {
   const closeChat = useCallback(() => setChat(null), []);
   // Pulling a page down: what it shows, fetched again whatever its staleTime.
   const pullRefresh = useCallback(() => refetchActive(client, true), [client]);
+  // Expenses logged with no connection are kept on the phone and sent when it can (outbox.ts).
+  const outboxOwner = outboxUser(me);
+  useOutboxSync(outboxOwner, client);
+  const online = useOnline();
+  const waiting = useOutbox(outboxOwner).filter(isWaiting).length;
 
   return (
-    <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout} onRefresh={pullRefresh}>
-      <Suspense fallback={pageLoading}>
+    <Shell
+      me={me}
+      onOpenChat={() => setChat({})}
+      onLogout={logout}
+      onRefresh={pullRefresh}
+      offlineWaiting={online ? 0 : waiting}
+    >
+      <RoutedPage>
         <Routes>
           <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
           <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
@@ -193,9 +217,9 @@ function Cockpit({ me }: { me: Me }) {
           <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
           <Route path="/email" element={<Navigate to="/settings/email" replace />} />
           <Route path="/import" element={<Navigate to="/settings/import" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
-      </Suspense>
+      </RoutedPage>
       {sheet && (
         <EntrySheet
           key={sheet.editing?.id ?? "new"}
@@ -203,6 +227,10 @@ function Cockpit({ me }: { me: Me }) {
           editing={sheet.editing}
           onOpen={(tx) => setSheet({ editing: tx })}
           onClose={closeSheet}
+          onQueued={() => {
+            setSheet(null);
+            setNotice("Saved on this phone. It will sync when you're back online.");
+          }}
           onSaved={(tx: EditedTransaction) => {
             setSheet(null);
             refresh();
@@ -277,8 +305,14 @@ function Gate() {
   );
 }
 
+/** A request the server refused (403, 404, 422...) would be refused again: show it at once. Anything
+ * else (a dropped connection, a 5xx) gets two more tries. */
+export function retryQuery(failureCount: number, error: Error): boolean {
+  return !(error instanceof ApiError && error.status >= 400 && error.status < 500) && failureCount < 2;
+}
+
 export function App({ client }: { client?: QueryClient }) {
-  const [queryClient] = useState(() => client ?? new QueryClient({ defaultOptions: { queries: { staleTime: 15_000 } } }));
+  const [queryClient] = useState(() => client ?? new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, retry: retryQuery } } }));
   // Telegram's WebView doesn't reliably give a window focus on return: refresh when the app is shown again.
   useRefreshOnReturn(queryClient);
   return (

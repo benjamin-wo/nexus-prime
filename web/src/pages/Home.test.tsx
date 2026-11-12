@@ -1,8 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Booking, FeedItem, Me, Portfolio, Setup, Spending, Summary, Today, TripDetail } from "../api";
+import { api, type Booking, type FeedAction, type FeedItem, type Me, type Portfolio, type Setup, type Spending, type Summary, type Today, type TripDetail } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
 import { Home, NEEDS_SHOWN } from "./Home";
 import { clock, dayLines, nextBooking, nextToday, tripDay } from "./HomeCards";
@@ -178,6 +179,66 @@ describe("Home: the hero's buttons", () => {
   });
 });
 
+/** Pretend the screen is (or isn't) phone-sized, i.e. matches the shell's bottom-bar query. */
+function screenIs(phone: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: phone && query === "(max-width: 900px)",
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })),
+  );
+}
+
+describe("Home: the ask box", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sits in the Just ask Kaya card on a wide screen, above the suggestions", async () => {
+    screenIs(false);
+    serve();
+    const onAsk = vi.fn();
+    const { container } = renderHome(onAsk);
+    const card = await screen.findByRole("region", { name: "Just ask Kaya" });
+    expect(within(card).getAllByRole("textbox")).toHaveLength(1);
+    expect(container.querySelector(".ask-dock")).toBeNull();
+    await userEvent.type(within(card).getByRole("textbox", { name: "Ask Kaya" }), "kopi 4.20{Enter}");
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith("kopi 4.20");
+  });
+
+  it("is docked at the bottom of the page on a phone, with the suggestions staying in the card", async () => {
+    screenIs(true);
+    serve();
+    const onAsk = vi.fn();
+    const { container } = renderHome(onAsk);
+    const card = await screen.findByRole("region", { name: "Just ask Kaya" });
+    const dock = container.querySelector<HTMLElement>(".ask-dock")!;
+    expect(dock).not.toBeNull();
+    // One box only, in the dock and not in the card; the dock is the last thing on the page.
+    expect(screen.getAllByRole("textbox", { name: "Ask Kaya" })).toHaveLength(1);
+    expect(within(dock).getByRole("textbox", { name: "Ask Kaya" })).toHaveAttribute("id", "ask-input");
+    expect(within(card).queryByRole("textbox")).toBeNull();
+    expect(container.querySelector(".home")).toHaveClass("home-docked");
+    expect(container.querySelector(".home")!.lastElementChild).toBe(dock);
+    expect(within(card).getByLabelText("Suggested questions")).toBeInTheDocument();
+
+    // Asking from the dock opens the chat with the question, as before, and clears the box.
+    const box = within(dock).getByRole("textbox", { name: "Ask Kaya" });
+    const send = within(dock).getByRole("button", { name: "Ask" });
+    expect(send).toBeDisabled();
+    await userEvent.type(box, "how much on grab?");
+    await userEvent.click(send);
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith("how much on grab?");
+    expect(box).toHaveValue("");
+
+    // A suggestion in the card still opens the chat too.
+    const chip = within(card).getAllByRole("button")[0];
+    await userEvent.click(chip);
+    expect(onAsk).toHaveBeenLastCalledWith(chip.textContent);
+  });
+});
+
 describe("Home: Needs you", () => {
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => item(`Thing ${i + 1}`, i < 2 ? "now" : i < 4 ? "today" : "soon", { kind: `k${i}`, department: i % 2 ? "investment" : "travel" }));
@@ -240,6 +301,107 @@ describe("Home: Needs you", () => {
     expect(button).toHaveClass("btn-primary");
     await userEvent.setup().click(button);
     await waitFor(() => expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/bills/m1/paid"]));
+  });
+});
+
+describe("Home: buttons that settle an item", () => {
+  const post = (calls: ReturnType<typeof mockApi>) => calls.filter((c) => c.method === "POST");
+
+  it("sends an action's body as JSON, and sends none when it has none", async () => {
+    const merge: FeedAction = { key: "merge", label: "Same one", method: "POST", path: "/transactions/t1/merge", body: { other_id: "t2" } };
+    const log: FeedAction = { key: "log", label: "Log it", method: "POST", path: "/email/e1/log", body: {} };
+    const skip: FeedAction = { key: "skip", label: "Skip", method: "POST", path: "/email/e1/skip", body: null };
+    const calls = mockApi({
+      "GET /home": () => [
+        item("Grab, 23.40 SGD, may be logged twice", "soon", { kind: "duplicates", actions: [merge] }),
+        item("Grab receipt, 18.90 SGD, from your email", "soon", { kind: "email", actions: [log, skip] }),
+      ],
+      "POST /transactions/t1/merge": () => ({ kept: {}, removed: {} }),
+      "POST /email/e1/log": () => new Response(null, { status: 204 }),
+      "POST /email/e1/skip": () => new Response(null, { status: 204 }),
+    });
+    renderHome();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Same one" }));
+    await waitFor(() => expect(post(calls)).toHaveLength(1));
+    await user.click(screen.getByRole("button", { name: "Log it" }));
+    await waitFor(() => expect(post(calls)).toHaveLength(2));
+    await user.click(screen.getByRole("button", { name: "Skip" }));
+    await waitFor(() => expect(post(calls)).toHaveLength(3));
+    expect(post(calls).map((c) => [c.path, c.body])).toEqual([
+      ["/transactions/t1/merge", { other_id: "t2" }],
+      ["/email/e1/log", {}],
+      ["/email/e1/skip", undefined],
+    ]);
+  });
+
+  it("shows what the API said, for a moment, once the item is settled", async () => {
+    const paid: FeedAction = { key: "paid", label: "Mark paid", method: "POST", path: "/bills/b1/paid?due=2026-10-23" };
+    let settled = false;
+    mockApi({
+      "GET /home": () => (settled ? [] : [item("Rent (1,800.00 SGD) due tomorrow", "soon", { actions: [paid] })]),
+      "POST /bills/b1/paid": () => {
+        settled = true;
+        return { message: "Marked Rent (23 Oct) as paid and logged 1,800.00 SGD in this month's spending.", logged: true };
+      },
+    });
+    renderHome();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Mark paid" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Marked Rent (23 Oct) as paid and logged 1,800.00 SGD");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Mark paid" })).toBeNull());
+    await userEvent.setup().click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("shows nothing extra when the response has no message", async () => {
+    const snooze: FeedAction = { key: "snooze", label: "Remind me later", method: "POST", path: "/bills/b1/snooze" };
+    const calls = mockApi({
+      "GET /home": () => [item("Rent due tomorrow", "soon", { actions: [snooze] })],
+      "POST /bills/b1/snooze": () => new Response(null, { status: 204 }),
+    });
+    renderHome();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Remind me later" }));
+    await waitFor(() => expect(post(calls)).toHaveLength(1));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("fetches again what shows it: Home, the Email page and the ledger with its duplicates", async () => {
+    const skip: FeedAction = { key: "skip", label: "Skip", method: "POST", path: "/email/e1/skip" };
+    const calls = mockApi({
+      "GET /home": () => [item("Grab receipt, 18.90 SGD, from your email", "soon", { kind: "email", actions: [skip] })],
+      "GET /email": () => ({ emails: [] }),
+      "GET /transactions/probe": () => ({ items: [], total: 0 }),
+      "POST /email/e1/skip": () => new Response(null, { status: 204 }),
+    });
+    // The Email page and the ledger are not on Home; their data is in the same cache.
+    function Elsewhere() {
+      useQuery({ queryKey: ["email"], queryFn: () => api("/email") });
+      useQuery({ queryKey: ["transactions", "page"], queryFn: () => api("/transactions/probe") });
+      return null;
+    }
+    renderWithProviders(
+      <>
+        <Home me={me} onAsk={vi.fn()} onLog={vi.fn()} />
+        <Elsewhere />
+      </>,
+    );
+    const user = userEvent.setup();
+    const count = (path: string) => calls.filter((c) => c.method === "GET" && c.path === path).length;
+    await user.click(await screen.findByRole("button", { name: "Skip" }));
+    await waitFor(() => expect(post(calls)).toHaveLength(1));
+    await waitFor(() => expect([count("/home"), count("/email"), count("/transactions/probe")]).toEqual([2, 2, 2]));
+  });
+
+  it("says so when a button's request fails, and keeps the item", async () => {
+    const log: FeedAction = { key: "log", label: "Log it", method: "POST", path: "/email/e1/log", body: {} };
+    mockApi({
+      "GET /home": () => [item("Grab receipt, 18.90 SGD, from your email", "soon", { kind: "email", actions: [log] })],
+      "POST /email/e1/log": () => new Response(JSON.stringify({ detail: "that email was already dealt with" }), { status: 409 }),
+    });
+    renderHome();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Log it" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("that email was already dealt with");
+    expect(screen.getByRole("button", { name: "Log it" })).toBeEnabled();
   });
 });
 

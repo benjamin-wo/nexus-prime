@@ -13,33 +13,100 @@ export function setCsrf(token: string): void {
   csrfToken = token;
 }
 
-export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+/** Shown when a request times out or never reaches the server. */
+export const NETWORK_ERROR_MESSAGE = "Couldn't reach Kaya. Check your connection and try again.";
+
+/** How long a read may take before it is given up on. Only reads: a write (a chat message, a receipt
+ * photo, a statement) is never abandoned on a timer, because the server may still finish it, and the
+ * person would then send it again and record it twice. */
+const READ_TIMEOUT_MS = 30_000;
+
+export async function api<T>(
+  path: string,
+  init: { method?: string; body?: unknown; signal?: AbortSignal; idempotencyKey?: string } = {},
+): Promise<T> {
   const method = init.method ?? "GET";
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") headers["X-CSRF-Token"] = csrfToken;
-  return request<T>(path, method, headers, init.body === undefined ? undefined : JSON.stringify(init.body));
+  // Sent again with the same key, a write is recorded once (POST /transactions): see outbox.ts.
+  if (init.idempotencyKey) headers["Idempotency-Key"] = init.idempotencyKey;
+  return request<T>(
+    path,
+    method,
+    headers,
+    init.body === undefined ? undefined : JSON.stringify(init.body),
+    init.signal,
+    method === "GET" ? READ_TIMEOUT_MS : null,
+  );
 }
 
 /** POST a multipart form (a file upload). The browser sets the Content-Type, with its boundary. */
-export async function apiForm<T>(path: string, form: FormData): Promise<T> {
-  return request<T>(path, "POST", { "X-CSRF-Token": csrfToken }, form);
+export async function apiForm<T>(path: string, form: FormData, init: { signal?: AbortSignal } = {}): Promise<T> {
+  return request<T>(path, "POST", { "X-CSRF-Token": csrfToken }, form, init.signal, null);
 }
 
-async function request<T>(path: string, method: string, headers: Record<string, string>, body: BodyInit | undefined): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    method,
-    headers,
-    credentials: "same-origin",
-    body,
-  });
-  if (response.status === 204) return undefined as T;
-  const data: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const detail = (data as { detail?: unknown } | null)?.detail;
-    throw new ApiError(response.status, typeof detail === "string" ? detail : response.statusText);
+/** The CSRF header every write carries, for a request made with `fetch` directly (the chat stream). */
+export function csrfHeader(): Record<string, string> {
+  return { "X-CSRF-Token": csrfToken };
+}
+
+/** A message fit to show for the `detail` of an error response. FastAPI sends a string for its own
+ * errors and a list of problems for a request it could not validate: the first one, named by its field. */
+export function messageFromDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (!Array.isArray(detail)) return fallback;
+  const first: unknown = detail[0];
+  if (typeof first !== "object" || first === null) return fallback;
+  const { msg, loc } = first as { msg?: unknown; loc?: unknown };
+  if (typeof msg !== "string" || msg === "") return fallback;
+  const field = Array.isArray(loc) && loc.length > 1 ? loc[loc.length - 1] : null;
+  return typeof field === "string" && field !== "" ? `${field}: ${msg}` : msg;
+}
+
+async function request<T>(
+  path: string,
+  method: string,
+  headers: Record<string, string>,
+  body: BodyInit | undefined,
+  signal: AbortSignal | undefined,
+  timeoutMs: number | null,
+): Promise<T> {
+  // The caller's signal and the timeout are joined by hand: AbortSignal.any is missing from older WebViews.
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  const timer = timeoutMs === null ? undefined : setTimeout(abort, timeoutMs);
+  try {
+    const response = await fetch(`/api${path}`, {
+      method,
+      headers,
+      credentials: "same-origin",
+      body,
+      signal: controller.signal,
+    });
+    if (response.status === 204) return undefined as T;
+    const data: unknown = await response.json().catch((e: unknown) => {
+      // An abort while the body was still arriving is not an empty body.
+      if (controller.signal.aborted) throw e;
+      return null;
+    });
+    if (!response.ok) {
+      const detail = (data as { detail?: unknown } | null)?.detail;
+      throw new ApiError(response.status, messageFromDetail(detail, response.statusText));
+    }
+    return data as T;
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    // The caller gave up on purpose (TanStack Query does, on unmount): leave that an AbortError.
+    if (signal?.aborted) throw e;
+    // Anything else is the timeout or the network.
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
   }
-  return data as T;
 }
 
 /** The day as YYYYMMDD, for the export's file name when the server's header can't be read. */
@@ -522,7 +589,14 @@ export type FeedItem = {
   /** Buttons that settle the item; `path` is relative to /api. */
   actions: FeedAction[];
 };
-export type FeedAction = { key: string; label: string; method: string; path: string };
+export type FeedAction = {
+  key: string;
+  label: string;
+  method: string;
+  path: string;
+  /** The JSON to send with it; null when the endpoint takes none. */
+  body?: unknown;
+};
 
 /** One step of Home's setup checklist. */
 export type SetupItem = {

@@ -165,6 +165,7 @@ def _transaction(row: Row[Any]) -> Transaction:
             else None
         ),
         paid_with_wallet_id=row.paid_with_wallet_id,
+        client_ref=row.client_ref,
     )
 
 
@@ -212,6 +213,7 @@ def _transaction_values(tx: Transaction) -> dict[str, Any]:
         "received_amount": tx.received_amount.amount if tx.received_amount else None,
         "received_currency": tx.received_amount.currency if tx.received_amount else None,
         "paid_with_wallet_id": tx.paid_with_wallet_id,
+        "client_ref": tx.client_ref,
     }
 
 
@@ -741,6 +743,37 @@ class SqlLedgerRepository:
                 id=tx.id, user_id=tx.user_id, created_at=tx.created_at, **_transaction_values(tx)
             )
         )
+
+    async def insert_transaction_once(self, tx: Transaction) -> bool:
+        s = transactions.c
+        inserted = (
+            await self._db.execute(
+                pg_insert(transactions)
+                .values(
+                    id=tx.id,
+                    user_id=tx.user_id,
+                    created_at=tx.created_at,
+                    **_transaction_values(tx),
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[s.user_id, s.client_ref], index_where=s.client_ref.isnot(None)
+                )
+                .returning(s.id)
+            )
+        ).first()
+        return inserted is not None
+
+    async def transaction_by_client_ref(
+        self, user_id: UserId, client_ref: str
+    ) -> Transaction | None:
+        row = (
+            await self._db.execute(
+                select(transactions).where(
+                    transactions.c.user_id == user_id, transactions.c.client_ref == client_ref
+                )
+            )
+        ).first()
+        return _transaction(row) if row else None
 
     async def get_transaction(
         self, user_id: UserId, transaction_id: UUID, *, for_update: bool = False

@@ -272,6 +272,17 @@ class LedgerRepository(Protocol):
 
     # transactions
     async def insert_transaction(self, tx: Transaction) -> None: ...
+    async def insert_transaction_once(self, tx: Transaction) -> bool:
+        """Insert a transaction that has a ``client_ref``; False (and nothing written) when the
+        user already has one with that key, even if another request is committing it now."""
+        ...
+
+    async def transaction_by_client_ref(
+        self, user_id: UserId, client_ref: str
+    ) -> Transaction | None:
+        """The user's transaction with this client key, deleted or not."""
+        ...
+
     async def get_transaction(
         self, user_id: UserId, transaction_id: UUID, *, for_update: bool = False
     ) -> Transaction | None: ...

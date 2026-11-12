@@ -3421,17 +3421,31 @@ export async function fakeApi(
       }
       return json(route, { lines, more: chatHistory, pending: null });
     }
-    if (path === "/chat") {
+    if (path === "/chat" || path === "/chat/stream") {
+      // The stream sends the same replies as the plain endpoint, after one made-up step: the chat
+      // reads both the same way.
+      const answer = (r: Route, replies: unknown) =>
+        path === "/chat"
+          ? json(r, replies)
+          : r.fulfill({
+              status: 200,
+              contentType: "text/event-stream",
+              body:
+                ": open\n\n" +
+                `event: step\ndata: ${JSON.stringify({ label: "Working on it", state: "running" })}\n\n` +
+                `event: step\ndata: ${JSON.stringify({ label: "Working on it", state: "done" })}\n\n` +
+                `event: replies\ndata: ${JSON.stringify(replies)}\n\n`,
+            });
       state.chatSent.push(String(body.message));
       if (demoSession) {
         // A demo has a few messages; the reply itself says when they are used up.
-        if (demoLeft <= 0) return json(route, [{ text: "That's the end of the demo's messages. Sign in with Telegram to keep going.", buttons: [] }]);
+        if (demoLeft <= 0) return answer(route, [{ text: "That's the end of the demo's messages. Sign in with Telegram to keep going.", buttons: [] }]);
         demoLeft -= 1;
-        return json(route, [{ text: "Here's what I found in the demo data.", buttons: [] }]);
+        return answer(route, [{ text: "Here's what I found in the demo data.", buttons: [] }]);
       }
       if (String(body.message).startsWith("How much is a PS6")) {
         // A web answer: its sources come as src: buttons, two to a row, for the chat to draw as chips.
-        return json(route, [
+        return answer(route, [
           {
             text: "About 500 SGD at most shops, per HardwareZone (11 May). The yen rate is 0.0087 today, per XE.",
             buttons: [
@@ -3445,14 +3459,14 @@ export async function fakeApi(
         ]);
       }
       if (String(body.message).startsWith("For my ")) {
-        return json(route, [
+        return answer(route, [
           {
             text: "Add Hotel Ume, 2 nights, 13 to 15 Nov (ref 8812, booked on Agoda) to your Tokyo trip?",
             buttons: [[{ label: "Confirm", data: "hitl:t:y" }, { label: "Cancel", data: "hitl:t:n" }]],
           },
         ]);
       }
-      return json(route, [
+      return answer(route, [
         {
           text: "Delete 2026-09-27 · -25.00 SGD · Grab?",
           buttons: [
@@ -3464,6 +3478,7 @@ export async function fakeApi(
         },
       ]);
     }
+    if (path === "/chat/stop" && method === "POST") return route.fulfill({ status: 204 });
     if (path === "/chat/voice" && method === "POST") {
       // The upload is multipart with one field, audio; note what it was called and how big it was.
       const raw = request.postDataBuffer() ?? Buffer.alloc(0);

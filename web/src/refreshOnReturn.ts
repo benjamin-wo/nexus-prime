@@ -9,6 +9,15 @@ export const LONG_PAUSE_MS = 5 * 60_000;
  * refreshes and the rest within this window are ignored. */
 export const DEBOUNCE_MS = 1000;
 
+const returnListeners = new Set<() => void>();
+
+/** Runs `listener` each time the app comes back to the front, at the same moments the screen is refreshed (the
+ * outbox uses it to send what was saved offline). Returns a function that stops listening. */
+export function onAppReturn(listener: () => void): () => void {
+  returnListeners.add(listener);
+  return () => void returnListeners.delete(listener);
+}
+
 /** Money data is always refetched on a return, however recently it was fetched. Reference data (trip photos,
  * places, weather, merchant suggestions) keeps its own `staleTime`: it is only refetched once stale. */
 const MONEY = new Set([
@@ -76,6 +85,7 @@ export function useRefreshOnReturn(client: QueryClient): void {
       const long = hiddenAt !== null && now - hiddenAt > LONG_PAUSE_MS;
       hiddenAt = null;
       void refetchActive(client, long);
+      returnListeners.forEach((listener) => listener());
     };
 
     const onVisibility = () => (document.visibilityState === "hidden" ? away() : back());

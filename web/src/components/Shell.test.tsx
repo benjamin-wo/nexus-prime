@@ -178,3 +178,33 @@ describe("Invest and Travel in the menu", () => {
     expect(screen.queryByRole("navigation", { name: "Main (mobile)" })).toBeNull();
   });
 });
+
+describe("the offline notice", () => {
+  const notice = (waiting?: number) =>
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Shell me={user("member")} onOpenChat={() => {}} onLogout={() => {}} offlineWaiting={waiting}>
+          <p>The page</p>
+        </Shell>
+      </MemoryRouter>,
+    );
+
+  it("says how many expenses will sync, above the page and not over it", () => {
+    notice(1);
+    const text = screen.getByRole("status");
+    expect(text).toHaveTextContent("You're offline. 1 expense will sync when you're back.");
+    // In the flow before the page, not positioned over it.
+    expect(text.compareDocumentPosition(screen.getByText("The page")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(text.className).toBe("offline-notice");
+  });
+
+  it("uses the plural", () => {
+    notice(3);
+    expect(screen.getByRole("status")).toHaveTextContent("3 expenses will sync");
+  });
+
+  it.each([undefined, 0])("is not there with %s waiting", (waiting) => {
+    notice(waiting);
+    expect(screen.queryByText(/You're offline/)).toBeNull();
+  });
+});

@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { formatClock, formatMoney, formatRange, formatWholeMoney, formatWithHome, priceWhen, txName } from "./format";
+import {
+  dayHeading,
+  formatClock,
+  formatMoney,
+  formatRange,
+  formatWholeMoney,
+  formatWithHome,
+  priceWhen,
+  relativeDay,
+  shiftDay,
+  txName,
+} from "./format";
 
 // Intl puts a no-break space after the currency code.
 const plain = (text: string) => text.replace(/ /g, " ");
@@ -94,5 +105,41 @@ describe("txName", () => {
     const to = { id: "w", name: "IBKR", kind: "investment" as const };
     expect(txName({ ...base, direction: "move", to_wallet: to })).toBe("→ IBKR");
     expect(txName({ ...base, notes: "Salary" })).toBe("No merchant");
+  });
+});
+
+describe("shiftDay", () => {
+  it("moves by the calendar across month and year ends", () => {
+    expect(shiftDay("2026-11-01", -1)).toBe("2026-10-31");
+    expect(shiftDay("2026-01-01", -1)).toBe("2025-12-31");
+    expect(shiftDay("2026-02-28", 1)).toBe("2026-03-01");
+  });
+});
+
+describe("relativeDay", () => {
+  it("names today and yesterday and nothing else", () => {
+    expect(relativeDay("2026-11-12", "2026-11-12")).toBe("Today");
+    expect(relativeDay("2026-11-11", "2026-11-12")).toBe("Yesterday");
+    expect(relativeDay("2026-11-10", "2026-11-12")).toBeNull();
+    expect(relativeDay("2026-11-13", "2026-11-12")).toBeNull();
+  });
+
+  it("finds yesterday across a year end", () => {
+    expect(relativeDay("2025-12-31", "2026-01-01")).toBe("Yesterday");
+  });
+});
+
+describe("dayHeading", () => {
+  it("is Today and Yesterday for those days", () => {
+    expect(dayHeading("2026-11-12", "2026-11-12")).toBe("Today");
+    expect(dayHeading("2026-11-11", "2026-11-12")).toBe("Yesterday");
+  });
+
+  it("is the weekday and date for an earlier day this year", () => {
+    expect(dayHeading("2026-11-09", "2026-11-12")).toBe("Mon, Nov 9");
+  });
+
+  it("adds the year for another year", () => {
+    expect(dayHeading("2025-11-09", "2026-11-12")).toBe("Sun, Nov 9, 2025");
   });
 });

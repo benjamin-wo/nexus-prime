@@ -12,8 +12,8 @@ from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.datastructures import UploadFile
 
@@ -48,6 +48,7 @@ from nexus.application import whereabouts as whereabouts_cases
 from nexus.application.ports import LedgerQuery, SortField
 from nexus.application.statements import Verdict
 from nexus.application.users import RegisterUser
+from nexus.channels.web.chat_stream import stream_turn
 from nexus.channels.web.csv_export import to_csv
 from nexus.channels.web.security import (
     COOKIE,
@@ -910,11 +911,30 @@ class TransactionIn(Model):
     paid_with_wallet_id: UUID | None = None
 
 
-@router.post("/transactions", status_code=201)
-async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> TransactionOut:
+IdempotencyKey = Annotated[
+    str | None,
+    Header(
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="A client-made unique key for this entry. Sending the same key again "
+        "returns the transaction already recorded (200) instead of recording another.",
+    ),
+]
+
+
+@router.post("/transactions", status_code=201, responses={200: {"model": TransactionOut}})
+async def create_transaction(
+    body: TransactionIn,
+    auth: Auth,
+    web: Runtime,
+    response: Response,
+    idempotency_key: IdempotencyKey = None,
+) -> TransactionOut:
     user = auth.user
     said = "paid_with_wallet_id" in body.model_fields_set
-    tx = await tx_cases.log_transaction(
+    tx, created = await tx_cases.log_transaction_once(
         web.uow(),
         user.id,
         tx_cases.NewTransaction(
@@ -927,8 +947,11 @@ async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> T
             source=Source.MANUAL,
             paid_with_wallet_id=body.paid_with_wallet_id,
             use_usual_card=not said,
+            client_ref=idempotency_key,
         ),
     )
+    if not created:
+        response.status_code = 200
     return await _out(web, user, tx)
 
 
@@ -2729,6 +2752,7 @@ class FeedActionOut(Model):
     label: str
     method: str
     path: str  # relative to /api
+    body: dict[str, Any] | None = None  # the JSON to send with it, when the endpoint takes one
 
 
 class FeedItemOut(Model):
@@ -2756,7 +2780,7 @@ async def home(auth: Auth, web: Runtime) -> list[FeedItemOut]:
             urgent=i.urgent,
             when=i.when,
             actions=[
-                FeedActionOut(key=a.key, label=a.label, method=a.method, path=a.path)
+                FeedActionOut(key=a.key, label=a.label, method=a.method, path=a.path, body=a.body)
                 for a in i.actions
             ],
         )
@@ -2897,6 +2921,28 @@ async def chat_history(
 async def chat(body: ChatIn, auth: Auth, web: Runtime) -> list[ReplyOut]:
     ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"
     return replies_out(await web.service.handle_text(auth.user.id, body.message, ref))
+
+
+@router.post("/chat/stream")
+async def chat_stream(body: ChatIn, auth: Auth, web: Runtime) -> StreamingResponse:
+    """The same turn as ``POST /chat``, as a ``text/event-stream``: ``step`` events while
+    it works, then ``replies`` (what ``/chat`` returns) or ``error``. Same sign-in, origin,
+    CSRF and limits. A browser that leaves doesn't cancel the turn."""
+    ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"
+    return stream_turn(
+        web.service,
+        auth.user.id,
+        body.message,
+        ref,
+        replies=lambda done: [r.model_dump(mode="json") for r in replies_out(done)],
+    )
+
+
+@router.post("/chat/stop", status_code=204)
+async def chat_stop(auth: Auth, web: Runtime) -> None:
+    """Ask for the running chat turn to end at its next step, saying what it already did.
+    Nothing is interrupted mid-write; with no turn running it does nothing."""
+    web.service.request_stop(auth.user.id)
 
 
 # A multipart body adds a little to the recording itself.

@@ -15,35 +15,63 @@ const EXPECTED_KINDS: Record<string, string> = {
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/** A compact signed figure for a calendar cell: "+4,200" or "-51". */
-function compact(money: Money): string {
-  const value = Number(money.amount);
-  const shown = new Intl.NumberFormat(undefined, { maximumFractionDigits: Math.abs(value) >= 100 ? 0 : 2 }).format(
-    Math.abs(value),
-  );
-  return `${value > 0 ? "+" : "-"}${shown}`;
-}
-
 function isZero(money: Money): boolean {
   return Number(money.amount) === 0;
+}
+
+function absolute(money: Money): Money {
+  return { ...money, amount: String(Math.abs(Number(money.amount))) };
+}
+
+/** The largest day's figure this month, logged or expected: what the tallest bar stands for. */
+function monthScale(data: CashFlow): number {
+  let max = 0;
+  for (const d of data.days) {
+    if (d.day <= data.today) max = Math.max(max, Math.abs(Number(d.net.amount)));
+    if (d.expected.length) max = Math.max(max, Math.abs(Number(d.expected_net.amount)));
+  }
+  return max;
+}
+
+/** A bar's height step, 1 (shortest) to 4. Log scale against the month's largest day, so one big
+ * payday or rent doesn't flatten every small day to the same sliver: with a 4,700 top day the
+ * steps break near 30, 170 and 1,000; with a 200 top day, near 6, 20 and 70. */
+export function barStep(amount: number, max: number): 1 | 2 | 3 | 4 {
+  if (max <= 0) return 1;
+  const t = Math.log1p(Math.abs(amount)) / Math.log1p(max);
+  return t < 0.4 ? 1 : t < 0.6 ? 2 : t < 0.8 ? 3 : 4;
 }
 
 function DayCell({
   day,
   today,
+  scale,
   selected,
   onSelect,
 }: {
   day: CashDay;
   today: string;
+  scale: number;
   selected: boolean;
   onSelect: () => void;
 }) {
   const past = day.day <= today;
   const date = Number(day.day.slice(8, 10));
-  const label = `${day.day}${past && !isZero(day.net) ? `, net ${formatMoney(day.net)}` : ""}${
-    day.expected.length ? `, ${day.expected.length} expected` : ""
-  }`;
+  const name = new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", timeZone: "UTC" }).format(
+    new Date(`${day.day}T00:00:00Z`),
+  );
+  const logged = past && !isZero(day.net) ? day.net : null;
+  const expected = day.expected.length > 0 && !isZero(day.expected_net) ? day.expected_net : null;
+  const unpriced = day.expected.length > 0 && !expected;
+  const parts: string[] = [];
+  if (logged) {
+    parts.push(`${Number(logged.amount) > 0 ? "money in" : "spent"} ${formatMoney(absolute(logged))}`);
+  }
+  if (expected) {
+    parts.push(`expected ${Number(expected.amount) > 0 ? "in" : "out"} ${formatMoney(absolute(expected))}`);
+  }
+  if (unpriced) parts.push(`${day.expected.length} expected, no amount set`);
+  const label = [name, ...parts].join(", ");
   return (
     <button
       type="button"
@@ -53,16 +81,37 @@ function DayCell({
       onClick={onSelect}
     >
       <span className="cal-date">{date}</span>
-      {past && !isZero(day.net) && (
-        <span className={`cal-amount ${Number(day.net.amount) > 0 ? "in" : "out"}`}>{compact(day.net)}</span>
-      )}
-      {day.expected.length > 0 && !isZero(day.expected_net) && (
-        <span className={`cal-amount expected ${Number(day.expected_net.amount) > 0 ? "in" : "out"}`}>
-          {compact(day.expected_net)}
-        </span>
-      )}
-      {day.expected.length > 0 && isZero(day.expected_net) && <span className="cal-dot" aria-hidden="true" />}
+      <span className="cal-bars" aria-hidden="true">
+        {logged && (
+          <span
+            className={`cal-bar ${Number(logged.amount) > 0 ? "in" : "out"} step-${barStep(Number(logged.amount), scale)}`}
+          />
+        )}
+        {expected && (
+          <span
+            className={`cal-bar expected ${Number(expected.amount) > 0 ? "in" : "out"} step-${barStep(Number(expected.amount), scale)}`}
+          />
+        )}
+        {unpriced && <span className="cal-dot" />}
+      </span>
     </button>
+  );
+}
+
+function Legend() {
+  return (
+    <ul className="cal-legend caption" aria-label="Key">
+      <li>
+        <span className="cal-key cal-bar out" aria-hidden="true" /> Spent
+      </li>
+      <li>
+        <span className="cal-key cal-bar expected out" aria-hidden="true" /> Expected
+      </li>
+      <li>
+        <span className="cal-key cal-bar in" aria-hidden="true" /> Money in
+      </li>
+      <li>Taller bar = more</li>
+    </ul>
   );
 }
 
@@ -90,7 +139,7 @@ function DayDetail({ day, today }: { day: CashDay; today: string }) {
             <li key={n} className="budget">
               <div className="budget-head">
                 <h3 className="wrap">{e.name}</h3>
-                <span className={`num cal-amount ${e.direction}`}>
+                <span className={`num cal-item-amount ${e.direction}`}>
                   {e.amount ? `${e.direction === "in" ? "+" : "-"}${formatMoney(e.amount)}` : "Amount not set"}
                 </span>
               </div>
@@ -119,6 +168,7 @@ export function CashFlowPage() {
   const data = flow.data;
   const key = month ?? (data ? data.start.slice(0, 7) : null);
   const lead = data ? (new Date(`${data.start}T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
+  const scale = data ? monthScale(data) : 0;
   const chosen = data?.days.find((d) => d.day === (selected ?? data.today)) ?? null;
 
   function go(by: number) {
@@ -183,11 +233,13 @@ export function CashFlowPage() {
                   key={d.day}
                   day={d}
                   today={data.today}
+                  scale={scale}
                   selected={chosen?.day === d.day}
                   onSelect={() => setSelected(d.day)}
                 />
               ))}
             </div>
+            <Legend />
             {data.unknown_amounts > 0 && (
               <p className="caption">
                 {data.unknown_amounts} expected item{data.unknown_amounts === 1 ? " has" : "s have"} no amount set, so{" "}
