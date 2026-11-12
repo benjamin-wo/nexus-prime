@@ -70,4 +70,28 @@ describe("the day carousel", () => {
     expect(document.querySelector(".more-below")).toBeNull();
     expect(screen.getByRole("button", { name: "Previous day" })).toBeDisabled();
   });
+
+  it("fades the strip at the edge that has more days beyond it, so it shows it scrolls", () => {
+    render(<Days />);
+    const strip = document.querySelector<HTMLElement>(".day-strip")!;
+    // jsdom has no layout: say the strip is 300px wide with 600px of chips in it.
+    Object.defineProperty(strip, "clientWidth", { configurable: true, value: 300 });
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 600 });
+    const scrollTo = (left: number) => {
+      strip.scrollLeft = left;
+      act(() => {
+        strip.dispatchEvent(new Event("scroll"));
+      });
+    };
+    scrollTo(0);
+    expect(strip.dataset.fade).toBe("end");
+    scrollTo(120);
+    expect(strip.dataset.fade).toBe("both");
+    scrollTo(300);
+    expect(strip.dataset.fade).toBe("start");
+    // Every chip fits: nothing to fade.
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 300 });
+    scrollTo(0);
+    expect(strip.dataset.fade).toBeUndefined();
+  });
 });
