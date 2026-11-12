@@ -4,12 +4,16 @@
  * session, so there is no sign-in step.
  */
 
+import { CHROME, currentScheme, setTheme } from "./theme";
+
 type WebApp = {
   ready(): void;
   expand(): void;
   setHeaderColor?(color: string): void;
   setBackgroundColor?(color: string): void;
   setBottomBarColor?(color: string): void;
+  /** Telegram's own theme, "light" or "dark" (it can differ from the phone's). */
+  colorScheme?: "light" | "dark";
   disableVerticalSwipes?(): void;
   openLink?(url: string): void;
   platform?: string;
@@ -26,9 +30,6 @@ declare global {
     Telegram?: { WebApp?: WebApp };
   }
 }
-
-const SHELL = "#f1f4f8"; // --bg-shell
-const BAR = "#1b2333"; // --bar-bg
 
 export function readInitData(hash: string): string | null {
   return new URLSearchParams(hash.replace(/^#/, "")).get("tgWebAppData") || null;
@@ -113,6 +114,23 @@ function hapticsOnTap(app: WebApp): void {
   });
 }
 
+/** Show the page in Telegram's own theme (not the phone's), at the start and when the user changes it.
+ * Once a page is showing, Shell sets the header and bar colours again (the Home hero has its own). */
+function followTelegramTheme(app: WebApp): void {
+  const paint = () => {
+    const { shell, bar } = CHROME[currentScheme()];
+    app.setHeaderColor?.(shell);
+    app.setBackgroundColor?.(shell);
+    app.setBottomBarColor?.(bar);
+  };
+  const apply = (): boolean => (app.colorScheme === "light" || app.colorScheme === "dark" ? setTheme(app.colorScheme) : false);
+  apply();
+  paint();
+  app.onEvent?.("themeChanged", () => {
+    if (apply()) paint();
+  });
+}
+
 /** Load Telegram's script (for the full-height panel and header colour), then tidy the URL. */
 export function startMiniApp(): void {
   if (!initData) return;
@@ -124,9 +142,7 @@ export function startMiniApp(): void {
     try {
       app?.ready();
       app?.expand();
-      app?.setHeaderColor?.(SHELL);
-      app?.setBackgroundColor?.(SHELL);
-      app?.setBottomBarColor?.(BAR);
+      if (app) followTelegramTheme(app);
       // Pages scroll inside the app: a swipe down while reading shouldn't close it.
       app?.disableVerticalSwipes?.();
       if (app) hapticsOnTap(app);

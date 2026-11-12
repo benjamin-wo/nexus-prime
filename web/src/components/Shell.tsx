@@ -7,6 +7,7 @@ import { useReveal } from "../motion";
 import { DemoBanner } from "./DemoBanner";
 import { Icon, departmentIcon } from "./Icon";
 import { pullIsSafe, withMiniApp } from "../telegram";
+import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { Kaya } from "./Kaya";
@@ -86,18 +87,17 @@ function useTelegramBack(pathname: string, first: boolean) {
 
 /** Telegram's header (and the bar under the app) in the page's own colour: the
  * hero's indigo on Home, the page colour elsewhere. */
-const SHELL_BG = "#f1f4f8";
-const HERO_TOP = "#3e52b6";
-const BAR_BG = "#1b2333";
 function useTelegramColours(home: boolean) {
+  const scheme = useScheme();
   useEffect(
     () =>
       withMiniApp((app) => {
-        app.setHeaderColor?.(home ? HERO_TOP : SHELL_BG);
-        app.setBackgroundColor?.(SHELL_BG);
-        app.setBottomBarColor?.(BAR_BG);
+        const colours = CHROME[scheme];
+        app.setHeaderColor?.(home ? colours.hero : colours.shell);
+        app.setBackgroundColor?.(colours.shell);
+        app.setBottomBarColor?.(colours.bar);
       }),
-    [home],
+    [home, scheme],
   );
 }
 
