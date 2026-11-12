@@ -178,6 +178,66 @@ describe("Home: the hero's buttons", () => {
   });
 });
 
+/** Pretend the screen is (or isn't) phone-sized, i.e. matches the shell's bottom-bar query. */
+function screenIs(phone: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: phone && query === "(max-width: 900px)",
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })),
+  );
+}
+
+describe("Home: the ask box", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sits in the Just ask Kaya card on a wide screen, above the suggestions", async () => {
+    screenIs(false);
+    serve();
+    const onAsk = vi.fn();
+    const { container } = renderHome(onAsk);
+    const card = await screen.findByRole("region", { name: "Just ask Kaya" });
+    expect(within(card).getAllByRole("textbox")).toHaveLength(1);
+    expect(container.querySelector(".ask-dock")).toBeNull();
+    await userEvent.type(within(card).getByRole("textbox", { name: "Ask Kaya" }), "kopi 4.20{Enter}");
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith("kopi 4.20");
+  });
+
+  it("is docked at the bottom of the page on a phone, with the suggestions staying in the card", async () => {
+    screenIs(true);
+    serve();
+    const onAsk = vi.fn();
+    const { container } = renderHome(onAsk);
+    const card = await screen.findByRole("region", { name: "Just ask Kaya" });
+    const dock = container.querySelector<HTMLElement>(".ask-dock")!;
+    expect(dock).not.toBeNull();
+    // One box only, in the dock and not in the card; the dock is the last thing on the page.
+    expect(screen.getAllByRole("textbox", { name: "Ask Kaya" })).toHaveLength(1);
+    expect(within(dock).getByRole("textbox", { name: "Ask Kaya" })).toHaveAttribute("id", "ask-input");
+    expect(within(card).queryByRole("textbox")).toBeNull();
+    expect(container.querySelector(".home")).toHaveClass("home-docked");
+    expect(container.querySelector(".home")!.lastElementChild).toBe(dock);
+    expect(within(card).getByLabelText("Suggested questions")).toBeInTheDocument();
+
+    // Asking from the dock opens the chat with the question, as before, and clears the box.
+    const box = within(dock).getByRole("textbox", { name: "Ask Kaya" });
+    const send = within(dock).getByRole("button", { name: "Ask" });
+    expect(send).toBeDisabled();
+    await userEvent.type(box, "how much on grab?");
+    await userEvent.click(send);
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith("how much on grab?");
+    expect(box).toHaveValue("");
+
+    // A suggestion in the card still opens the chat too.
+    const chip = within(card).getAllByRole("button")[0];
+    await userEvent.click(chip);
+    expect(onAsk).toHaveBeenLastCalledWith(chip.textContent);
+  });
+});
+
 describe("Home: Needs you", () => {
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => item(`Thing ${i + 1}`, i < 2 ? "now" : i < 4 ? "today" : "soon", { kind: `k${i}`, department: i % 2 ? "investment" : "travel" }));
