@@ -2729,6 +2729,7 @@ class FeedActionOut(Model):
     label: str
     method: str
     path: str  # relative to /api
+    body: dict[str, Any] | None = None  # the JSON to send with it, when the endpoint takes one
 
 
 class FeedItemOut(Model):
@@ -2756,7 +2757,7 @@ async def home(auth: Auth, web: Runtime) -> list[FeedItemOut]:
             urgent=i.urgent,
             when=i.when,
             actions=[
-                FeedActionOut(key=a.key, label=a.label, method=a.method, path=a.path)
+                FeedActionOut(key=a.key, label=a.label, method=a.method, path=a.path, body=a.body)
                 for a in i.actions
             ],
         )

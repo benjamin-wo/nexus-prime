@@ -815,6 +815,8 @@ a.btn { text-decoration: none; }
 /* Buttons under a needs-you item line up with its text, past the icon. */
 .needs-actions { padding: 0 0 var(--space-3) calc(44px + var(--space-3)); }
 .needs-error { margin: 0; padding: 0 0 var(--space-3) calc(44px + var(--space-3)); }
+/* Fingers, not pointers: the buttons are as tall as a thumb needs. */
+@media (pointer: coarse) { .needs-actions .btn { min-height: 44px; } }
 .notes { white-space: pre-wrap; margin: 0; }
 
 /* --- trip page (photo cover, pill tabs, overview cards, day-by-day rail) --- */

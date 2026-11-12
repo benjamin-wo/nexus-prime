@@ -125,7 +125,8 @@ async def test_the_nudge_flows_through_home_and_its_actions_settle_it(world: Wor
     world.clock.now = world.clock.now.replace(month=10, day=7)  # two days after: too soon
     feed = (await owner.get("/api/home")).json()
     assert [i["kind"] for i in feed] == ["bill", "bill"]
-    assert all(i["actions"] == [] for i in feed)
+    # Only the bill's own buttons so far, not the "did it go through?" ones.
+    assert [[a["key"] for a in i["actions"]] for i in feed] == [["paid", "snooze"]] * 2
 
     world.clock.now = world.clock.now + timedelta(days=3)  # five days after
     feed = (await owner.get("/api/home")).json()
