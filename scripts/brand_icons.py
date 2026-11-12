@@ -107,7 +107,13 @@ def mark_rects() -> list[Rect]:
     # merge diamond rows of equal width
     out: list[Rect] = []
     for x, y, w, h, k in spark:
-        if out and out[-1][4] == k == "L" and out[-1][0] == x and out[-1][2] == w and out[-1][1] + out[-1][3] == y:
+        if (
+            out
+            and out[-1][4] == k == "L"
+            and out[-1][0] == x
+            and out[-1][2] == w
+            and out[-1][1] + out[-1][3] == y
+        ):
             px, py, pw, ph, pk = out[-1]
             out[-1] = (px, py, pw, ph + h, pk)
         else:
@@ -119,7 +125,8 @@ def variant_rects(variant: str) -> list[tuple[float, float, float, float, str]]:
     """Rects with real colours. variant: light | dark | cloud | ink.
 
     light  the mark on white / Cloud / pale backgrounds (Midnight pixels visible)
-    dark   on Midnight: the left stroke's Midnight pixels become Blue, the diagonal's and the inner blue become Teal
+    dark   on Midnight: the left stroke's Midnight pixels become Blue, the diagonal's and the
+           inner blue become Teal
     cloud  one colour, Cloud, for the accent-coloured button and other dark or saturated fills
     ink    one colour, Midnight, for Lime or other very light fills
     """
@@ -143,9 +150,12 @@ def num(v: float) -> str:
     return f"{v:g}"
 
 
-def rect_svg(rects: list[tuple[float, float, float, float, str]], dx: float = 0, dy: float = 0, s: float = 1) -> str:
+def rect_svg(
+    rects: list[tuple[float, float, float, float, str]], dx: float = 0, dy: float = 0, s: float = 1
+) -> str:
     return "".join(
-        f'<rect x="{num(x * s + dx)}" y="{num(y * s + dy)}" width="{num(w * s)}" height="{num(h * s)}" fill="{c}"/>'
+        f'<rect x="{num(x * s + dx)}" y="{num(y * s + dy)}" '
+        f'width="{num(w * s)}" height="{num(h * s)}" fill="{c}"/>'
         for x, y, w, h, c in rects
     )
 
@@ -153,8 +163,10 @@ def rect_svg(rects: list[tuple[float, float, float, float, str]], dx: float = 0,
 def svg_doc(view: tuple[float, float, float, float], body: str, title: str) -> str:
     vx, vy, vw, vh = view
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{num(vx)} {num(vy)} {num(vw)} {num(vh)}" '
-        f'width="{num(vw)}" height="{num(vh)}" shape-rendering="crispEdges" role="img" aria-label="{title}">'
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="{num(vx)} {num(vy)} {num(vw)} {num(vh)}" '
+        f'width="{num(vw)}" height="{num(vh)}" shape-rendering="crispEdges" '
+        f'role="img" aria-label="{title}">'
         f"<title>{title}</title>{body}</svg>\n"
     )
 
@@ -246,7 +258,9 @@ TAG_PITCH = 5  # pixels per tagline character (4 wide + 1 gap)
 TAG_GAP = 7  # units between wordmark and tagline
 
 
-def bitmap_rects(rows: list[str], ox: float, oy: float, cell: float) -> list[tuple[float, float, float, float]]:
+def bitmap_rects(
+    rows: list[str], ox: float, oy: float, cell: float
+) -> list[tuple[float, float, float, float]]:
     """Horizontal runs of a bitmap, merged vertically (same x and width on consecutive rows)."""
     runs: list[list[float]] = []
     for r, row in enumerate(rows):
@@ -281,7 +295,8 @@ def wordmark_rects(tagline: bool) -> tuple[list[tuple[float, float, float, float
     height = 10 * WORD_CELL
     if tagline:
         ty = height + TAG_GAP
-        # spread the line across the full width of the word: pitch is a fixed 5 px, so it is 100 units
+        # spread the line across the full width of the word: pitch is a fixed 5 px,
+        # so it is 100 units
         tx = 0.0
         for ch in TAGLINE:
             if ch != " ":
@@ -293,20 +308,25 @@ def wordmark_rects(tagline: bool) -> tuple[list[tuple[float, float, float, float
 
 def wordmark_svg(colour: str, tagline: bool, title: str) -> str:
     rects, w, h = wordmark_rects(tagline)
-    body = "".join(f'<rect x="{num(x)}" y="{num(y)}" width="{num(rw)}" height="{num(rh)}" fill="{colour}"/>' for x, y, rw, rh in rects)
+    body = "".join(
+        f'<rect x="{num(x)}" y="{num(y)}" width="{num(rw)}" height="{num(rh)}" fill="{colour}"/>'
+        for x, y, rw, rh in rects
+    )
     return svg_doc((0, 0, w, h), body, title)
 
 
 def lockup_svg(variant: str, title: str) -> str:
-    """Mark and wordmark side by side. The mark's cell is 3 units here, the wordmark's 2, the tagline's pixel 1
+    """Mark and wordmark side by side. The mark's cell is 3 units here, the wordmark's 2,
+    the tagline's pixel 1
     (all x4 so every edge is a whole number)."""
     k = 4
     mark = variant_rects(variant)
     u = 0.75 * k  # mark u in lockup units
-    mx0, my0, mw, mh = MARK_VIEWBOX
+    mx0, my0, mw, _mh = MARK_VIEWBOX
     word_colour = CLOUD if variant == "dark" else MIDNIGHT
     wrects, ww, wh = wordmark_rects(True)
-    # N bottom (y = 44u) lines up with the tagline's bottom; the mark's own top (spark) rises above the cap line
+    # N bottom (y = 44u) lines up with the tagline's bottom; the mark's own top (spark)
+    # rises above the cap line
     n_bottom = 44 * u
     dy = wh * k - n_bottom
     gap = 6 * u
@@ -314,7 +334,8 @@ def lockup_svg(variant: str, title: str) -> str:
     body = rect_svg(mark, -mx0 * u, dy, u)
     ox = mark_w + gap
     body += "".join(
-        f'<rect x="{num(ox + x * k)}" y="{num(y * k)}" width="{num(w * k)}" height="{num(h * k)}" fill="{word_colour}"/>'
+        f'<rect x="{num(ox + x * k)}" y="{num(y * k)}" '
+        f'width="{num(w * k)}" height="{num(h * k)}" fill="{word_colour}"/>'
         for x, y, w, h in wrects
     )
     top = min(0.0, dy + my0 * u)
@@ -350,9 +371,11 @@ def render_icon(
     d = ImageDraw.Draw(img)
     if background:
         if radius:
-            d.rounded_rectangle((0, 0, big - 1, big - 1), radius=round(radius * big), fill=rgb(background) + (255,))
+            d.rounded_rectangle(
+                (0, 0, big - 1, big - 1), radius=round(radius * big), fill=(*rgb(background), 255)
+            )
         else:
-            d.rectangle((0, 0, big, big), fill=rgb(background) + (255,))
+            d.rectangle((0, 0, big, big), fill=(*rgb(background), 255))
     u = cell_px * ss / CELL
     vx, vy, vw, vh = MARK_VIEWBOX
     ox = (big - vw * u) / 2 - vx * u
@@ -360,7 +383,7 @@ def render_icon(
     for x, y, w, h, c in variant_rects(variant):
         x0, y0 = round(ox + x * u), round(oy + y * u)
         x1, y1 = round(ox + (x + w) * u), round(oy + (y + h) * u)
-        d.rectangle((x0, y0, x1 - 1, y1 - 1), fill=rgb(c) + (255,))
+        d.rectangle((x0, y0, x1 - 1, y1 - 1), fill=(*rgb(c), 255))
     if ss > 1:
         img = img.resize((size, size), Image.BOX)
     return img
@@ -393,38 +416,62 @@ def write_ts() -> None:
     }
     lines = [
         "// Generated by scripts/brand_icons.py from the pixel grid there. Do not edit by hand.",
-        "// Mark cells are [x, y, w, h, key] in u (one N cell = 4u). Keys: B blue, b blue (teal on dark), T teal, L lime, K midnight",
+        "// Mark cells are [x, y, w, h, key] in u (one N cell = 4u). "
+        "Keys: B blue, b blue (teal on dark), T teal, L lime, K midnight",
         "// (left stroke), k midnight (diagonal edge). Wordmark rects are [x, y, w, h].",
         "",
-        "export type MarkRect = readonly [x: number, y: number, w: number, h: number, key: string];",
+        "export type MarkRect = "
+        "readonly [x: number, y: number, w: number, h: number, key: string];",
         "export type WordRect = readonly [x: number, y: number, w: number, h: number];",
         "",
     ]
     for name, value in data.items():
-        ts_type = {"mark": "readonly MarkRect[]", "wordmark": "readonly WordRect[]", "wordmarkTagline": "readonly WordRect[]"}.get(
-            name, "readonly [number, number, number, number]"
+        ts_type = {
+            "mark": "readonly MarkRect[]",
+            "wordmark": "readonly WordRect[]",
+            "wordmarkTagline": "readonly WordRect[]",
+        }.get(name, "readonly [number, number, number, number]")
+        lines.append(
+            f"export const {name}: {ts_type} = {json.dumps(value, separators=(', ', ': '))};"
         )
-        lines.append(f"export const {name}: {ts_type} = {json.dumps(value, separators=(', ', ': '))};")
     write_text(ASSETS / "nexusBrand.generated.ts", "\n".join(lines) + "\n")
 
 
 def main() -> None:
-    mx, my, mw, mh = MARK_VIEWBOX
+    _mx, _my, _mw, _mh = MARK_VIEWBOX
     view = MARK_VIEWBOX
     # SVGs
     write_text(ASSETS / "nexus-mark.svg", svg_doc(view, rect_svg(variant_rects("light")), "Nexus"))
-    write_text(ASSETS / "nexus-mark-dark.svg", svg_doc(view, rect_svg(variant_rects("dark")), "Nexus"))
-    write_text(ASSETS / "nexus-mark-cloud.svg", svg_doc(view, rect_svg(variant_rects("cloud")), "Nexus"))
-    write_text(ASSETS / "nexus-mark-ink.svg", svg_doc(view, rect_svg(variant_rects("ink")), "Nexus"))
-    write_text(ASSETS / "nexus-wordmark.svg", wordmark_svg(MIDNIGHT, True, "Nexus, AI lifestyle manager"))
-    write_text(ASSETS / "nexus-wordmark-light.svg", wordmark_svg(CLOUD, True, "Nexus, AI lifestyle manager"))
+    write_text(
+        ASSETS / "nexus-mark-dark.svg", svg_doc(view, rect_svg(variant_rects("dark")), "Nexus")
+    )
+    write_text(
+        ASSETS / "nexus-mark-cloud.svg", svg_doc(view, rect_svg(variant_rects("cloud")), "Nexus")
+    )
+    write_text(
+        ASSETS / "nexus-mark-ink.svg", svg_doc(view, rect_svg(variant_rects("ink")), "Nexus")
+    )
+    write_text(
+        ASSETS / "nexus-wordmark.svg", wordmark_svg(MIDNIGHT, True, "Nexus, AI lifestyle manager")
+    )
+    write_text(
+        ASSETS / "nexus-wordmark-light.svg",
+        wordmark_svg(CLOUD, True, "Nexus, AI lifestyle manager"),
+    )
     write_text(ASSETS / "nexus-lockup.svg", lockup_svg("light", "Nexus, AI lifestyle manager"))
     write_text(ASSETS / "nexus-lockup-dark.svg", lockup_svg("dark", "Nexus, AI lifestyle manager"))
     write_ts()
 
     # PNG icons. Whole-number cells keep the pixels crisp; the 32px favicon is supersampled.
     write_png(render_icon(32, cell_px=1.45, radius=0.22, supersample=16), PUBLIC / "favicon-32.png")
-    write_png(render_icon(180, cell_px=7, radius=0, ), PUBLIC / "apple-touch-icon.png")
+    write_png(
+        render_icon(
+            180,
+            cell_px=7,
+            radius=0,
+        ),
+        PUBLIC / "apple-touch-icon.png",
+    )
     write_png(render_icon(192, cell_px=7, radius=0.22), PUBLIC / "icon-192.png")
     write_png(render_icon(512, cell_px=19, radius=0.22), PUBLIC / "icon-512.png")
     # Maskable: full bleed, mark inside the central safe zone (a circle of 40% of the side); the
