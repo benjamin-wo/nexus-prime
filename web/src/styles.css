@@ -1699,7 +1699,9 @@ table.ledger tbody tr.day-row:hover { background: none; }
   .home-docked { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
   .home-docked > * { min-width: 0; }
   .ask-dock {
-    position: sticky; z-index: 10; bottom: var(--bar-h, calc(68px + env(safe-area-inset-bottom)));
+    /* A sticky box's bottom is measured from inside its scroller's padding, and that padding
+       (below) already clears the bar: bottom 0 rests the dock right on top of the bar. */
+    position: sticky; z-index: 10; bottom: 0;
     margin: 0 calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4);
     background: var(--bg-shell); box-shadow: var(--shadow-dock);
   }
@@ -1710,9 +1712,14 @@ table.ledger tbody tr.day-row:hover { background: none; }
   .ask-dock .ask-input { height: 44px; }
   .ask-dock .ask-send { border-radius: 999px; }
   /* Focusing something else on the page scrolls it clear of the dock and the bar. */
-  .main-viewport:has(.ask-dock) { scroll-padding-bottom: calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + 72px); }
+  /* On Home the page's bottom padding is exactly the bar (no extra air: the dock carries its
+     own), so the dock sits flush on the bar however far the page is scrolled. */
+  .main-viewport:has(.ask-dock) {
+    padding-bottom: var(--bar-h, calc(68px + env(safe-area-inset-bottom)));
+    scroll-padding-bottom: calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + 72px);
+  }
   /* With the keyboard up the bar is hidden (viewport.ts), so the dock drops to the bottom edge. */
-  html.keyboard .ask-dock { bottom: 0; }
+  html.keyboard .main-viewport:has(.ask-dock) { padding-bottom: 0; }
 }
 @media (max-width: 720px) { .home-docked { gap: var(--space-4); } }
 .glance { display: grid; gap: var(--space-2); align-content: start; }
