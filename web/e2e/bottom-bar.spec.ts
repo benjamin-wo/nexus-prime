@@ -54,9 +54,11 @@ test.describe("the bottom bar never covers the end of a page", () => {
               if (getComputedStyle(up).position === "fixed") floating = true;
             }
             if (floating) continue;
-            // Home's docked ask box rests on the bar on purpose; what it holds keeps the air.
+            // Home's docked ask box rests on the bar on purpose, and so do the boxes that only hold
+            // it (each of their other children is still measured); what the dock holds keeps the air.
             // Text only for screen readers (a 1px clipped box) is never seen.
-            if (el.classList.contains("ask-dock") || el.classList.contains("sr-only")) continue;
+            const dock = el.classList.contains("ask-dock") || el.querySelector(".ask-dock") !== null;
+            if (dock || el.classList.contains("sr-only")) continue;
             last = Math.max(last, rect.bottom);
           }
           return { last, barTop: nav.getBoundingClientRect().top };
