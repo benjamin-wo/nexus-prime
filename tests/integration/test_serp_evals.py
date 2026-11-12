@@ -88,7 +88,7 @@ async def test_the_serp_cases_pass_with_the_canned_live_prices(engine: AsyncEngi
     for result in results:
         assert result.passed, (result.case.id, result.failures, result.error)
     links = {r.case.id: r.turns[0].source_links for r in results}
-    assert links["serp-flight-price"] == ["https://flights.example.com/kaya-evals/search"]
+    assert links["serp-flight-price"] == ["https://flights.example.com/nexus-evals/search"]
     assert links["serp-product-price"]
     assert links["serp-no-booking"] == []
 

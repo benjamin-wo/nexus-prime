@@ -42,7 +42,7 @@ describe("investment notification settings", () => {
     setup();
     expect(await screen.findByLabelText("From")).toHaveValue("23:00");
     expect(screen.getByLabelText("To")).toHaveValue("08:00");
-    expect(screen.getByText("Kaya holds its messages in these hours. A broken stop on a stock you hold still comes through.")).toBeInTheDocument();
+    expect(screen.getByText("Nexus holds its messages in these hours. A broken stop on a stock you hold still comes through.")).toBeInTheDocument();
     expect(screen.getByLabelText("Big move alerts (%)")).toHaveValue(5);
     expect(screen.getByRole("switch", { name: "Morning investment summary" })).toBeChecked();
     expect(screen.getByText("At 8am after each US trading day.")).toBeInTheDocument();

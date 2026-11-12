@@ -48,7 +48,7 @@ export function DemoPage() {
       <section className="card" aria-live="polite">
         <Kaya big size={150} className="kaya-hero" />
         <p className="caption">
-          Just ask <span style={{ color: "var(--accent)" }}>Kaya</span>
+          Just ask <span style={{ color: "var(--accent)" }}>Nexus</span>
         </p>
         {step === "working" && (
           <>

@@ -74,7 +74,7 @@ def error_kind(exc: Exception) -> str:
 
 # --- Corrections ------------------------------------------------------------------
 
-# The start of a message that takes back or fixes the last thing Kaya did. "no" must be
+# The start of a message that takes back or fixes the last thing Nexus did. "no" must be
 # the whole word ("now log lunch" and "nothing else" aren't corrections), and a polite
 # "no thanks" answers an offer rather than fixing anything.
 _CORRECTION = re.compile(

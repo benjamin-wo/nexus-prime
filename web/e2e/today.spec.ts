@@ -7,7 +7,7 @@ import { fakeApi } from "./fake-api";
 test("Home reads top to bottom: the brief, what needs you, ask, then the cards at a glance", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  const order = ["Kaya", "Needs you", "Just ask Kaya", "Money this month", "Portfolio today", "Next trip"];
+  const order = ["Nexus", "Needs you", "Just ask Nexus", "Money this month", "Portfolio today", "Next trip"];
   const tops: number[] = [];
   for (const name of order) {
     const region = page.getByRole("region", { name, exact: true });
@@ -17,7 +17,7 @@ test("Home reads top to bottom: the brief, what needs you, ask, then the cards a
   const [hero, needs, ask, money, portfolio, trip] = tops;
   expect(hero).toBeLessThan(needs);
   // The brief points at the list directly below it.
-  await expect(page.getByRole("region", { name: "Kaya", exact: true })).toContainText("2 things need you below.");
+  await expect(page.getByRole("region", { name: "Nexus", exact: true })).toContainText("2 things need you below.");
   if (page.viewportSize()!.width < 1024) {
     // One column on a phone: the cards at a glance come last.
     expect(needs).toBeLessThan(ask);
@@ -55,7 +55,7 @@ test("items from every area come in the server's order, the urgent ones marked, 
   await expect(items.nth(3)).not.toContainText("Today");
   await expect(items.nth(3).getByText("Now", { exact: true })).toHaveCount(0);
   await expect(items.nth(0).getByRole("link")).toHaveAttribute("href", "/investment/plans/p1");
-  await expect(page.getByRole("region", { name: "Kaya", exact: true })).toContainText("8 things need you below.");
+  await expect(page.getByRole("region", { name: "Nexus", exact: true })).toContainText("8 things need you below.");
 
   const more = needs.getByRole("button", { name: "Show all (8)" });
   await expect(more).toHaveAttribute("aria-expanded", "false");
@@ -99,7 +99,7 @@ test("a trip that is on leads Home with its day, what is next, today's spending 
   const needsTop = (await page.getByRole("region", { name: "Needs you" }).boundingBox())!.y;
   expect(tripTop).toBeLessThan(needsTop);
   await expect(page.getByRole("region", { name: "Next trip" })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Kaya", exact: true })).toContainText("You're on day 3 of 6 in Tokyo.");
+  await expect(page.getByRole("region", { name: "Nexus", exact: true })).toContainText("You're on day 3 of 6 in Tokyo.");
 });
 
 test("during a trip the Plan tab is one day panel: pills first, each plan once, tonight's stay on a strip", async ({ page }) => {

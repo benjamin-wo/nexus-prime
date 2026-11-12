@@ -1,4 +1,4 @@
-"""What Kaya remembers: listing, forgetting, recalling for a turn, and applying
+"""What Nexus remembers: listing, forgetting, recalling for a turn, and applying
 the changes the memory writer proposes."""
 
 from collections.abc import Callable

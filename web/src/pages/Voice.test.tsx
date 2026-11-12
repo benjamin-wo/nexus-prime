@@ -28,7 +28,7 @@ function server(start: VoiceSettings) {
   };
 }
 
-const card = () => screen.getByRole("region", { name: "How Kaya talks" });
+const card = () => screen.getByRole("region", { name: "How Nexus talks" });
 const pressed = (name: RegExp | string) => screen.getByRole("button", { name, pressed: true });
 const replies = () => screen.getAllByTestId("voice-reply").map((el) => el.textContent);
 
@@ -36,7 +36,7 @@ describe("VoiceCard", () => {
   it("renders the current settings: the vibe, the dials, the note and a preview", async () => {
     mockApi({ "GET /settings/voice": () => voice({ preset: "direct", emoji: "none", length: "short", humour: "off", note: "call me boss" }) });
     renderWithProviders(<VoiceCard />);
-    expect(screen.getByText("Pick a vibe, then fine-tune. Only changes wording — never what Kaya can do.")).toBeInTheDocument();
+    expect(screen.getByText("Pick a vibe, then fine-tune. Only changes wording — never what Nexus can do.")).toBeInTheDocument();
     const buttons = within(await screen.findByRole("group", { name: "Vibe" })).getAllByRole("button");
     expect(buttons.map((b) => b.textContent)).toEqual([
       "DefaultClear and friendly.",
@@ -126,6 +126,6 @@ describe("VoiceCard", () => {
   it("says when it can't load", async () => {
     mockApi({});
     renderWithProviders(<VoiceCard />);
-    expect(await screen.findByText("Couldn't load how Kaya talks.")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load how Nexus talks.")).toBeInTheDocument();
   });
 });

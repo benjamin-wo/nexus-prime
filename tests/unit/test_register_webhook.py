@@ -66,7 +66,7 @@ async def test_web_origin_is_the_default_off_railway(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("RAILWAY_PUBLIC_DOMAIN")
-    monkeypatch.setenv("WEB_ORIGIN", "https://kaya.example.app/")
+    monkeypatch.setenv("WEB_ORIGIN", "https://nexus.example.app/")
     calls: list[tuple[str, dict[str, object]]] = []
     assert await register.main([], fake_api(calls)) == 0
-    assert "would set: https://kaya.example.app/telegram/webhook" in capsys.readouterr().out
+    assert "would set: https://nexus.example.app/telegram/webhook" in capsys.readouterr().out

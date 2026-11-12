@@ -199,7 +199,7 @@ export function SharedTripPage() {
   const trip = shared.data;
 
   useEffect(() => {
-    if (trip) document.title = `${trip.destination} · Kaya`;
+    if (trip) document.title = `${trip.destination} · Nexus`;
   }, [trip]);
 
   const gone = shared.error instanceof ApiError && shared.error.status === 404;
@@ -248,7 +248,7 @@ export function SharedTripPage() {
             </p>
           )}
           {trip && <SharedDays trip={trip} />}
-          <p className="caption shared-foot">Shared from Kaya. No money, booking references, notes or travellers are shown.</p>
+          <p className="caption shared-foot">Shared from Nexus. No money, booking references, notes or travellers are shown.</p>
         </div>
       </div>
     </main>

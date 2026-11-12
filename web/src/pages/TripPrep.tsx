@@ -105,7 +105,7 @@ const asIn = (t: Todo): TodoIn => ({ id: t.id, text: t.text, due: t.due, done: t
 /** The kind a suggested cover opens the sheet with: its own where it names one, else a document. */
 const kindOfSuggestion = (s: PrepSuggestion): CoverKind => (s.key === "insurance" || s.key === "visa" ? s.key : "document");
 
-/** Getting ready: what's still to sort, what Kaya suggests and the to-dos, in one list. Done to-dos sink to the bottom. */
+/** Getting ready: what's still to sort, what Nexus suggests and the to-dos, in one list. Done to-dos sink to the bottom. */
 function GettingReady({
   detail,
   prep,
@@ -244,7 +244,7 @@ function CoverCard({
         </button>
       )}
       {/* A guest has no chat to tell. */}
-      {trip.status !== "finished" && role !== "guest" && <p className="caption">Or tell Kaya: "Add travel insurance, Harbour Cover, SGD 89, policy TX-4471".</p>}
+      {trip.status !== "finished" && role !== "guest" && <p className="caption">Or tell Nexus: "Add travel insurance, Harbour Cover, SGD 89, policy TX-4471".</p>}
     </section>
   );
 }

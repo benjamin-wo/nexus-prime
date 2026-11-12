@@ -43,7 +43,7 @@ describe("describeZone", () => {
 });
 
 describe("sourceNote", () => {
-  it("says what put Kaya on the zone", () => {
+  it("says what put Nexus on the zone", () => {
     expect(sourceNote("phone")).toBe("from your phone");
     expect(sourceNote("chat")).toBe("you set it");
     expect(sourceNote("trip")).toBe("from your trip");

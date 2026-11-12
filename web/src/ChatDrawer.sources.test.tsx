@@ -7,7 +7,7 @@ import { mockApi, renderWithProviders } from "./testing";
 
 const HZ = "https://www.hardwarezone.com.sg/tech-news/console-prices";
 const XE = "https://www.xe.com/currencyconverter/";
-const EX = "https://news.example.com/kaya-evals/latest";
+const EX = "https://news.example.com/nexus-evals/latest";
 
 const ANSWER = {
   text: "About 500 SGD, per HardwareZone, 11 May.",

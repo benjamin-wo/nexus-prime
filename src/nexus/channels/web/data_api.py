@@ -45,7 +45,7 @@ async def export_my_data(auth: Auth, web: Runtime) -> StreamingResponse:
         _chunks(archive),
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="kaya-export-{stamp}.zip"',
+            "Content-Disposition": f'attachment; filename="nexus-export-{stamp}.zip"',
             "Content-Length": str(size),
             "Cache-Control": "no-store",
         },

@@ -234,7 +234,7 @@ export function EntrySheet({
     const queueable = !editing && !moving;
     const keep = () => {
       if (!enqueue(outboxUser(me), { key: entryKey.current ?? newKey(), body })) {
-        setError("Couldn't reach Kaya, and this phone can't keep the entry for later. Check your connection and try again.");
+        setError("Couldn't reach Nexus, and this phone can't keep the entry for later. Check your connection and try again.");
         return;
       }
       (onQueued ?? onClose)();

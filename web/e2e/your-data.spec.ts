@@ -54,7 +54,7 @@ test("Delete everything waits for DELETE, can be cancelled, and signs out when c
   await confirm.click();
 
   await expect(page).toHaveURL(/\/login$/);
-  await expect(page.getByText("Already using Kaya? Sign in with Telegram.")).toBeVisible();
+  await expect(page.getByText("Already using Nexus? Sign in with Telegram.")).toBeVisible();
   expect(state.deletes).toEqual([{ body: { confirm: "DELETE" }, status: 204 }]);
   // The session is gone, so the app is signed out if it asks again.
   expect(await page.evaluate(async () => (await fetch("/api/me")).status)).toBe(401);

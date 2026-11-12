@@ -1,4 +1,4 @@
-"""The evaluation set: made-up requests to Kaya and what should come of each.
+"""The evaluation set: made-up requests to Nexus and what should come of each.
 
 Every case starts from the same seeded user (see ``seed``); "now" is Monday
 28 September 2026, 2pm in Singapore. A case passes when all of its expectations
@@ -225,7 +225,7 @@ _OFF_WEB = (
 _CITES = (("source", "per ", "according to", "http", "example"),)
 
 
-# A reply that says something was booked. Kaya books nothing.
+# A reply that says something was booked. Nexus books nothing.
 _NOT_BOOKED = (
     r"\b(?:i'?ve|i have|i just|i|all) booked\b",
     r"\bbooked (?:it|that|your|the) (?:flight|ticket|seat)",
@@ -1105,7 +1105,7 @@ CASES: tuple[Case, ...] = (
                 {"kind": "activity", "name": Has("kuroshiro"), "day": Has("2026-12-12")},
             ),
         ),
-        # No time was said, so none is made up: Kaya picks a free one itself.
+        # No time was said, so none is made up: Nexus picks a free one itself.
         at_most=(AtMost("add_to_itinerary", 0, {"time": Has("")}),),
         confirms=False,
         max_lines=3,
@@ -1689,7 +1689,7 @@ CASES: tuple[Case, ...] = (
         never_match=_PLAIN,
         target="M8e",
     ),
-    # --- how Kaya talks (the tone is judged by hand; these check what code can) -------------
+    # --- how Nexus talks (the tone is judged by hand; these check what code can) -------------
     Case(
         "voice-direct",
         "voice",
@@ -2329,7 +2329,7 @@ CASES: tuple[Case, ...] = (
         "voice-bill-savings",
         "voice",
         # "Move 300 to savings on the 25th", with no word for every month, is a one-off
-        # move: Kaya can't make it, so nothing changes (typed, it's refused the same way).
+        # move: Nexus can't make it, so nothing changes (typed, it's refused the same way).
         _t(Turn("", audio="savings-gb-clean")),
         unchanged=True,
         reply=("can't",),

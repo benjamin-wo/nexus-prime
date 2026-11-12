@@ -204,7 +204,7 @@ class TradeSide(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Trade:
-    """A trade the user made at their broker and told Kaya about."""
+    """A trade the user made at their broker and told Nexus about."""
 
     id: UUID
     user_id: UserId

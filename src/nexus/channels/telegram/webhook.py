@@ -256,7 +256,7 @@ async def _message(
     await _send(runtime, chat_id, await runtime.service.handle_text(actor, text, ref))
 
 
-APP_LABEL = "Open Kaya"
+APP_LABEL = "Open Nexus"
 
 
 async def _open_app(runtime: TelegramRuntime, chat_id: int) -> None:

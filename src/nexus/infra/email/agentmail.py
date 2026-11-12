@@ -47,10 +47,14 @@ class AgentMailInboxes:
         return response
 
     async def create_inbox(self, owner: str) -> tuple[str, str]:
-        """A new inbox for ``owner`` (an opaque id). Returns (inbox id, address)."""
+        """A new inbox for ``owner`` (an opaque id). Returns (inbox id, address).
+
+        New addresses start ``nexus-``. Inboxes made while the product was called Kaya start
+        ``kaya-`` and still work; nothing may assume the prefix of an existing address.
+        """
         body: dict[str, Any] = {
-            "username": f"kaya-{secrets.token_hex(6)}",
-            "display_name": "Kaya receipts",
+            "username": f"nexus-{secrets.token_hex(6)}",
+            "display_name": "Nexus receipts",
             "client_id": f"nexus-{owner}",  # makes a retried create return the same inbox
         }
         if self._domain:

@@ -1,7 +1,7 @@
 {
-  "name": "Kaya",
-  "short_name": "Kaya",
-  "description": "Just ask Kaya: your personal finance and travel assistant.",
+  "name": "Nexus",
+  "short_name": "Nexus",
+  "description": "Just ask Nexus: your AI lifestyle manager.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

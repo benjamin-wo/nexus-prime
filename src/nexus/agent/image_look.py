@@ -67,7 +67,7 @@ class LookFailed(Exception):
 
 
 _PROMPT = (
-    "Look at this image a user sent to their personal finance assistant. Reply with JSON "
+    "Look at this image a user sent to their AI lifestyle manager. Reply with JSON "
     'only: {"kind": one of receipt (something paid), bill (something still to pay), '
     "transfer (a bank transfer or payment confirmation), payslip, portfolio (a broker's "
     "holdings), travel_booking (a booking, ticket, itinerary or day plan), chart, other; "
@@ -179,7 +179,7 @@ _ACT = re.compile(
 
 
 def acts(caption: str | None) -> bool:
-    """Whether the user's own words with an image ask Kaya to do something with it
+    """Whether the user's own words with an image ask Nexus to do something with it
     ("add this bill", "log it", "split with Ann"). Without that, nothing read from an
     image may change their data."""
     return bool(caption and _ACT.search(caption))

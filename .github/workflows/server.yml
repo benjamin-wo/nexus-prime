@@ -1,6 +1,6 @@
 name: Server
 
-# Run one fixed action on the Kaya server over SSH, by hand (Actions tab → Server →
+# Run one fixed action on the Nexus server over SSH, by hand (Actions tab → Server →
 # Run workflow) or from a tool. The key can only run deploy/remote.sh (a forced
 # command), so this workflow can't run anything else there. See deploy/README.md.
 on:

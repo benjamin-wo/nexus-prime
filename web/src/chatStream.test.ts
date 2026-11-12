@@ -131,7 +131,7 @@ describe("repliesAfter", () => {
   const since = Date.parse(at);
   const history = (lines: ChatHistory["lines"], pending: ChatHistory["pending"] = null): ChatHistory => ({ lines, more: false, pending });
 
-  it("finds Kaya's replies once the turn's lines are in the history", () => {
+  it("finds Nexus's replies once the turn's lines are in the history", () => {
     const lines: ChatHistory["lines"] = [
       { id: 1, role: "user", text: "hi", channel: "web", at: "2026-09-27T01:00:00Z" },
       { id: 2, role: "nexus", text: "Hello.", channel: "web", at: "2026-09-27T01:00:01Z" },

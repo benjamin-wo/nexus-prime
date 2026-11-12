@@ -16,7 +16,7 @@ function Tick({ done }: { done: boolean }) {
   );
 }
 
-/** Home's "Just ask Kaya" box is where a first expense is typed on this page: bring the person to it. */
+/** Home's "Just ask Nexus" box is where a first expense is typed on this page: bring the person to it. */
 function focusAsk() {
   const box = document.getElementById("ask-input");
   if (!box) return;

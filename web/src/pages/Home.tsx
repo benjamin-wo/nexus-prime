@@ -100,7 +100,7 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
 }
 
 /** The top of Home, on an indigo gradient rather than in a card: the day and a
- * greeting, this month's spending as the one big figure with how it stands, and Kaya's
+ * greeting, this month's spending as the one big figure with how it stands, and Nexus's
  * brief. What needs the person follows directly under it. */
 function Hero({
   date,
@@ -118,7 +118,7 @@ function Hero({
   onLog: () => void;
 }) {
   return (
-    <section className="hero" aria-label="Kaya">
+    <section className="hero" aria-label="Nexus">
       <div className="hero-top">
         <div>
           <p className="hero-date">{date}</p>
@@ -183,7 +183,7 @@ function usePhone(): boolean {
 }
 
 /** The box to ask anything or log an expense in words; submitting opens the chat with it. It sits
- * in the Just ask Kaya card on a wide screen and docked above the bottom bar on a phone. */
+ * in the Just ask Nexus card on a wide screen and docked above the bottom bar on a phone. */
 function AskForm({ onAsk }: { onAsk: (text: string) => void }) {
   const [draft, setDraft] = useState("");
   function ask(event: FormEvent) {
@@ -196,7 +196,7 @@ function AskForm({ onAsk }: { onAsk: (text: string) => void }) {
   return (
     <form className="ask" onSubmit={ask}>
       <label className="sr-only" htmlFor="ask-input">
-        Ask Kaya
+        Ask Nexus
       </label>
       <input
         id="ask-input"
@@ -204,7 +204,7 @@ function AskForm({ onAsk }: { onAsk: (text: string) => void }) {
         value={draft}
         maxLength={2000}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder='Just ask Kaya… e.g. "kopi 4.20"'
+        placeholder='Just ask Nexus… e.g. "kopi 4.20"'
       />
       <button type="submit" className="ask-send" aria-label="Ask" disabled={!draft.trim()}>
         <Icon name="send" size={18} />
@@ -218,7 +218,7 @@ function AskForm({ onAsk }: { onAsk: (text: string) => void }) {
  * holds only the questions. */
 function AskPanel({ chips, onAsk, form }: { chips: string[]; onAsk: (text: string) => void; form: ReactNode }) {
   return (
-    <Block id="ask" title="Just ask Kaya" className="ask-panel">
+    <Block id="ask" title="Just ask Nexus" className="ask-panel">
       {form}
       <div className="chips" aria-label="Suggested questions">
         {chips.map((c) => (
@@ -345,7 +345,7 @@ function NeedsYou({
   );
 }
 
-/** The front desk, as a Today page: Kaya's brief, what needs you, a box to ask anything, the
+/** The front desk, as a Today page: Nexus's brief, what needs you, a box to ask anything, the
  * first-steps guide while it's unfinished, and at a glance the month's money, the portfolio and
  * the next trip. While a trip is on, its day leads. */
 export function Home({

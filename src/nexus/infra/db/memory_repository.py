@@ -1,4 +1,4 @@
-"""PostgreSQL storage for what Kaya remembers. Every query filters on user_id."""
+"""PostgreSQL storage for what Nexus remembers. Every query filters on user_id."""
 
 import re
 from datetime import datetime

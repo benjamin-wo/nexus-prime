@@ -1,7 +1,7 @@
 """One payment recorded twice: a bank's card alert and the shop's own receipt, or an
 entry the user typed and the email that followed. Pure rules, no I/O.
 
-Nothing is ever merged on a guess: a match only lets Kaya ask. Two rides home at
+Nothing is ever merged on a guess: a match only lets Nexus ask. Two rides home at
 the same price on the same day are real, so the rule is narrow: the same amount
 and direction within a day, by what looks like the same merchant.
 """

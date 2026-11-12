@@ -87,7 +87,7 @@ async def test_the_providers_confirmation_and_a_test_email_are_answered_in_chat(
         sender="forwarding-noreply@google.com",
     )
     forwarding.emails["t1"] = fake_email(
-        "t1", "Kaya test receipt", "hello", at=NOW + timedelta(minutes=2), sender="ann@gmail.com"
+        "t1", "Nexus test receipt", "hello", at=NOW + timedelta(minutes=2), sender="ann@gmail.com"
     )
     await sweep(uow, user, forwarding, at=NOW + timedelta(minutes=5))
     confirmation, test = await messages(engine)

@@ -25,7 +25,7 @@ describe("the app for a guest", () => {
     render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     expect(await screen.findByRole("heading", { name: "Your trips" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/travel");
-    expect(screen.queryByRole("button", { name: "Ask Kaya" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask Nexus" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
     // Home, runs, notifications, chat and the rest are the full app's, which a guest never loads.
     const outside = calls.filter((c) => !/^GET \/(me|config)$/.test(c) && !/^\w+ \/travel\//.test(c));

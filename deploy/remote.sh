@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The only thing the GitHub Actions key may run on this server (a forced command in
 # root's authorized_keys). It takes one word, from the "Server" workflow:
-#   deploy   pull main, rebuild and restart Kaya, then check it answers
-#   health   is Kaya answering?
+#   deploy   pull main, rebuild and restart Nexus, then check it answers
+#   health   is Nexus answering?
 #   status   containers, memory, disk, last backup
 #   restart  restart the app container
 # Its output lands in public GitHub Actions logs, so it never prints app logs,

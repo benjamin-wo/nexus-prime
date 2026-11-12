@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy the Railway database into this server's database. Run once, from /opt/kaya/deploy,
-# with Kaya's app stopped. It asks for Railway's public database URL (Railway → Postgres →
+# with Nexus's app stopped. It asks for Railway's public database URL (Railway → Postgres →
 # Variables → DATABASE_PUBLIC_URL); the URL is read silently and never saved.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -24,6 +24,6 @@ docker compose exec -T db psql -U postgres -d kaya -c \
 docker compose exec -T db pg_restore -U postgres -d kaya --no-owner < /root/railway.dump \
   || echo "(pg_restore reported warnings above; usually harmless, check them)"
 
-echo "==> Starting Kaya"
+echo "==> Starting Nexus"
 docker compose up -d --build
 echo "Done. The Railway copy is kept at /root/railway.dump until you delete it."

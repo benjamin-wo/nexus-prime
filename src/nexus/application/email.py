@@ -158,7 +158,7 @@ async def finish_connect(
     """Complete the provider's sign-in. The link is spent here, so a replayed
     callback connects nothing."""
     if await link_owner(uow(), token, now=now) is None:
-        raise NotFound("this connect link has expired; ask Kaya for a new one")
+        raise NotFound("this connect link has expired; ask Nexus for a new one")
     grant = await mailbox.exchange(code, redirect_uri=redirect_uri)
     async with uow() as tx:
         owner = await tx.email.use_link(_hash(token), now)
@@ -875,7 +875,7 @@ async def _setup_email(
     notice = forwarding_notice(fetched)
     if notice is not None:
         lines = [
-            f"📨 Your mail provider sent a confirmation to your Kaya address: {notice.subject}"
+            f"📨 Your mail provider sent a confirmation to your Nexus address: {notice.subject}"
         ]
         if notice.code:
             lines.append(f"Confirmation code: {notice.code}")

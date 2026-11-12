@@ -14,7 +14,7 @@ export function setCsrf(token: string): void {
 }
 
 /** Shown when a request times out or never reaches the server. */
-export const NETWORK_ERROR_MESSAGE = "Couldn't reach Kaya. Check your connection and try again.";
+export const NETWORK_ERROR_MESSAGE = "Couldn't reach Nexus. Check your connection and try again.";
 
 /** How long a read may take before it is given up on. Only reads: a write (a chat message, a receipt
  * photo, a statement) is never abandoned on a timer, because the server may still finish it, and the
@@ -126,7 +126,7 @@ export function filenameFrom(disposition: string | null): string | null {
   }
 }
 
-/** Everything Kaya keeps for you, as a zip: fetched as a Blob (same session as every call) and handed
+/** Everything Nexus keeps for you, as a zip: fetched as a Blob (same session as every call) and handed
  * to the browser as a download. Throws an ApiError whose message is fit to show. */
 export async function exportAll(): Promise<void> {
   const response = await fetch("/api/me/export", { credentials: "same-origin" });
@@ -301,7 +301,7 @@ export type Me = {
     telegram_user_id: number;
     role: "owner" | "member" | "guest";
     home_currency: string;
-    /** The zone Kaya uses for "today" right now; it follows the person (see `timezone_source`). */
+    /** The zone Nexus uses for "today" right now; it follows the person (see `timezone_source`). */
     timezone: string;
     /** Where they live; kept when `timezone` moves, and what "Use home time" goes back to. */
     home_timezone?: string;
@@ -327,7 +327,7 @@ export type Demo = { expires_at: string; messages_left: number };
 /** The answer to the two time zone writes: the same fields as `/me`, and whether the zone moved. */
 export type TimezoneChange = Me & { changed: boolean };
 
-/** Tells Kaya where the person is. "phone" is the browser's own zone, reported on start;
+/** Tells Nexus where the person is. "phone" is the browser's own zone, reported on start;
  * "manual" is a zone they picked in Settings. An unknown zone is a 422. */
 export function setTimezone(timezone: string, source: "phone" | "manual"): Promise<TimezoneChange> {
   return api<TimezoneChange>("/me/timezone", { method: "POST", body: { timezone, source } });
@@ -521,7 +521,7 @@ export type NotificationLevel = "urgent" | "now" | "digest";
 /** What became of it: sent, held for quiet hours or the next digest, told in a digest, or
  * dropped (no Telegram chat to tell). */
 export type NotificationStatus = "sent" | "held" | "digested" | "dropped";
-/** One message Kaya meant to send the user on Telegram, kept for 30 days (GET
+/** One message Nexus meant to send the user on Telegram, kept for 30 days (GET
  * /notifications/history, newest first). */
 export type NotificationEntry = {
   id: string;
@@ -539,7 +539,7 @@ export type NotificationEntry = {
 };
 /** Whether the user is told on Telegram when someone else changes a trip they share. */
 export type TripAlerts = { enabled: boolean };
-/** How Kaya words its replies (GET and PUT /settings/voice). Only wording: never what Kaya can do. */
+/** How Nexus words its replies (GET and PUT /settings/voice). Only wording: never what Nexus can do. */
 export type VoicePresetId = "default" | "chill" | "direct" | "hype" | "cheeky";
 export type VoiceEmoji = "none" | "some" | "lots";
 export type VoiceLength = "short" | "normal" | "detailed";
@@ -1366,7 +1366,7 @@ export const tripCoversPath = (tripId: string, coverId?: string) =>
   `/travel/trips/${tripId}/covers${coverId ? `/${coverId}` : ""}`;
 /** The path for `POST /travel/trips/{id}/covers/{cover}/log` (owner only; no body): records the cover's cost
  * as an expense (Travel) that counts towards the trip. Answers the `Cover`, logged. 409 if it already is,
- * 422 if it has no cost. Kaya pays nothing. */
+ * 422 if it has no cost. Nexus pays nothing. */
 export const tripCoverLogPath = (tripId: string, coverId: string) => `/travel/trips/${tripId}/covers/${coverId}/log`;
 /** The path for `POST /travel/invites/{token}/accept`. */
 export const acceptInvitePath = (token: string) => `/travel/invites/${encodeURIComponent(token)}/accept`;

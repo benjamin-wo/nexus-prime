@@ -531,4 +531,4 @@ async def test_only_the_web_cases_run_on_the_clock_a_live_run_gives(engine: Asyn
     assert clock("log-grab") == "Monday 2026-09-28"
     # And the pages the canned lookup cites reach the reply as source buttons.
     web = next(r for r in results if r.case.id == "web-gold-price")
-    assert web.turns[0].source_links == ["https://news.example.com/kaya-evals/latest"]
+    assert web.turns[0].source_links == ["https://news.example.com/nexus-evals/latest"]

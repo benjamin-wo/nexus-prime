@@ -132,7 +132,7 @@ def _area(area: Area, data: dict[str, list[Row]], me: UserId, files: dict[UUID, 
 
 def readme(now: datetime) -> str:
     lines = [
-        "Your Kaya data",
+        "Your Nexus data",
         f"Exported {now:%Y-%m-%d %H:%M} UTC.",
         "",
         "This zip holds your own data only. It leaves out market data, prices, news, quotes",

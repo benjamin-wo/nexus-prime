@@ -63,13 +63,13 @@ describe("Settings", () => {
       "Time zone",
       "Shared trips",
       "Notifications",
-      "How Kaya talks",
+      "How Nexus talks",
       "Receipts by email",
       "Import a statement",
       "Categories",
       "Wallets",
       "Category rules",
-      "What Kaya remembers",
+      "What Nexus remembers",
       "Download or delete",
       "Model costs",
     ]);
@@ -85,13 +85,13 @@ describe("Settings", () => {
     expect(href("Time zone")).toBe("/settings/time-zone");
     expect(href("Shared trips")).toBe("/settings/shared-trips");
     expect(href("Notifications")).toBe("/settings/notifications");
-    expect(href("How Kaya talks")).toBe("/settings/voice");
+    expect(href("How Nexus talks")).toBe("/settings/voice");
     expect(href("Receipts by email")).toBe("/settings/email");
     expect(href("Import a statement")).toBe("/settings/import");
     expect(href("Categories")).toBe("/settings/categories");
     expect(href("Wallets")).toBe("/settings/wallets");
     expect(href("Category rules")).toBe("/settings/rules");
-    expect(href("What Kaya remembers")).toBe("/settings/memory");
+    expect(href("What Nexus remembers")).toBe("/settings/memory");
     expect(href("Download or delete")).toBe("/settings/data");
     expect(href("Model costs")).toBe("/settings/costs");
   });
@@ -357,7 +357,7 @@ describe("Time zone", () => {
     await userEvent.selectOptions(within(card).getByRole("listbox", { name: "Time zone" }), "Asia/Tokyo");
     await userEvent.click(within(card).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.find((c) => c.path === "/me/timezone")?.body).toEqual({ timezone: "Asia/Tokyo", source: "manual" }));
-    expect(await within(card).findByRole("status")).toHaveTextContent("Saved. Kaya now uses Tokyo time.");
+    expect(await within(card).findByRole("status")).toHaveTextContent("Saved. Nexus now uses Tokyo time.");
   });
 
   it("goes back to the home zone", async () => {
