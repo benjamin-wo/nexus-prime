@@ -1,5 +1,7 @@
 """The front desk's "needs you" list: what each department is waiting on the user
-for, most pressing first. Read-only; each item links to the page that settles it.
+for, most pressing first. Building the list changes nothing; each item links to the page
+that settles it, and some carry buttons (``FeedAction``) that settle it in place by calling
+an endpoint that already exists.
 
 Order (``needs_you``): urgent items, then items about today, then the rest; within each
 group by department (accounting, investment, travel), and as found within a department.
@@ -24,8 +26,8 @@ from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
 from nexus.domain.alerts import AlertKind, MarketAlert, moved_in
 from nexus.domain.bookings import Booking, BookingKind
-from nexus.domain.email import EmailStatus
-from nexus.domain.ledger import User
+from nexus.domain.email import EmailStatus, ExpenseDraft, InboundEmail, read_amount
+from nexus.domain.ledger import Source, Transaction, User
 from nexus.domain.market import US_MARKET
 from nexus.domain.plans import SavedPlan
 from nexus.domain.trips import Trip, TripStatus
@@ -53,6 +55,7 @@ class FeedAction:
     label: str
     method: str  # "POST"
     path: str  # relative to /api, query string included
+    body: dict[str, object] | None = None  # the JSON body to send, when the endpoint takes one
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,23 +123,9 @@ async def needs_you(
     items: list[FeedItem] = []
     waiting = [e for e in emails.emails if e.status is EmailStatus.PENDING]
     if waiting:
-        items.append(
-            FeedItem(
-                "accounting",
-                "email",
-                f"{_plural(len(waiting), 'receipt', 'receipts')} from email waiting for you",
-                "/settings/email",
-            )
-        )
+        items.append(_email_item(waiting, user))
     if pairs:
-        items.append(
-            FeedItem(
-                "accounting",
-                "duplicates",
-                f"{_plural(len(pairs), 'possible duplicate', 'possible duplicates')} to check",
-                "/accounting/ledger",
-            )
-        )
+        items.append(_duplicates_item(pairs, user))
     for status in statuses:
         if status.percent >= BUDGET_PERCENT:
             over = status.percent >= 100
@@ -196,6 +185,7 @@ async def needs_you(
                     f"{view.bill.name}{amount} {when}",
                     "/accounting/budgets",
                     urgent=days <= 0,
+                    actions=_bill_actions(view),
                 )
             )
     percent = trip.spending.percent if trip else None
@@ -238,6 +228,108 @@ async def needs_you(
     items += travel
     # sorted() is stable: within a group, department by department, items stay as found.
     return sorted(items, key=lambda i: (WHEN_ORDER[i.when], DEPARTMENT_ORDER[i.department]))
+
+
+# --- accounting: items that can be settled in place --------------------------------------
+
+
+def _bill_actions(view: bill_cases.BillView) -> tuple[FeedAction, ...]:
+    """Buttons for a bill that is due soon. "Mark paid" only where it completes without
+    asking how much: a bill with a set amount, or one that is not spending and moves no
+    money (it is only marked done). Otherwise the amount is asked for on the Budgets page,
+    so only "Remind me later" is offered."""
+    bill = view.bill
+    snooze = FeedAction("snooze", "Remind me later", "POST", f"/bills/{bill.id}/snooze")
+    if bill.amount is None and (bill.spending or bill.wallet_id is not None):
+        return (snooze,)
+    paid = FeedAction(
+        "paid",
+        f"Mark {bill_cases.done_word(bill)}",
+        "POST",
+        f"/bills/{bill.id}/paid?due={view.due.isoformat()}",
+    )
+    return (paid, snooze)
+
+
+def _email_item(waiting: list[InboundEmail], user: User) -> FeedItem:
+    """The receipts waiting in email. One that is clear (a spent amount, not flagged as the
+    same payment as an entry already there, nor as a move between wallets) can be logged or
+    skipped here; otherwise, or with several, the item only links to the Email page."""
+    link = "/settings/email"
+    plain = FeedItem(
+        "accounting",
+        "email",
+        f"{_plural(len(waiting), 'receipt', 'receipts')} from email waiting for you",
+        link,
+    )
+    if len(waiting) != 1:
+        return plain
+    [email] = waiting
+    draft = ExpenseDraft.from_dict(email.draft or {})
+    money = read_amount(draft.amount, draft.currency, user.home_currency)
+    if (
+        money is None
+        or draft.received
+        or email_cases.duplicate_of(email) is not None
+        or email_cases.wallet_flag(email) is not None
+    ):
+        return plain
+    what = f"{draft.merchant} receipt" if draft.merchant else "Receipt"
+    return FeedItem(
+        "accounting",
+        "email",
+        f"{what}, {money}, from your email",
+        link,
+        actions=(
+            FeedAction("log", "Log it", "POST", f"/email/{email.id}/log", {}),
+            FeedAction("skip", "Skip", "POST", f"/email/{email.id}/skip"),
+        ),
+    )
+
+
+SOURCE_WORDS = {
+    Source.TEXT: "typed in chat",
+    Source.PHOTO: "from a photo",
+    Source.EMAIL: "from email",
+    Source.IMPORT: "from an import",
+    Source.MANUAL: "added by hand",
+}
+
+
+def _duplicates_item(pairs: list[duplicate_cases.Pair], user: User) -> FeedItem:
+    """The possible duplicates. A single pair of the same amount is described, and can be
+    merged or kept as two payments here; with several, the item links to the ledger."""
+    link = "/accounting/ledger"
+    if len(pairs) != 1:
+        return FeedItem(
+            "accounting",
+            "duplicates",
+            f"{_plural(len(pairs), 'possible duplicate', 'possible duplicates')} to check",
+            link,
+        )
+    first, second = pairs[0].first, pairs[0].second
+    # Merging needs one amount and one direction; a pair found across currencies has neither.
+    if first.direction is not second.direction or first.amount != second.amount:
+        return FeedItem("accounting", "duplicates", "1 possible duplicate to check", link)
+    tz = ZoneInfo(user.timezone)
+
+    def when(t: Transaction) -> str:
+        return f"{t.occurred_at.astimezone(tz):%-d %b} {SOURCE_WORDS[t.source]}"
+
+    name = first.counterparty or second.counterparty or "A payment"
+    other: dict[str, object] = {"other_id": str(second.id)}
+    return FeedItem(
+        "accounting",
+        "duplicates",
+        f"{name}, {first.amount}, may be logged twice: {when(first)} and {when(second)}",
+        link,
+        actions=(
+            FeedAction("merge", "Same one", "POST", f"/transactions/{first.id}/merge", other),
+            FeedAction(
+                "keep_both", "Keep both", "POST", f"/transactions/{first.id}/not-duplicate", other
+            ),
+        ),
+    )
 
 
 # --- investment ------------------------------------------------------------------------

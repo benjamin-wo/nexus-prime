@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from alembic import command
+from httpx import Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -27,15 +28,17 @@ from nexus.application import salary as salary_cases
 from nexus.application import setup as setup_cases
 from nexus.application import trips as trip_cases
 from nexus.application.home import FeedItem, needs_you
+from nexus.application.transactions import NewTransaction, log_transaction
 from nexus.domain.alerts import MINUS, AlertKind, MarketAlert, move_text, moved_in
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind, Segment
-from nexus.domain.email import ConnectionStatus
-from nexus.domain.ledger import User
+from nexus.domain.email import ConnectionStatus, EmailStatus, InboundEmail
+from nexus.domain.ledger import Direction, Source, User
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate
 from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.plans import SavedPlan, Verdict
 from nexus.infra.db.migrations import alembic_config
+from nexus.infra.db.uow import SqlUnitOfWork
 from tests.fakes import FakeMailbox, FakeRates
 from tests.integration import test_web_api
 from tests.integration.conftest import UowFactory, upgrade
@@ -494,6 +497,239 @@ async def test_the_home_feed_carries_when_and_comes_sorted(world: World) -> None
         ("bill", "soon", False),
     ]
     assert feed[0]["text"].startswith("Rent") and set(feed[0]) >= {"when", "actions", "link"}
+
+
+# --- buttons that settle an item in place -------------------------------------------------------
+
+
+async def home_items(owner: test_web_api.Browser, *kinds: str) -> list[dict[str, Any]]:
+    feed: list[dict[str, Any]] = (await owner.get("/api/home")).json()
+    return [i for i in feed if i["kind"] in kinds]
+
+
+def button(item: dict[str, Any], key: str) -> dict[str, Any]:
+    found: dict[str, Any] = next(a for a in item["actions"] if a["key"] == key)
+    return found
+
+
+async def press(owner: test_web_api.Browser, pressed: dict[str, Any]) -> Response:
+    """What the Home page does: the button's own method, path (relative to /api) and body."""
+    return await owner.send(pressed["method"], "/api" + pressed["path"], pressed["body"])
+
+
+def summary(item: dict[str, Any]) -> list[tuple[str, str, str, str, Any]]:
+    return [(a["key"], a["label"], a["method"], a["path"], a["body"]) for a in item["actions"]]
+
+
+async def signed_in(world: World, uow: UowFactory) -> tuple[test_web_api.Browser, User]:
+    """The owner, signed in on the web (the clock says 28 September), and their account."""
+    owner = world.browser()
+    assert (await owner.login(OWNER)).status_code == 200
+    async with uow() as tx:
+        user = await tx.ledger.get_user(await test_web_api.user_id(world, OWNER))
+    assert user is not None
+    return owner, user
+
+
+async def test_a_bill_due_soon_is_marked_paid_or_snoozed_from_home(
+    world: World, uow: UowFactory
+) -> None:
+    owner, _ = await signed_in(world, uow)
+    bills = {"Rent": ("2026-09-29", "1,800"), "Phone": ("2026-09-30", "45")}
+    ids: dict[str, str] = {}
+    for name, (due, amount) in bills.items():
+        made = await owner.send("POST", "/api/bills", {"name": name, "due": due, "amount": amount})
+        ids[name] = made.json()["id"]
+    rent, phone = await home_items(owner, "bill")
+    assert summary(rent) == [
+        ("paid", "Mark paid", "POST", f"/bills/{ids['Rent']}/paid?due=2026-09-29", None),
+        ("snooze", "Remind me later", "POST", f"/bills/{ids['Rent']}/snooze", None),
+    ]
+
+    # Mark paid: it is logged in the month's spending once, and the item is gone.
+    done = await press(owner, button(rent, "paid"))
+    assert done.status_code == 200 and done.json()["logged"] is True
+    assert "logged 1,800.00 SGD" in done.json()["message"]
+    [left] = await home_items(owner, "bill")
+    assert left["text"].startswith("Phone")
+    rows = (await owner.get("/api/transactions")).json()["items"]
+    assert [(r["counterparty"], r["amount"]["amount"]) for r in rows] == [("Rent", "1800.0000")]
+
+    # Remind me later: nothing is logged, and the item waits.
+    assert (await press(owner, button(phone, "snooze"))).status_code == 204
+    assert await home_items(owner, "bill") == []
+    assert len((await owner.get("/api/transactions")).json()["items"]) == 1
+
+
+async def test_a_bill_with_no_amount_can_only_be_snoozed_from_home(
+    world: World, uow: UowFactory
+) -> None:
+    owner, _ = await signed_in(world, uow)
+    await owner.send("POST", "/api/bills", {"name": "Visa", "due": "2026-09-29"})
+    saving = {"name": "Savings", "due": "2026-09-29", "spending": False}
+    await owner.send("POST", "/api/bills", saving)
+    by_name = {i["text"].split(" ")[0]: i for i in await home_items(owner, "bill")}
+    visa, savings = by_name["Visa"], by_name["Savings"]
+    assert [a["key"] for a in visa["actions"]] == ["snooze"]
+    # Money set aside that is only ticked off needs no amount, so it can be marked done.
+    assert [(a["key"], a["label"]) for a in savings["actions"]] == [
+        ("paid", "Mark done"),
+        ("snooze", "Remind me later"),
+    ]
+    done = await press(owner, button(savings, "paid"))
+    assert done.status_code == 200 and done.json()["needs_amount"] is False
+    assert (await owner.get("/api/transactions")).json()["items"] == []
+    [left] = await home_items(owner, "bill")
+    assert left["text"].startswith("Visa")
+
+
+async def pending_email(uow: UowFactory, user: User, message_id: str, **draft: Any) -> InboundEmail:
+    async with uow() as tx:
+        [connection, *_] = await tx.email.list_connections(user.id)
+    at = datetime(2026, 9, 27, 4, tzinfo=UTC)
+    found = {"amount": "18.90", "currency": "SGD", "merchant": "Grab", "date": "2026-09-27"}
+    mail = InboundEmail(
+        uuid4(),
+        user.id,
+        connection.id,
+        message_id,
+        at,
+        "no-reply@grab.com",
+        "Your Grab receipt",
+        EmailStatus.PENDING,
+        None,
+        {**found, **draft},
+        None,
+        at,
+    )
+    async with uow() as tx:
+        assert await tx.email.insert_inbound(mail)
+        await tx.commit()
+    return mail
+
+
+async def test_one_clear_receipt_from_email_is_logged_or_skipped_from_home(
+    world: World, uow: UowFactory
+) -> None:
+    owner, user = await signed_in(world, uow)
+    await connect(uow, user, FakeMailbox())
+    first = await pending_email(uow, user, "m1")
+    [item] = await home_items(owner, "email")
+    assert item["text"] == "Grab receipt, 18.90 SGD, from your email"
+    assert summary(item) == [
+        ("log", "Log it", "POST", f"/email/{first.id}/log", {}),
+        ("skip", "Skip", "POST", f"/email/{first.id}/skip", None),
+    ]
+
+    assert (await press(owner, button(item, "log"))).status_code == 204
+    assert await home_items(owner, "email") == []
+    [row] = (await owner.get("/api/transactions")).json()["items"]
+    assert (row["source"], row["counterparty"]) == ("email", "Grab")
+
+    second = await pending_email(uow, user, "m2", merchant="Gojek")
+    [item] = await home_items(owner, "email")
+    assert item["text"].startswith("Gojek receipt")
+    assert item["actions"][0]["path"] == f"/email/{second.id}/log"
+    assert (await press(owner, button(item, "skip"))).status_code == 204
+    assert await home_items(owner, "email") == []
+    assert len((await owner.get("/api/transactions")).json()["items"]) == 1  # skipping logs nothing
+
+
+async def test_several_receipts_or_an_unclear_one_stay_a_link(
+    world: World, uow: UowFactory
+) -> None:
+    owner, user = await signed_in(world, uow)
+    await connect(uow, user, FakeMailbox())
+    await pending_email(uow, user, "m1", amount=None)
+    [item] = await home_items(owner, "email")
+    assert item["text"] == "1 receipt from email waiting for you" and item["actions"] == []
+    await pending_email(uow, user, "m2")
+    [item] = await home_items(owner, "email")
+    assert item["text"] == "2 receipts from email waiting for you" and item["actions"] == []
+    assert item["link"] == "/settings/email"
+
+
+async def two_records_of_one_payment(
+    world: World, owner: test_web_api.Browser, name: str, amount: str, day: str
+) -> tuple[str, str]:
+    """One entry typed in, and one logged from a bank's email alert, for the same payment."""
+    made = await owner.send(
+        "POST",
+        "/api/transactions",
+        {"direction": "out", "amount": amount, "counterparty": name, "date": day},
+    )
+    alert = await log_transaction(
+        SqlUnitOfWork(world.engine),
+        await test_web_api.user_id(world, OWNER),
+        NewTransaction(
+            direction=Direction.OUT,
+            amount=Money.of(amount, "SGD"),
+            occurred_at=datetime.fromisoformat(day).replace(hour=2, tzinfo=UTC),
+            counterparty=f"{name.upper()}* A-7KXPLMQZRTWB",
+            source=Source.EMAIL,
+            external_id=f"gmail:ann@gmail.com:{name}",
+            notes="Card alert",
+        ),
+    )
+    return str(made.json()["id"]), str(alert.id)
+
+
+async def test_one_possible_duplicate_is_merged_or_kept_from_home(
+    world: World, uow: UowFactory
+) -> None:
+    owner, _ = await signed_in(world, uow)
+    typed, alert = await two_records_of_one_payment(
+        world, owner, "Grab Singapore", "23.40", "2026-09-27"
+    )
+    [item] = await home_items(owner, "duplicates")
+    assert item["text"] == (
+        "Grab Singapore, 23.40 SGD, may be logged twice: 27 Sep added by hand and 27 Sep from email"
+    )
+    merge, keep = button(item, "merge"), button(item, "keep_both")
+    assert [a["label"] for a in item["actions"]] == ["Same one", "Keep both"]
+    ours = merge["path"].split("/")[2]
+    other = merge["body"]["other_id"]
+    assert {ours, other} == {typed, alert} and ours != other
+    assert merge["path"] == f"/transactions/{ours}/merge"
+    assert keep["path"] == f"/transactions/{ours}/not-duplicate" and keep["body"] == merge["body"]
+
+    # "Same one": one record is kept (the other can be restored), and the item is gone.
+    merged = await press(owner, merge)
+    assert merged.status_code == 200 and merged.json()["kept"]["id"] == typed
+    assert await home_items(owner, "duplicates") == []
+    [left] = (await owner.get("/api/transactions")).json()["items"]
+    assert left["id"] == typed
+
+
+async def test_keeping_both_stops_the_pair_being_flagged(world: World, uow: UowFactory) -> None:
+    owner, _ = await signed_in(world, uow)
+    await two_records_of_one_payment(world, owner, "Grab Singapore", "23.40", "2026-09-27")
+    [item] = await home_items(owner, "duplicates")
+    assert (await press(owner, button(item, "keep_both"))).status_code == 204
+    assert await home_items(owner, "duplicates") == []
+    assert len((await owner.get("/api/transactions")).json()["items"]) == 2
+
+
+async def test_several_possible_duplicates_stay_one_link(world: World, uow: UowFactory) -> None:
+    owner, _ = await signed_in(world, uow)
+    await two_records_of_one_payment(world, owner, "Grab Singapore", "23.40", "2026-09-27")
+    await two_records_of_one_payment(world, owner, "Hawker Centre", "9.50", "2026-09-26")
+    [item] = await home_items(owner, "duplicates")
+    assert item["text"] == "2 possible duplicates to check" and item["actions"] == []
+    assert item["link"] == "/accounting/ledger"
+
+
+async def test_the_buttons_only_work_for_their_owner(world: World, uow: UowFactory) -> None:
+    owner, user = await signed_in(world, uow)
+    await connect(uow, user, FakeMailbox())
+    await pending_email(uow, user, "m1")
+    [item] = await home_items(owner, "email")
+    invite = (await owner.send("POST", "/api/invites")).json()["url"].rsplit("/", 1)[-1]
+    member = world.browser()
+    await member.login(test_web_api.MEMBER, invite=invite)
+    assert await home_items(member, "email") == []
+    assert (await press(member, button(item, "log"))).status_code == 404
+    assert len(await home_items(owner, "email")) == 1
 
 
 # --- the setup checklist ----------------------------------------------------------------------

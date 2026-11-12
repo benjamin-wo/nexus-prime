@@ -582,7 +582,14 @@ export type FeedItem = {
   /** Buttons that settle the item; `path` is relative to /api. */
   actions: FeedAction[];
 };
-export type FeedAction = { key: string; label: string; method: string; path: string };
+export type FeedAction = {
+  key: string;
+  label: string;
+  method: string;
+  path: string;
+  /** The JSON to send with it; null when the endpoint takes none. */
+  body?: unknown;
+};
 
 /** One step of Home's setup checklist. */
 export type SetupItem = {
