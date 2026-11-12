@@ -142,6 +142,7 @@ export function Shell({
   onOpenChat,
   onLogout,
   onRefresh,
+  offlineWaiting = 0,
   children,
 }: {
   me: Me;
@@ -149,6 +150,8 @@ export function Shell({
   onLogout: () => void;
   /** Refetches what the page shows; given, Home, Money overview, Ledger and Budgets can be pulled down to refresh. */
   onRefresh?: () => Promise<unknown>;
+  /** While the phone is offline: how many expenses saved on it are waiting to sync. A notice shows above the page. */
+  offlineWaiting?: number;
   children: ReactNode;
 }) {
   const { pathname, key } = useLocation();
@@ -228,6 +231,14 @@ export function Shell({
   return (
     <div className={`shell${scrolling ? " scrolling-down" : ""}`} ref={shell}>
       {me.demo && <DemoBanner expiresAt={me.demo.expires_at} onSignIn={onLogout} />}
+      {offlineWaiting > 0 && (
+        <div className="offline-notice" role="status">
+          <p>
+            You're offline. {offlineWaiting} {offlineWaiting === 1 ? "expense" : "expenses"} will sync when you're
+            back.
+          </p>
+        </div>
+      )}
       <nav className="rail" aria-label="Main">
         <div className="brand">
           <BrandMark />

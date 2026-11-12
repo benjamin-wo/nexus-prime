@@ -23,12 +23,14 @@ const READ_TIMEOUT_MS = 30_000;
 
 export async function api<T>(
   path: string,
-  init: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+  init: { method?: string; body?: unknown; signal?: AbortSignal; idempotencyKey?: string } = {},
 ): Promise<T> {
   const method = init.method ?? "GET";
   const headers: Record<string, string> = {};
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") headers["X-CSRF-Token"] = csrfToken;
+  // Sent again with the same key, a write is recorded once (POST /transactions): see outbox.ts.
+  if (init.idempotencyKey) headers["Idempotency-Key"] = init.idempotencyKey;
   return request<T>(
     path,
     method,

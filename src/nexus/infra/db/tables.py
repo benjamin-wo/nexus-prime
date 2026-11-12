@@ -239,6 +239,9 @@ transactions = Table(
     # Money out only (migration 0065): the wallet, usually a card, it was paid with. Set
     # null if the wallet is deleted. Metadata: it changes no total.
     Column("paid_with_wallet_id", UUID(as_uuid=True)),
+    # The client's idempotency key for a manual entry (migration 0071): one transaction per
+    # user and key, so an entry saved offline and sent twice is recorded once.
+    Column("client_ref", Text),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(["category_id", "user_id"], ["categories.id", "categories.user_id"]),
     ForeignKeyConstraint(
@@ -281,6 +284,13 @@ transactions = Table(
         "user_id",
         "paid_with_wallet_id",
         "occurred_at",
+    ),
+    Index(
+        "uq_transactions_user_id_client_ref",
+        "user_id",
+        "client_ref",
+        unique=True,
+        postgresql_where=text("client_ref IS NOT NULL"),
     ),
 )
 

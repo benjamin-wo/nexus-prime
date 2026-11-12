@@ -149,3 +149,14 @@ describe("api timeouts and aborts", () => {
     expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
   });
 });
+
+describe("idempotency keys", () => {
+  it("sends the key given as an Idempotency-Key header, and no header without one", async () => {
+    const fetched = vi.spyOn(globalThis, "fetch").mockImplementation(async () => json({}, 200));
+    await api("/transactions", { method: "POST", body: { amount: "1" }, idempotencyKey: "0b1d6c3e-5a7f-4e21-9d84-3c2f1a6b7e90" });
+    await api("/transactions", { method: "POST", body: { amount: "1" } });
+    const sent = fetched.mock.calls.map(([, init]) => init?.headers as Record<string, string>);
+    expect(sent[0]["Idempotency-Key"]).toBe("0b1d6c3e-5a7f-4e21-9d84-3c2f1a6b7e90");
+    expect(sent[1]).not.toHaveProperty("Idempotency-Key");
+  });
+});

@@ -9,6 +9,7 @@ import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
+import { isWaiting, outboxUser, useOnline, useOutbox, useOutboxSync } from "./outbox";
 import { refetchActive, useRefreshOnReturn } from "./refreshOnReturn";
 import { DemoPage } from "./pages/DemoPage";
 import { Home } from "./pages/Home";
@@ -164,9 +165,20 @@ function Cockpit({ me }: { me: Me }) {
   const closeChat = useCallback(() => setChat(null), []);
   // Pulling a page down: what it shows, fetched again whatever its staleTime.
   const pullRefresh = useCallback(() => refetchActive(client, true), [client]);
+  // Expenses logged with no connection are kept on the phone and sent when it can (outbox.ts).
+  const outboxOwner = outboxUser(me);
+  useOutboxSync(outboxOwner, client);
+  const online = useOnline();
+  const waiting = useOutbox(outboxOwner).filter(isWaiting).length;
 
   return (
-    <Shell me={me} onOpenChat={() => setChat({})} onLogout={logout} onRefresh={pullRefresh}>
+    <Shell
+      me={me}
+      onOpenChat={() => setChat({})}
+      onLogout={logout}
+      onRefresh={pullRefresh}
+      offlineWaiting={online ? 0 : waiting}
+    >
       <RoutedPage>
         <Routes>
           <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
@@ -215,6 +227,10 @@ function Cockpit({ me }: { me: Me }) {
           editing={sheet.editing}
           onOpen={(tx) => setSheet({ editing: tx })}
           onClose={closeSheet}
+          onQueued={() => {
+            setSheet(null);
+            setNotice("Saved on this phone. It will sync when you're back online.");
+          }}
           onSaved={(tx: EditedTransaction) => {
             setSheet(null);
             refresh();

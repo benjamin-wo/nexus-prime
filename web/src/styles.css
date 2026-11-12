@@ -404,6 +404,15 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
   border-bottom: 1px solid var(--accent-border); color: var(--text-primary); font-size: 0.8125rem; line-height: 1.4;
 }
 .demo-banner p { margin: 0; text-align: center; }
+/* Saved offline, waiting for a connection: a row of its own above the page, like the demo bar (both can show). */
+.shell:has(> .offline-notice) { grid-template-rows: auto minmax(0, 1fr); }
+.shell:has(> .demo-banner):has(> .offline-notice) { grid-template-rows: auto auto minmax(0, 1fr); }
+.offline-notice {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: center;
+  padding: var(--space-1) var(--space-4); background: var(--status-warning-soft);
+  border-bottom: 1px solid var(--status-warning-border); color: var(--text-primary); font-size: 0.875rem; line-height: 1.4;
+}
+.offline-notice p { margin: 0; text-align: center; }
 .demo-banner-link {
   padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--accent-text);
   text-decoration: underline; cursor: pointer;
@@ -516,6 +525,18 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .badge-out { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-border); }
 .badge-in { color: var(--emerald-accent); background: var(--emerald-soft); border-color: var(--emerald-border); }
 .badge-move { color: var(--text-secondary); border-color: var(--border-card); }
+/* Expenses saved on the phone and not sent yet (the Ledger's "Will sync" rows). */
+.outbox { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: grid; gap: var(--space-2); }
+.outbox-row {
+  display: grid; gap: 4px; padding: var(--space-2) var(--space-3); border-radius: 10px;
+  background: var(--status-warning-soft); border: 1px dashed var(--status-warning-border);
+}
+.outbox-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.outbox-name { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.outbox-amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+.outbox-row .caption { margin: 0; }
+.outbox-failed { color: var(--status-warning); font-size: 0.875rem; margin: 0; }
+.outbox-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .badge-pending { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
 .badge-deleted { color: var(--text-muted); border-color: var(--border-card); }
 

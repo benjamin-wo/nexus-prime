@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import {
   api,
+  ApiError,
   type Category,
   type Direction,
   type EditedTransaction,
@@ -14,6 +15,7 @@ import {
   type Wallet,
 } from "../api";
 import { isoDay, moveLabel } from "../format";
+import { enqueue, newKey, outboxUser, useOnline } from "../outbox";
 import { type CardDetails, detailsBody, NO_DETAILS, payingWallets, tracksCards, walletLabel } from "../wallets";
 import { CardFields } from "./CardFields";
 import { MerchantField } from "./MerchantField";
@@ -30,6 +32,7 @@ export function EntrySheet({
   onOpen,
   onClose,
   onSaved,
+  onQueued,
 }: {
   me: Me;
   editing?: Transaction;
@@ -37,6 +40,8 @@ export function EntrySheet({
   onOpen?: (tx: Transaction) => void;
   onClose: () => void;
   onSaved: (tx: EditedTransaction) => void;
+  /** A new entry was kept on this phone because there is no connection (see outbox.ts). Defaults to closing. */
+  onQueued?: () => void;
 }) {
   const tz = me.user.timezone;
   // Without card tracking there is no "Paid with" at all: no field, no "Add a card…", nothing sent.
@@ -103,6 +108,9 @@ export function EntrySheet({
   const [categorySaving, setCategorySaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Made once per sheet, sent with every attempt: an entry that arrives twice is recorded once.
+  const entryKey = useRef<string | null>(null);
+  const online = useOnline();
   const first = useRef<HTMLInputElement>(null);
   const addingRef = useRef(false);
   addingRef.current = adding;
@@ -221,6 +229,24 @@ export function EntrySheet({
           category_id: categoryId || null,
           ...(track && side === "out" && (pickedPaidWith !== null || loneCard) ? { paid_with_wallet_id: paidWith || null } : {}),
         };
+    // A new money-in or money-out entry is kept on the phone when there is no connection; an edit or a transfer
+    // needs the server.
+    const queueable = !editing && !moving;
+    const keep = () => {
+      if (!enqueue(outboxUser(me), { key: entryKey.current ?? newKey(), body })) {
+        setError("Couldn't reach Kaya, and this phone can't keep the entry for later. Check your connection and try again.");
+        return;
+      }
+      (onQueued ?? onClose)();
+    };
+    if (queueable) {
+      entryKey.current ??= newKey();
+      if (!online || navigator.onLine === false) {
+        keep();
+        setSaving(false);
+        return;
+      }
+    }
     try {
       const tx = moving
         ? await api<Transaction>("/moves", {
@@ -236,10 +262,12 @@ export function EntrySheet({
           })
         : editing
           ? await api<EditedTransaction>(`/transactions/${editing.id}`, { method: "PATCH", body })
-          : await api<Transaction>("/transactions", { method: "POST", body });
+          : await api<Transaction>("/transactions", { method: "POST", body, idempotencyKey: entryKey.current ?? undefined });
       onSaved(tx);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save");
+      // No connection: the request never got an answer. (Writes have no timeout, so this is the network.)
+      if (queueable && e instanceof ApiError && e.status === 0) keep();
+      else setError(e instanceof Error ? e.message : "Couldn't save");
     } finally {
       setSaving(false);
     }
@@ -269,6 +297,8 @@ export function EntrySheet({
           : "Log money in";
   const cardFormOpen = track && adding && !isMove && !moving && side === "out";
   const needsWallet = moving && wallets.data !== undefined && elsewhere.length === 0;
+  // Only a new entry can wait for a connection; an edit, a transfer or "make it a transfer" cannot.
+  const needsConnection = !online && (Boolean(editing) || moving);
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form
@@ -525,7 +555,7 @@ export function EntrySheet({
                   : `Turn this into a transfer from ${markWallet?.name} to ${spending?.name ?? "your main account"}? It will stop counting as income.`}
               </p>
               <div className="quick">
-                <button type="button" className="btn btn-primary" disabled={saving} onClick={markAsMove}>
+                <button type="button" className="btn btn-primary" disabled={saving || !online} onClick={markAsMove}>
                   Turn into a transfer
                 </button>
                 <button type="button" className="btn" onClick={() => setMarking(false)}>
@@ -539,6 +569,12 @@ export function EntrySheet({
             </button>
           )
         )}
+        {needsConnection && (
+          <p className="caption" role="status">
+            You're offline. {editing ? "Changes to an entry" : "Transfers"} need a connection, so this can't be saved
+            yet.
+          </p>
+        )}
         {error && (
           <p id="entry-error" className="error-text" role="alert">
             {error}
@@ -548,7 +584,7 @@ export function EntrySheet({
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || cardFormOpen || categoryFormOpen}>
+          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || needsConnection || cardFormOpen || categoryFormOpen}>
             {saving ? "Saving…" : "Save"}
           </button>
         </div>

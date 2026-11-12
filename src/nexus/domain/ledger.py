@@ -192,6 +192,9 @@ class Transaction:
     # Money out only: the wallet (usually a card) it was paid with. Metadata; it changes no
     # total.
     paid_with_wallet_id: UUID | None = None
+    # The client's idempotency key for a manual entry (a phone's offline outbox retries with
+    # it): one transaction per user and key. Set at creation, never changed.
+    client_ref: str | None = None
 
     @property
     def is_deleted(self) -> bool:

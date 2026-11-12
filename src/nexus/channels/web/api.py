@@ -12,7 +12,7 @@ from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.datastructures import UploadFile
@@ -910,11 +910,30 @@ class TransactionIn(Model):
     paid_with_wallet_id: UUID | None = None
 
 
-@router.post("/transactions", status_code=201)
-async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> TransactionOut:
+IdempotencyKey = Annotated[
+    str | None,
+    Header(
+        alias="Idempotency-Key",
+        min_length=8,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="A client-made unique key for this entry. Sending the same key again "
+        "returns the transaction already recorded (200) instead of recording another.",
+    ),
+]
+
+
+@router.post("/transactions", status_code=201, responses={200: {"model": TransactionOut}})
+async def create_transaction(
+    body: TransactionIn,
+    auth: Auth,
+    web: Runtime,
+    response: Response,
+    idempotency_key: IdempotencyKey = None,
+) -> TransactionOut:
     user = auth.user
     said = "paid_with_wallet_id" in body.model_fields_set
-    tx = await tx_cases.log_transaction(
+    tx, created = await tx_cases.log_transaction_once(
         web.uow(),
         user.id,
         tx_cases.NewTransaction(
@@ -927,8 +946,11 @@ async def create_transaction(body: TransactionIn, auth: Auth, web: Runtime) -> T
             source=Source.MANUAL,
             paid_with_wallet_id=body.paid_with_wallet_id,
             use_usual_card=not said,
+            client_ref=idempotency_key,
         ),
     )
+    if not created:
+        response.status_code = 200
     return await _out(web, user, tx)
 
 
