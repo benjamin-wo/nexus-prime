@@ -1,6 +1,15 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, apiForm, ApiError, type ChatHistory, type Demo, type Reply } from "../api";
+import {
+  RECOVER_EVERY_MS,
+  RECOVER_TRIES,
+  repliesAfter,
+  StreamInterrupted,
+  StreamNotStarted,
+  streamChat,
+  type ChatStep,
+} from "../chatStream";
 import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
@@ -84,9 +93,44 @@ function Sources({ buttons }: { buttons: Button[] }) {
   );
 }
 
+/** What Kaya is doing, as it goes: a spinner on the step running now, a check on those done. */
+type Progress = { label: string; done: boolean };
+
+/** Shown when the reply stream broke after the turn began: the turn goes on, its reply is fetched. */
+const STILL_WORKING_NOTE = "Still working… the reply will appear here";
+
+/** A step finished: the oldest one still running with that label is done. */
+function finish(steps: Progress[], label: string): Progress[] {
+  const at = steps.findIndex((s) => s.label === label && !s.done);
+  return at === -1 ? steps : steps.map((s, i) => (i === at ? { ...s, done: true } : s));
+}
+
+/** Kaya's side of the chat while a turn runs, once it has said what it is doing. The list sits
+ * inside the chat's polite live region, so a screen reader hears each step as it starts. */
+function Steps({ steps }: { steps: Progress[] }) {
+  return (
+    <div className="msg msg-bot steps" role="status" aria-label="What Kaya is doing">
+      <Kaya size={28} className="msg-avatar" lazy />
+      <ul className="steps-list">
+        {steps.map((step, i) => (
+          <li key={i} className={step.done ? "step-done" : "step-running"}>
+            <span className={step.done ? "step-check" : "step-spin"} aria-hidden="true">
+              {step.done ? "✓" : ""}
+            </span>
+            <span>
+              {step.label}
+              {step.done ? <span className="sr-only"> (done)</span> : "…"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** Kaya's side of the chat while a reply is worked out: three dots, then a word
  * that it's still going, so a slow reply never looks like nothing is happening. */
-function Typing() {
+function Typing({ note }: { note?: string }) {
   const [long, setLong] = useState(false);
   useEffect(() => {
     const timer = window.setTimeout(() => setLong(true), STILL_WORKING_MS);
@@ -104,7 +148,11 @@ function Typing() {
         <span />
         <span />
       </span>
-      {long && <span className="typing-note">Still working on it…</span>}
+      {note ? (
+        <span className="typing-note">{note}</span>
+      ) : (
+        long && <span className="typing-note">Still working on it…</span>
+      )}
     </div>
   );
 }
@@ -133,6 +181,11 @@ export function ChatDrawer({
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  // What the running turn has done so far, Stop was pressed on it, and its stream broke (so its reply
+  // is being waited for in the history).
+  const [steps, setSteps] = useState<Progress[]>([]);
+  const [stopping, setStopping] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [more, setMore] = useState(false);
   // The history has come back (or failed), so an empty chat really is empty.
   const [loaded, setLoaded] = useState(false);
@@ -234,14 +287,49 @@ export function ChatDrawer({
       ]);
     } finally {
       setBusy(false);
+      setSteps([]);
+      setStopping(false);
+      setRecovering(false);
+    }
+  }
+
+  const onStep = (step: ChatStep) =>
+    setSteps((now) => (step.state === "running" ? [...now, { label: step.label, done: false }] : finish(now, step.label)));
+
+  /** Wait for the reply of a turn whose stream broke after it began: it keeps running and keeps its
+   * replies in the history, so look there. The message is never sent again. */
+  async function recover(text: string, since: number): Promise<Reply[]> {
+    setRecovering(true);
+    for (let i = 0; i < RECOVER_TRIES; i++) {
+      await new Promise((resolve) => setTimeout(resolve, RECOVER_EVERY_MS));
+      const history = await api<ChatHistory>("/chat/history").catch(() => null);
+      const found = history && repliesAfter(history, text, since);
+      if (found) return found;
+    }
+    return [{ text: "I'm still working on that. The reply will show in this chat when it's done.", buttons: [] }];
+  }
+
+  /** A typed message: followed live through the stream; sent the usual way only when the stream
+   * could not start (so nothing was sent twice). */
+  async function turn(text: string): Promise<Reply[]> {
+    try {
+      return await streamChat(text, onStep);
+    } catch (e) {
+      if (e instanceof StreamNotStarted) return api<Reply[]>("/chat", { method: "POST", body: { message: text } });
+      if (e instanceof StreamInterrupted) return recover(text, e.startedAt);
+      throw e;
     }
   }
 
   function say(text: string) {
     setMessages((m) => [...m, { from: "user", text, buttons: [] }]);
-    void run(
-      api<Reply[]>("/chat", { method: "POST", body: { message: text } }),
-    );
+    void run(turn(text));
+  }
+
+  /** Ask for the running turn to end at its next step; the stream goes on until its replies come. */
+  function stop() {
+    setStopping(true);
+    void api("/chat/stop", { method: "POST" }).catch(() => undefined);
   }
 
   function sendVoice({ blob, filename }: Recorded) {
@@ -404,7 +492,7 @@ export function ChatDrawer({
             )}
           </div>
         ))}
-        {busy && <Typing />}
+        {busy && (recovering ? <Typing note={STILL_WORKING_NOTE} /> : steps.length > 0 ? <Steps steps={steps} /> : <Typing />)}
         <div ref={end} />
       </div>
       <form onSubmit={send}>
@@ -447,8 +535,12 @@ export function ChatDrawer({
               <Icon name="stop" />
             </button>
           </>
+        ) : busy ? (
+          <button type="button" className="btn btn-primary chat-action" disabled={stopping} onClick={stop}>
+            {stopping ? "Stopping…" : "Stop"}
+          </button>
         ) : draft.trim() ? (
-          <button type="submit" className="btn btn-primary chat-action" disabled={busy}>
+          <button type="submit" className="btn btn-primary chat-action">
             Send
           </button>
         ) : (

@@ -13,7 +13,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.datastructures import UploadFile
 
@@ -48,6 +48,7 @@ from nexus.application import whereabouts as whereabouts_cases
 from nexus.application.ports import LedgerQuery, SortField
 from nexus.application.statements import Verdict
 from nexus.application.users import RegisterUser
+from nexus.channels.web.chat_stream import stream_turn
 from nexus.channels.web.csv_export import to_csv
 from nexus.channels.web.security import (
     COOKIE,
@@ -2898,6 +2899,28 @@ async def chat_history(
 async def chat(body: ChatIn, auth: Auth, web: Runtime) -> list[ReplyOut]:
     ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"
     return replies_out(await web.service.handle_text(auth.user.id, body.message, ref))
+
+
+@router.post("/chat/stream")
+async def chat_stream(body: ChatIn, auth: Auth, web: Runtime) -> StreamingResponse:
+    """The same turn as ``POST /chat``, as a ``text/event-stream``: ``step`` events while
+    it works, then ``replies`` (what ``/chat`` returns) or ``error``. Same sign-in, origin,
+    CSRF and limits. A browser that leaves doesn't cancel the turn."""
+    ref = f"web:{auth.session.token_hash[:16]}:{web.clock().timestamp()}"
+    return stream_turn(
+        web.service,
+        auth.user.id,
+        body.message,
+        ref,
+        replies=lambda done: [r.model_dump(mode="json") for r in replies_out(done)],
+    )
+
+
+@router.post("/chat/stop", status_code=204)
+async def chat_stop(auth: Auth, web: Runtime) -> None:
+    """Ask for the running chat turn to end at its next step, saying what it already did.
+    Nothing is interrupted mid-write; with no turn running it does nothing."""
+    web.service.request_stop(auth.user.id)
 
 
 # A multipart body adds a little to the recording itself.

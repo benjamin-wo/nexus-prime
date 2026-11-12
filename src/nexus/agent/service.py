@@ -17,7 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from nexus.agent import kernel
+from nexus.agent import kernel, progress
 from nexus.agent.graph import (
     BUTTONS,
     IMAGE,
@@ -41,6 +41,7 @@ from nexus.agent.image_look import (
     route,
 )
 from nexus.agent.ops_timing import TurnTimer
+from nexus.agent.progress import StepSink
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
@@ -365,6 +366,8 @@ class AgentService:
         self._after_turn = after_turn
         # Messages that reach the model, per user; None: no limit (tests, evals).
         self._limiter = limiter
+        # Users who asked to stop their running turn (see request_stop); in memory.
+        self._stops: set[UserId] = set()
         # One turn at a time per user; a turn reads and writes the user's thread.
         self._locks: defaultdict[UserId, asyncio.Lock] = defaultdict(asyncio.Lock)
         # Folds a long thread's old messages into its summary (AgentGraph.condense), in
@@ -384,20 +387,35 @@ class AgentService:
             return pending.id, str(value.get("summary", "Confirm?"))
         return None
 
-    async def _run(self, actor: UserId, payload: Any) -> list[Reply]:
+    async def _run(
+        self, actor: UserId, payload: Any, on_step: StepSink | None = None
+    ) -> list[Reply]:
         # A turn is chat unless a voice note, photo or PDF started it.
         with costs.scope("chat", user=actor, keep=True):
-            return await self._run_turn(actor, payload)
+            return await self._run_turn(actor, payload, on_step)
 
-    async def _run_turn(self, actor: UserId, payload: Any) -> list[Reply]:
+    def request_stop(self, actor: UserId) -> None:
+        """Ask for the user's running turn to end at its next step. A model call already
+        in flight finishes and no tool is interrupted: the turn then ends the way one that
+        ran out of steps does, saying what it already changed, with Undo. The flag is
+        in this process's memory, so it reaches a turn running in this process only (one
+        worker, as deployed); a request with no turn running is dropped when the next turn
+        starts."""
+        self._stops.add(actor)
+
+    async def _run_turn(
+        self, actor: UserId, payload: Any, on_step: StepSink | None = None
+    ) -> list[Reply]:
         await voice_cases.load(self._uow(), actor)  # in the user's turn, so not before the lock
         config = self._config(actor)
         # By id, not position: a long conversation drops its oldest messages mid-turn.
         seen = {m.id for m in (await self._graph.aget_state(config)).values.get("messages", [])}
         started = clock.monotonic()
         timer = TurnTimer(self._primary_model)
+        self._stops.discard(actor)  # a Stop from before this turn started isn't for it
         try:
-            await self._graph.ainvoke(payload, {**config, "callbacks": [timer]})
+            with progress.watching(on_step, lambda: actor in self._stops):
+                await self._graph.ainvoke(payload, {**config, "callbacks": [timer]})
         except Exception as exc:
             _record_turn(clock.monotonic() - started, [], timer, error=type(exc).__name__)
             raise
@@ -517,15 +535,23 @@ class AgentService:
     @as_actor
     @in_voice
     @costs.as_feature("chat")
-    async def handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
+    async def handle_text(
+        self, actor: UserId, text: str, ref: str, on_step: StepSink | None = None
+    ) -> list[Reply]:
+        """``on_step``, if given, is told as each tool starts and finishes (a short label,
+        see ``progress``); the replies are the same with or without it."""
         text, hid = _hidden(text)
         refusal = await self._demo_refusal(actor, Use.MESSAGE)
-        replies = [Reply(refusal)] if refusal else await self._handle_text(actor, text, ref)
+        replies = (
+            [Reply(refusal)] if refusal else await self._handle_text(actor, text, ref, on_step)
+        )
         replies = _noted(replies, hid)
         await self._keep(actor, text, replies, ref)
         return replies
 
-    async def _handle_text(self, actor: UserId, text: str, ref: str) -> list[Reply]:
+    async def _handle_text(
+        self, actor: UserId, text: str, ref: str, on_step: StepSink | None = None
+    ) -> list[Reply]:
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
         async with self._locks[actor]:
@@ -536,7 +562,7 @@ class AgentService:
             message = HumanMessage(
                 content=text, additional_kwargs={REF: ref, SENT_AT: self._sent()}
             )
-            replies = await self._run(actor, {"messages": [message]})
+            replies = await self._run(actor, {"messages": [message]}, on_step)
             await self._remember(actor, ref)
             return replies
 

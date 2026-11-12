@@ -1402,6 +1402,118 @@ async def test_chat_with_confirmation(world: World) -> None:
     assert (await owner.get("/api/transactions")).json()["total"] == 0
 
 
+def sse(response: Response) -> list[tuple[str, Any]]:
+    """The frames of an event stream as (event, data); comment lines are skipped."""
+    frames = []
+    for block in response.text.split("\n\n"):
+        lines = [line for line in block.split("\n") if line and not line.startswith(":")]
+        if lines:
+            event = lines[0].removeprefix("event: ")
+            frames.append((event, json.loads(lines[1].removeprefix("data: "))))
+    return frames
+
+
+async def test_chat_stream_sends_the_steps_then_the_same_replies_as_chat(world: World) -> None:
+    owner, invite = await owner_and_invite(world)
+    member = world.browser()
+    assert (await member.login(MEMBER, invite)).status_code == 200
+
+    def script() -> list[Any]:
+        return [call("list_categories"), call("log_expense", amount="4"), say("Logged 4.")]
+
+    world.model.script += script()
+    plain = await owner.send("POST", "/api/chat", {"message": "kopi 4"})
+    world.model.script += script()
+    streamed = await member.send("POST", "/api/chat/stream", {"message": "kopi 4"})
+
+    assert streamed.status_code == 200
+    assert streamed.headers["content-type"].startswith("text/event-stream")
+    assert streamed.headers["cache-control"] == "no-cache"
+    assert streamed.headers["x-accel-buffering"] == "no"
+    assert streamed.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" in streamed.headers  # the app's own middlewares still apply
+    assert streamed.headers["x-trace-id"]
+    events = sse(streamed)
+    assert [e for e, _ in events] == ["step"] * 4 + ["replies"]
+    assert [d for e, d in events if e == "step"] == [
+        {"label": "Checking your categories", "state": "running"},
+        {"label": "Checking your categories", "state": "done"},
+        {"label": "Logging the expense", "state": "running"},
+        {"label": "Logging the expense", "state": "done"},
+    ]
+    assert events[-1][1] == plain.json()
+    # Kept in the chat like any other turn.
+    history = (await member.get("/api/chat/history")).json()["lines"]
+    assert [(x["role"], x["text"]) for x in history] == [("user", "kopi 4"), ("nexus", "Logged 4.")]
+
+
+async def test_chat_stream_and_stop_need_sign_in_the_origin_and_csrf(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    for path, body in (("/api/chat/stream", {"message": "hi"}), ("/api/chat/stop", None)):
+        stranger = world.browser()
+        refused = await stranger.client.post(
+            path, json=body, headers={"Origin": ORIGIN, "X-CSRF-Token": "x"}
+        )
+        assert refused.status_code == 401
+        no_token = await owner.client.post(path, json=body, headers={"Origin": ORIGIN})
+        assert no_token.status_code == 403
+        wrong_token = await owner.send("POST", path, body, **{"X-CSRF-Token": "wrong"})
+        assert wrong_token.status_code == 403
+        elsewhere = await owner.send("POST", path, body, Origin="https://evil.example")
+        assert elsewhere.status_code == 403
+    assert world.model.seen == []  # nothing reached the model
+
+
+async def test_chat_stream_checks_its_body_like_chat(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    assert (await owner.send("POST", "/api/chat/stream", {"message": ""})).status_code == 422
+    assert (
+        await owner.send("POST", "/api/chat/stream", {"message": "x" * 2001})
+    ).status_code == 422
+
+
+async def test_stop_asks_for_the_running_turn_to_end(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    found = await find_telegram_user(SqlUnitOfWork(world.engine), OWNER)
+    assert found is not None
+    user = found.id
+
+    def press_stop(_: Any) -> Any:
+        # As if Stop was pressed while this model call was in flight.
+        world.app.state.web.service.request_stop(user)
+        return call("list_categories")
+
+    world.model.script += [
+        call("log_expense", amount="4", merchant="Kopi"),
+        press_stop,
+        call("list_categories"),  # not asked for: the turn is stopped before this step
+    ]
+    streamed = await owner.send("POST", "/api/chat/stream", {"message": "kopi 4"})
+    events = sse(streamed)
+    assert [d["label"] for e, d in events if e == "step"] == [
+        "Logging the expense",
+        "Logging the expense",
+        "Checking your categories",
+        "Checking your categories",
+    ]
+    [reply] = events[-1][1]
+    assert reply["text"].startswith("Stopped, as you asked. Already done: Logged:")
+    assert [b["data"] for row in reply["buttons"] for b in row] == ["act:undo"]
+    assert len(world.model.seen) == 2
+    assert (await owner.get("/api/transactions")).json()["total"] == 1
+
+    stop = await owner.send("POST", "/api/chat/stop")
+    assert stop.status_code == 204
+    assert user in world.app.state.web.service._stops
+    # ...and it is for the turn running now, not the next one.
+    world.model.script += [say("Hello.")]
+    [hello] = (await owner.send("POST", "/api/chat", {"message": "hi"})).json()
+    assert hello["text"] == "Hello."
+
+
 async def test_telegram_invite_command(world: World, engine: AsyncEngine) -> None:
     from nexus.channels.telegram.webhook import handle_update
 

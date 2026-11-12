@@ -35,7 +35,7 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
-from nexus.agent import kernel, open_items
+from nexus.agent import kernel, open_items, progress
 from nexus.agent.confirmation import combine
 from nexus.agent.image_look import acts
 from nexus.agent.open_items import OpenItem
@@ -953,6 +953,18 @@ class AgentGraph:
         self, state: AgentState, config: RunnableConfig
     ) -> Command[Literal["confirm", "__end__"]]:
         steps = state.get("steps", 0) + 1
+        if progress.stop_requested():
+            # The user pressed Stop: end the turn here, between steps, the way a turn that
+            # ran out of steps ends. A model call already in flight or a tool already
+            # running was never interrupted; this only declines to start another step.
+            done = _done_this_turn(state["messages"])
+            if done:
+                return _reply(
+                    f"Stopped, as you asked. Already done: {done} Tell me if anything else "
+                    "needs changing.",
+                    wrote=True,
+                )
+            return _reply("Stopped, as you asked. Nothing was changed.")
         if steps > MAX_STEPS:
             done = _done_this_turn(state["messages"])
             mistakes.step_limit(
@@ -1069,6 +1081,7 @@ class AgentGraph:
                 if "user_id" in call["args"]:
                     log.warning("dropped model-supplied user_id on %s", call["name"])
                 started = time.monotonic()
+                await progress.report(call["name"], "running")
                 try:
                     result = await run_tool(spec, ctx, dict(call["args"]))
                     content, wrote, buttons = result.text, result.wrote, result.buttons
@@ -1105,6 +1118,7 @@ class AgentGraph:
                     if not from_kernel:
                         mistakes.tool_error(call["name"], type(exc).__name__, crashed=True)
                     content, wrote = "Error: something went wrong running that.", False
+                await progress.report(call["name"], "done")
             kwargs: dict[str, Any] = {WROTE: wrote}
             if buttons:
                 kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]

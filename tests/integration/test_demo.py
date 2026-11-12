@@ -414,6 +414,28 @@ async def test_the_fifty_first_message_says_the_demo_limit_is_reached(world: Dem
     assert used == MESSAGES  # the refused one was not counted
 
 
+async def test_streamed_messages_count_against_the_demo_allowance_like_the_others(
+    world: Demo,
+) -> None:
+    visitor = await world.visit()
+    user = await world.user_of(visitor)
+    await world.set_used(user, demo_messages=MESSAGES - 1)
+    world.model.script += [say("Hello again.")]
+    streamed = await visitor.send("POST", "/api/chat/stream", {"message": "hi"})
+    assert streamed.status_code == 200
+    assert '"text":"Hello again."' in streamed.text
+    assert (await visitor.get("/api/me")).json()["demo"]["messages_left"] == 0
+
+    model_calls = len(world.model.seen)
+    refused = await visitor.send("POST", "/api/chat/stream", {"message": "one more"})
+    assert refused.status_code == 200
+    assert "demo limit is reached" in refused.text and "event: replies" in refused.text
+    assert len(world.model.seen) == model_calls  # no model call was made
+    async with world.engine.connect() as db:
+        used = await db.scalar(select(users.c.demo_messages).where(users.c.id == user.id))
+    assert used == MESSAGES  # the refused one was not counted
+
+
 async def test_five_voice_notes_then_the_demo_limit(world: Demo) -> None:
     visitor = await world.visit()
     await world.set_used(await world.user_of(visitor), demo_voice=4)
