@@ -1,6 +1,8 @@
-# Running Kaya on one server
+# Running Nexus on one server
 
-This runs Kaya on one small Ubuntu 24.04 server, such as a US$12/month DigitalOcean Droplet with 2 GB RAM. The server runs three things:
+The server directory `/opt/kaya`, the `kaya` database and the `KAYA_REMOTE_COPY` variable keep their old names, so a server that is already running keeps working.
+
+This runs Nexus on one small Ubuntu 24.04 server, such as a US$12/month DigitalOcean Droplet with 2 GB RAM. The server runs three things:
 
 - the app;
 - Postgres 18;
@@ -43,7 +45,7 @@ The script asks for Railway's `DATABASE_PUBLIC_URL`. You'll find it under Railwa
 
 1. dumps the Railway database;
 2. restores it here;
-3. builds and starts Kaya.
+3. builds and starts Nexus.
 
 To start without Railway data instead, run `docker compose up -d --build`.
 

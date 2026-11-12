@@ -1,6 +1,6 @@
 """python -m nexus.infra.db.catch_up --since <ISO timestamp> [--apply]
 
-One-off catch-up after moving Kaya's database from Railway to its own server. The new
+One-off catch-up after moving Nexus's database from Railway to its own server. The new
 server's database was restored from a dump taken at a cutoff; Railway kept serving users for a
 while afterwards, so rows written there since the cutoff exist only on Railway. This copies
 them across without overwriting anything that changed on the new server in the meantime.

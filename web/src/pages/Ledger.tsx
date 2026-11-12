@@ -430,7 +430,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           ) : pendingHere.length > 0 ? null : (
             <p className="state state-kaya">
               <Kaya size={44} lazy />
-              <span>No transactions yet. Just ask Kaya to log one, e.g. "kopi 4.20".</span>
+              <span>No transactions yet. Just ask Nexus to log one, e.g. "kopi 4.20".</span>
             </p>
           )
         )}

@@ -1,4 +1,4 @@
-// A typed chat message sent to POST /api/chat/stream, read as server-sent events: what Kaya is
+// A typed chat message sent to POST /api/chat/stream, read as server-sent events: what Nexus is
 // doing while the turn runs ("step" events), then the replies, exactly as POST /api/chat gives them.
 // EventSource can't POST or send the CSRF header, so this reads the response body by hand.
 
@@ -68,7 +68,7 @@ async function refusal(response: Response): Promise<ApiError> {
   return new ApiError(response.status, typeof detail === "string" ? detail : response.statusText);
 }
 
-/** Send `message` and follow the turn. Calls `onStep` as Kaya works and resolves with the replies.
+/** Send `message` and follow the turn. Calls `onStep` as Nexus works and resolves with the replies.
  * Rejects with StreamNotStarted (send it the usual way), StreamInterrupted (do not send it again;
  * look in the chat history), or an ApiError (the server refused, or the turn failed: show it). */
 export async function streamChat(message: string, onStep: (step: ChatStep) => void): Promise<Reply[]> {
@@ -127,7 +127,7 @@ export async function streamChat(message: string, onStep: (step: ChatStep) => vo
 export const RECOVER_EVERY_MS = 3_000;
 export const RECOVER_TRIES = 40;
 
-/** Kaya's replies to `message` in the chat history, if the turn that began at `since` has finished
+/** Nexus's replies to `message` in the chat history, if the turn that began at `since` has finished
  * (the history keeps a turn's lines together when it ends); else null. */
 export function repliesAfter(history: ChatHistory, message: string, since: number): Reply[] | null {
   const lines = history.lines;

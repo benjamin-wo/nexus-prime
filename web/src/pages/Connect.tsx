@@ -5,7 +5,7 @@ import { api } from "../api";
 
 /**
  * Opened from a one-time link (often in the phone's browser, from Telegram), so it
- * works without signing in. It says whose Kaya account the mailbox will join, so
+ * works without signing in. It says whose Nexus account the mailbox will join, so
  * nobody connects their mail to a link someone else sent them.
  */
 export function ConnectGmail() {
@@ -25,23 +25,23 @@ export function ConnectGmail() {
         <h1 id="connect-title">Connect Gmail</h1>
         {link.isLoading && <p className="state">Checking your link…</p>}
         {(!token || link.isError || link.data?.valid === false) && (
-          <p className="state">This link has expired or was already used. Ask Kaya for a new one.</p>
+          <p className="state">This link has expired or was already used. Ask Nexus for a new one.</p>
         )}
         {link.data?.valid && (
           <>
             <p>
-              Kaya will look for receipts in your Gmail and ask you before logging each one. It only reads emails that
+              Nexus will look for receipts in your Gmail and ask you before logging each one. It only reads emails that
               look like receipts, invoices, orders or card alerts.
             </p>
             <p className="caption">
-              This adds the mailbox to the Kaya account of Telegram user …{link.data.account_hint}. If someone else
+              This adds the mailbox to the Nexus account of Telegram user …{link.data.account_hint}. If someone else
               sent you this link, close this page.
             </p>
             <ol className="connect-steps">
               <li>Pick your Google account.</li>
               <li>
-                Google will say <strong>Google hasn't verified this app</strong>, because Kaya is a private app. Tap{" "}
-                <strong>Advanced</strong>, then <strong>Go to Kaya</strong>.
+                Google will say <strong>Google hasn't verified this app</strong>, because Nexus is a private app. Tap{" "}
+                <strong>Advanced</strong>, then <strong>Go to Nexus</strong>.
               </li>
               <li>
                 Tap <strong>Allow</strong>.
@@ -58,9 +58,9 @@ export function ConnectGmail() {
 }
 
 const PROBLEMS: Record<string, string> = {
-  expired: "This link has expired or was already used. Ask Kaya for a new one.",
+  expired: "This link has expired or was already used. Ask Nexus for a new one.",
   declined: "Nothing was connected, because Google's sign-in was cancelled.",
-  permission: "Nothing was connected: Kaya needs permission to read your email to find receipts.",
+  permission: "Nothing was connected: Nexus needs permission to read your email to find receipts.",
 };
 
 export function ConnectDone() {
@@ -74,7 +74,7 @@ export function ConnectDone() {
           <p>{PROBLEMS[error] ?? PROBLEMS.declined}</p>
         ) : (
           <p>
-            You're all set. Kaya is looking for receipts from the last 30 days and will message you in Telegram.
+            You're all set. Nexus is looking for receipts from the last 30 days and will message you in Telegram.
             Nothing is logged until you confirm it. You can close this page.
           </p>
         )}

@@ -1,6 +1,6 @@
 ---
 name: updates
-description: How often the user hears from Kaya on Telegram about their transactions.
+description: How often the user hears from Nexus on Telegram about their transactions.
 tools: [transaction_updates]
 ---
 # Updates

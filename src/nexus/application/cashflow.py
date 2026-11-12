@@ -3,7 +3,7 @@
 Days so far show what was logged. Days ahead show what's expected: scheduled payments,
 spending or not (unless already marked paid, done or skipped), tracked subscriptions, payday,
 and money set aside each payday for a trip. It shows movement only, never a
-balance: Kaya doesn't know what's in the user's accounts.
+balance: Nexus doesn't know what's in the user's accounts.
 """
 
 from collections.abc import Callable, Iterable

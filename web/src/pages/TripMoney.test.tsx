@@ -284,7 +284,7 @@ describe("To do", () => {
     const confirm = within(todo).getByRole("group", { name: "Settle up with Sam" });
     const log = within(confirm).getByRole("checkbox", { name: "Also record my share as spent" });
     expect((log as HTMLInputElement).checked).toBe(true);
-    expect(plain(confirm.textContent)).toContain("This records that you paid Sam SGD 40.00 and counts it as spent. Kaya doesn't move any money.");
+    expect(plain(confirm.textContent)).toContain("This records that you paid Sam SGD 40.00 and counts it as spent. Nexus doesn't move any money.");
     expect(within(confirm).getByRole("button", { name: "Mark settled" }).className).toContain("btn-primary");
 
     // Unticked, it says it adds nothing to what was spent; Not now records nothing.

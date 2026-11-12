@@ -86,7 +86,7 @@ def test_symbol_and_code_must_agree() -> None:
         ("can you make a payment to DBS", "payment"),
         ("make a payment to DBS", "payment"),
         ("cancel my Netflix subscription", "cancel_subscription"),
-        # An instruction to move money between wallets; Kaya only records.
+        # An instruction to move money between wallets; Nexus only records.
         ("move 500 to savings", "transfer"),
         ("Move S$500 into my savings", "transfer"),
         ("please move 1000 from savings to IBKR", "transfer"),

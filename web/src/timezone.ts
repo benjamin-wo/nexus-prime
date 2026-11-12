@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 
 import { type Me, setTimezone, type TimezoneSource } from "./api";
 
-/** The part of /me that says which zone Kaya is on, and why. Older answers may lack the last three. */
+/** The part of /me that says which zone Nexus is on, and why. Older answers may lack the last three. */
 export type ZoneState = Partial<Pick<Me["user"], "home_timezone" | "timezone_source" | "timezone_set_at">> & Pick<Me["user"], "timezone">;
 
 /** A zone picked by hand is kept for this long before the phone may move it again. */
@@ -37,7 +37,7 @@ export function describeZone(zone: string, at: Date = new Date()): string {
   return offset ? `${friendlyZone(zone)} · ${offset}` : friendlyZone(zone);
 }
 
-/** The small note under the zone: what put Kaya on it. */
+/** The small note under the zone: what put Nexus on it. */
 export function sourceNote(source: TimezoneSource | undefined): string {
   switch (source) {
     case "phone":
@@ -61,7 +61,7 @@ export function browserZone(): string | null {
   }
 }
 
-/** Whether to tell the server the phone's zone: when it differs from Kaya's zone, or the server
+/** Whether to tell the server the phone's zone: when it differs from Nexus's zone, or the server
  * hasn't recorded the phone as the source. A zone the person picked themselves in the last 24 hours
  * (source "chat") is left alone. */
 export function shouldReportZone(phone: string | null | undefined, state: ZoneState, now: number = Date.now()): boolean {
@@ -73,7 +73,7 @@ export function shouldReportZone(phone: string | null | undefined, state: ZoneSt
   return phone !== state.timezone || state.timezone_source !== "phone";
 }
 
-/** Once per page load, after sign-in: tells Kaya the zone this browser is in. It never delays the
+/** Once per page load, after sign-in: tells Nexus the zone this browser is in. It never delays the
  * page and a failure is dropped; the next load tries again. */
 export function useReportTimeZone(user: ZoneState): void {
   const client = useQueryClient();

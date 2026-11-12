@@ -146,7 +146,7 @@ def tidy_transcript(text: str, home_currency: str) -> str:
 
 
 def heard_line(transcript: str) -> str:
-    """The line that tells the user what Kaya understood from their voice note."""
+    """The line that tells the user what Nexus understood from their voice note."""
     said = transcript.rstrip(" .")  # 'heard: "Grab 12.50"', not 'heard: "Grab 12.50."'
     shown = said if len(said) <= HEARD_MAX else said[: HEARD_MAX - 1] + "…"
     return f'{HEARD_MARK} heard: "{shown}"'

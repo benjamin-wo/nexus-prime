@@ -1,4 +1,4 @@
-"""How Kaya talks: a preset (a tone), three dials (emoji, length, humour) and an optional
+"""How Nexus talks: a preset (a tone), three dials (emoji, length, humour) and an optional
 note in the user's own words. Pure rules, no I/O.
 
 Everyone starts on ``default``, today's tone, and ``prompt_block`` then adds nothing to the

@@ -4,13 +4,13 @@ import { fakeApi } from "./fake-api";
 
 const banner = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Demo account" });
 const openChat = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
+  page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
 
 test("a signed-out visitor sees the landing page and goes into the demo from it", async ({ page }) => {
   const state = await fakeApi(page, { signedIn: false });
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
-  await expect(page.getByText("A personal finance and travel assistant you talk to, on Telegram and the web.")).toBeVisible();
+  await expect(page.getByText("An AI lifestyle manager you talk to, on Telegram and the web.")).toBeVisible();
   // The demo leads, with the Telegram sign-in under it.
   const demo = page.getByRole("link", { name: "Try the live demo" });
   const widget = page.locator(".tg-login");

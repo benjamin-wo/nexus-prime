@@ -1,4 +1,4 @@
-"""A chat turn as a server-sent event stream: what Kaya is doing as it goes, then the replies.
+"""A chat turn as a server-sent event stream: what Nexus is doing as it goes, then the replies.
 
 Frames, each ``event: <name>`` and one line of JSON as ``data``:
 

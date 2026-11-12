@@ -241,7 +241,7 @@ export function BudgetsSection({ me }: { me: Me }) {
           <h3>Set a monthly limit</h3>
           <p className="muted budget-first-text">
             <Kaya size={44} lazy />
-            <span>Just ask Kaya to set one, or set a limit here and Kaya will tell you when it's getting close.</span>
+            <span>Just ask Nexus to set one, or set a limit here and Nexus will tell you when it's getting close.</span>
           </p>
         </div>
       )}

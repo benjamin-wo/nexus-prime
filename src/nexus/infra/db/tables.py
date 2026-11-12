@@ -645,7 +645,7 @@ notification_settings = Table(
     CheckConstraint("daily_cap BETWEEN 3 AND 20", name="daily_cap"),
 )
 
-# How the user wants Kaya to talk (migration 0058): a preset, three dials and a short note
+# How the user wants Nexus to talk (migration 0058): a preset, three dials and a short note
 # of their own. No row means the default voice. See nexus.domain.voice.
 voice_settings = Table(
     "voice_settings",
@@ -665,7 +665,7 @@ voice_settings = Table(
     CheckConstraint("note IS NULL OR char_length(note) BETWEEN 1 AND 200", name="note_length"),
 )
 
-# Every message Kaya meant to send on Telegram, kept for 30 days: sent, held for quiet
+# Every message Nexus meant to send on Telegram, kept for 30 days: sent, held for quiet
 # hours or the next digest, told in a digest, or dropped (no chat to tell). See
 # nexus.domain.notifications (migration 0053).
 notifications = Table(
@@ -689,7 +689,7 @@ notifications = Table(
     Index("ix_notifications_user_id_created_at", "user_id", "created_at"),
 )
 
-# What Kaya remembers about a user, from their own words (see nexus.domain.memory).
+# What Nexus remembers about a user, from their own words (see nexus.domain.memory).
 memories = Table(
     "memories",
     metadata,
@@ -706,7 +706,7 @@ memories = Table(
     Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
 )
 
-# The chat as the user saw it, on the web or Telegram: their messages and Kaya's
+# The chat as the user saw it, on the web or Telegram: their messages and Nexus's
 # replies, so the web chat can show the conversation again. Notifications aren't
 # kept here. The newest CHAT_KEEP per user are kept.
 chat_log = Table(
@@ -811,7 +811,7 @@ market_alerts = Table(
     Index("ix_market_alerts_user_id_day", "user_id", "day"),
 )
 
-# Trades the user told Kaya about, buy or sell (migration 0031).
+# Trades the user told Nexus about, buy or sell (migration 0031).
 trades = Table(
     "trades",
     metadata,

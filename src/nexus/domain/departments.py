@@ -1,6 +1,6 @@
 """Departments and their runs. Pure rules, no I/O.
 
-Kaya is a front desk (the chat agent) with departments behind it: Accounting
+Nexus is a front desk (the chat agent) with departments behind it: Accounting
 today, Investment and Travel next. A department whose work takes minutes runs it
 as a *run*: a list of steps, each saved as it finishes, so a redeploy resumes
 rather than restarts, and the user can cancel it.

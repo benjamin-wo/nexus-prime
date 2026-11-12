@@ -1,4 +1,4 @@
-"""Web search for every part of Kaya that asks the web: one question in, the pages
+"""Web search for every part of Nexus that asks the web: one question in, the pages
 that answer it out.
 
 Search runs through a provider with a free monthly allowance (Tavily), whose answers

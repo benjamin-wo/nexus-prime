@@ -53,7 +53,7 @@ async function send(text: string) {
 afterEach(() => vi.useRealTimers());
 
 describe("ChatDrawer streaming a typed message", () => {
-  it("lists what Kaya is doing as it goes, then shows the replies", async () => {
+  it("lists what Nexus is doing as it goes, then shows the replies", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const stream = openStream();
     const calls = chatApi({ "POST /chat/stream": () => stream.response });
@@ -61,13 +61,13 @@ describe("ChatDrawer streaming a typed message", () => {
     await send("lunch 12 and split with ann");
 
     const live = document.querySelector('[aria-live="polite"]') as HTMLElement;
-    expect(await screen.findByRole("status", { name: "Kaya is typing" })).toBeInTheDocument();
+    expect(await screen.findByRole("status", { name: "Nexus is typing" })).toBeInTheDocument();
 
     await stream.send(frame("step", { label: "Logging the expense", state: "running" }));
-    const steps = await screen.findByRole("status", { name: "What Kaya is doing" });
+    const steps = await screen.findByRole("status", { name: "What Nexus is doing" });
     expect(live).toContainElement(steps); // inside the polite live region
     expect(within(steps).getByText("Logging the expense…")).toBeInTheDocument();
-    expect(screen.queryByRole("status", { name: "Kaya is typing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "Nexus is typing" })).not.toBeInTheDocument();
     expect(steps.querySelector(".step-spin")).not.toBeNull();
 
     await stream.send(frame("step", { label: "Logging the expense", state: "done" }));
@@ -80,7 +80,7 @@ describe("ChatDrawer streaming a typed message", () => {
     await stream.send(frame("step", { label: "Splitting the bill", state: "done" }) + frame("replies", replies));
     expect(await screen.findByText("Logged and split.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
-    expect(screen.queryByRole("status", { name: "What Kaya is doing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "What Nexus is doing" })).not.toBeInTheDocument();
     // Sent once, to the stream only.
     expect(calls.filter((c) => c.path.startsWith("/chat") && c.method === "POST").map((c) => c.path)).toEqual(["/chat/stream"]);
     expect(calls.find((c) => c.path === "/chat/stream")?.body).toEqual({ message: "lunch 12 and split with ann" });

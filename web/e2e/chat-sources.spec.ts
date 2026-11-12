@@ -15,7 +15,7 @@ test("a web answer's sources show as link chips that open the page", async ({ pa
     }) as typeof window.open;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Ask Kaya", exact: true }).filter({ visible: true }).click();
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("How much is a PS6 in Singapore?");
   await chat.getByRole("button", { name: "Send" }).click();

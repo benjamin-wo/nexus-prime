@@ -126,11 +126,11 @@ HELP = (
     "• salary 4200\n"
     "Or send a photo: a receipt to log, or any screenshot or bill to ask me about.\n"
     "To sign in to the web app on a computer, send /web for a one-time link.\n"
-    "Questions about your money? Just ask Kaya."
+    "Questions about your money? Just ask Nexus."
 )
 WELCOME = (
-    "Hi, I'm Kaya 👋 Just ask me anything about your money: tell me what you spent, split a "
-    "bill, or check your month. What would you like to do?"
+    "Hi, I'm Nexus, your personal assistant 👋 Just ask me anything about your money: tell "
+    "me what you spent, split a bill, or check your month. What would you like to do?"
 )
 
 
@@ -503,7 +503,7 @@ class AgentService:
     async def _keep(
         self, actor: UserId, said: str | None, replies: list[Reply], ref: str | None
     ) -> None:
-        """Keep this turn of the chat (the user's words and Kaya's replies) for the
+        """Keep this turn of the chat (the user's words and Nexus's replies) for the
         web chat to show again. Its failures never reach the user."""
         try:
             await voice_cases.load(self._uow(), actor)

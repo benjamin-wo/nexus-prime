@@ -1,6 +1,6 @@
 # Evaluation results
 
-How Kaya, the assistant, scores on the evaluation set (`src/nexus/evals`, see OPERATIONS). Every figure is from made-up data; each case starts from the same seeded user. Runs are single samples, so a difference of a case or two between models is noise; the pairing we chose was run twice.
+How Nexus, the assistant, scores on the evaluation set (`src/nexus/evals`, see OPERATIONS). Every figure is from made-up data; each case starts from the same seeded user. Runs are single samples, so a difference of a case or two between models is noise; the pairing we chose was run twice.
 
 ## Repeats and comparing
 

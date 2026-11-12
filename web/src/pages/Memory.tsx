@@ -40,7 +40,7 @@ function MemoryRow({ memory, onChanged }: { memory: Memory; onChanged: () => voi
   );
 }
 
-/** What Kaya has picked up from your own messages, with a way to forget any of it. */
+/** What Nexus has picked up from your own messages, with a way to forget any of it. */
 export function MemorySection() {
   const client = useQueryClient();
   const memories = useQuery({ queryKey: ["memories"], queryFn: () => api<Memory[]>("/memories") });
@@ -60,13 +60,13 @@ export function MemorySection() {
   return (
     <section className="card" aria-labelledby="memory">
       <div className="card-head">
-        <h2 id="memory">What Kaya remembers</h2>
+        <h2 id="memory">What Nexus remembers</h2>
         <span className="caption">Only from what you tell it</span>
       </div>
       {memories.isLoading && <p className="state">Loading…</p>}
       {memories.isError && <p className="state error-text">Couldn't load memories.</p>}
       {memories.data?.length === 0 && (
-        <p className="state">Nothing yet. Tell Kaya things like "Ann is my sister" or "keep replies short" and it will keep them in mind.</p>
+        <p className="state">Nothing yet. Tell Nexus things like "Ann is my sister" or "keep replies short" and it will keep them in mind.</p>
       )}
       {ORDER.map((kind) => {
         const group = items.filter((m) => m.kind === kind);

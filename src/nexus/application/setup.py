@@ -1,4 +1,4 @@
-"""Home's setup checklist: the few things that make Kaya useful, each worked out from what
+"""Home's setup checklist: the few things that make Nexus useful, each worked out from what
 the user already has (never stored), and a way to put the list away once they are done
 with it. Read-only apart from the dismissal; always the signed-in user's own."""
 

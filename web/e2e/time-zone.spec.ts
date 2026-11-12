@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { fakeApi } from "./fake-api";
 
-// Kaya's current time zone follows the phone; home is kept. The browser is in Madrid, home is Singapore. Made-up data only.
+// Nexus's current time zone follows the phone; home is kept. The browser is in Madrid, home is Singapore. Made-up data only.
 test.use({ timezoneId: "Europe/Madrid" });
 
 const card = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Time zone" });

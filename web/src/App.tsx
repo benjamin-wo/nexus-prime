@@ -142,7 +142,7 @@ function GuestApp({ me }: { me: Me }) {
 function Cockpit({ me }: { me: Me }) {
   const client = useQueryClient();
   const logout = useLogout();
-  // Tells Kaya where this browser is, once per page load, without holding anything up.
+  // Tells Nexus where this browser is, once per page load, without holding anything up.
   useReportTimeZone(me.user);
   // The chat drawer, opened empty or with a question asked on Home.
   const [chat, setChat] = useState<{ ask?: string } | null>(null);
@@ -277,7 +277,7 @@ function Gate() {
     if (me.data) forgetTripNote();
   }, [me.data]);
   if (me.isLoading) return <p className="state">Loading…</p>;
-  if (me.isError) return <p className="state error-text">Couldn't reach Kaya. Please reload.</p>;
+  if (me.isError) return <p className="state error-text">Couldn't reach Nexus. Please reload.</p>;
   return (
     <Routes>
       {/* Opened from a one-time link, often without a session. */}

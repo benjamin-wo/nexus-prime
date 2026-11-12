@@ -1,4 +1,4 @@
-"""How Kaya talks as pure code: the presets and their dials, cleaning a note, applying a
+"""How Nexus talks as pure code: the presets and their dials, cleaning a note, applying a
 change, and the block added to the system prompt. Made-up notes only."""
 
 from dataclasses import replace

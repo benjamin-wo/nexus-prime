@@ -252,7 +252,7 @@ describe("the sign-in page", () => {
     render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     const demo = await screen.findByRole("link", { name: "Try the live demo" });
     expect(demo).toHaveAttribute("href", "/demo");
-    expect(screen.getByText(/personal finance and travel assistant/)).toBeInTheDocument();
+    expect(screen.getByText(/AI lifestyle manager/)).toBeInTheDocument();
     await waitFor(() => expect(document.querySelector(".tg-login script")).not.toBeNull());
   });
 

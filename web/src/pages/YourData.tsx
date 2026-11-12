@@ -77,7 +77,7 @@ export function YourDataSection() {
     <section className="card" aria-labelledby="your-data">
       <div className="card-head">
         <h2 id="your-data">Download or delete</h2>
-        <span className="caption">Everything Kaya keeps for you</span>
+        <span className="caption">Everything Nexus keeps for you</span>
       </div>
       <div className="setting">
         <p>

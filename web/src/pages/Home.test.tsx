@@ -150,7 +150,7 @@ describe("Home: the brief", () => {
       next: trip("upcoming"),
     });
     renderHome();
-    const hero = await screen.findByRole("region", { name: "Kaya" });
+    const hero = await screen.findByRole("region", { name: "Nexus" });
     await waitFor(() => expect(hero).toHaveTextContent("NVDA is down 5% today."));
     expect(hero).toHaveTextContent(/NVDA is down 5% today\. Your Tokyo trip is in 12 days\. 1 thing needs you below\./);
   });
@@ -158,7 +158,7 @@ describe("Home: the brief", () => {
   it("leaves the market out when nothing moved much", async () => {
     serve({ today: session([mover("NVDA", "1.1")]) });
     renderHome();
-    const hero = await screen.findByRole("region", { name: "Kaya" });
+    const hero = await screen.findByRole("region", { name: "Nexus" });
     await waitFor(() => expect(hero).toHaveTextContent("Nothing needs you right now."));
     expect(hero).not.toHaveTextContent("NVDA");
   });
@@ -169,11 +169,11 @@ describe("Home: the hero's buttons", () => {
     serve();
     const onLog = vi.fn();
     renderHome(vi.fn(), onLog);
-    const hero = await screen.findByRole("region", { name: "Kaya" });
+    const hero = await screen.findByRole("region", { name: "Nexus" });
     // A quick manual entry beside the chat, for when there's no time to chat.
     await userEvent.click(within(hero).getByRole("button", { name: "Log expense" }));
     expect(onLog).toHaveBeenCalledOnce();
-    expect(screen.getByPlaceholderText(/^Just ask Kaya… e.g./)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/^Just ask Nexus… e.g./)).toBeInTheDocument();
     expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
     expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
   });
@@ -195,15 +195,15 @@ function screenIs(phone: boolean) {
 describe("Home: the ask box", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("sits in the Just ask Kaya card on a wide screen, above the suggestions", async () => {
+  it("sits in the Just ask Nexus card on a wide screen, above the suggestions", async () => {
     screenIs(false);
     serve();
     const onAsk = vi.fn();
     const { container } = renderHome(onAsk);
-    const card = await screen.findByRole("region", { name: "Just ask Kaya" });
+    const card = await screen.findByRole("region", { name: "Just ask Nexus" });
     expect(within(card).getAllByRole("textbox")).toHaveLength(1);
     expect(container.querySelector(".ask-dock")).toBeNull();
-    await userEvent.type(within(card).getByRole("textbox", { name: "Ask Kaya" }), "kopi 4.20{Enter}");
+    await userEvent.type(within(card).getByRole("textbox", { name: "Ask Nexus" }), "kopi 4.20{Enter}");
     expect(onAsk).toHaveBeenCalledExactlyOnceWith("kopi 4.20");
   });
 
@@ -212,19 +212,19 @@ describe("Home: the ask box", () => {
     serve();
     const onAsk = vi.fn();
     const { container } = renderHome(onAsk);
-    const card = await screen.findByRole("region", { name: "Just ask Kaya" });
+    const card = await screen.findByRole("region", { name: "Just ask Nexus" });
     const dock = container.querySelector<HTMLElement>(".ask-dock")!;
     expect(dock).not.toBeNull();
     // One box only, in the dock and not in the card; the dock is the last thing on the page.
-    expect(screen.getAllByRole("textbox", { name: "Ask Kaya" })).toHaveLength(1);
-    expect(within(dock).getByRole("textbox", { name: "Ask Kaya" })).toHaveAttribute("id", "ask-input");
+    expect(screen.getAllByRole("textbox", { name: "Ask Nexus" })).toHaveLength(1);
+    expect(within(dock).getByRole("textbox", { name: "Ask Nexus" })).toHaveAttribute("id", "ask-input");
     expect(within(card).queryByRole("textbox")).toBeNull();
     expect(container.querySelector(".home")).toHaveClass("home-docked");
     expect(container.querySelector(".home")!.lastElementChild).toBe(dock);
     expect(within(card).getByLabelText("Suggested questions")).toBeInTheDocument();
 
     // Asking from the dock opens the chat with the question, as before, and clears the box.
-    const box = within(dock).getByRole("textbox", { name: "Ask Kaya" });
+    const box = within(dock).getByRole("textbox", { name: "Ask Nexus" });
     const send = within(dock).getByRole("button", { name: "Ask" });
     expect(send).toBeDisabled();
     await userEvent.type(box, "how much on grab?");
@@ -467,7 +467,7 @@ describe("Home: trip mode", () => {
     const needs = screen.getByRole("region", { name: "Needs you" });
     expect(card.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Next trip" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Kaya" })).toHaveTextContent("You're on day 3 of 6 in Tokyo.");
+    expect(screen.getByRole("region", { name: "Nexus" })).toHaveTextContent("You're on day 3 of 6 in Tokyo.");
   });
 
   it("leaves out what the trip's data does not have", async () => {

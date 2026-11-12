@@ -34,10 +34,11 @@ SWEEP_BUDGET = timedelta(seconds=30)
 LINK_TTL = timedelta(minutes=10)
 # A forwarding address that hears nothing for this long gets one nudge.
 QUIET_NUDGE = timedelta(days=14)
-# The subject line of a test email ("Kaya test receipt" also passes a receipt filter).
-TEST_SUBJECT = "kaya test"
-# What the same instruction said before the rename; a test email already on its way still counts.
-_OLD_TEST_SUBJECT = "nexus test"
+# The subject line of a test email ("Nexus test receipt" also passes a receipt filter).
+TEST_SUBJECT = "nexus test"
+# What the same instruction said before the product was renamed back to Nexus: a test email
+# set up (or already on its way) under the old wording still counts.
+_OLD_TEST_SUBJECT = "kaya test"
 # Subject words a forwarding filter should match: what a receipt usually says.
 FILTER_WORDS = ("receipt", "invoice", "order", "payment", "transaction", "paid", "purchase")
 
@@ -56,7 +57,7 @@ RECEIPT_QUERY = (
 
 class Provider(StrEnum):
     GMAIL = "gmail"
-    FORWARD = "forward"  # a Kaya address the user forwards receipts to (AgentMail)
+    FORWARD = "forward"  # a Nexus address the user forwards receipts to (AgentMail)
 
 
 class ConnectionStatus(StrEnum):

@@ -142,7 +142,7 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
           <span style={{ width: `${(done / items.length) * 100}%` }} />
         </div>
       )}
-      {items.length === 0 && <p className="state">Nothing on the list yet. Add things, or let Kaya suggest the usual for this trip.</p>}
+      {items.length === 0 && <p className="state">Nothing on the list yet. Add things, or let Nexus suggest the usual for this trip.</p>}
       {items.length > 0 && (
         <ul className="prep-rows" aria-label="Things to pack">
           {items.map((item, i) => (

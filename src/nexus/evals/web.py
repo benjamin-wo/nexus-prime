@@ -11,7 +11,7 @@ from nexus.evals import seed
 
 # A made-up page on a domain reserved for examples. Replies are checked for these.
 DOMAIN = "example.com"
-URL = f"https://news.{DOMAIN}/kaya-evals/latest"
+URL = f"https://news.{DOMAIN}/nexus-evals/latest"
 TITLE = "Example Daily: the latest"
 TEXT = (
     "The Example Daily page covers this and was updated today. It gives the current "
