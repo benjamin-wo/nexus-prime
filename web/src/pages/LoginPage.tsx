@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
-import { Kaya } from "../components/Kaya";
+import { NexusMark, NexusWordmark } from "../components/NexusMark";
 import { TelegramLogin } from "../components/TelegramLogin";
 import { initData, miniApp } from "../telegram";
 
@@ -61,7 +61,10 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
   return (
     <div className="login">
       <section className="card">
-        <Kaya big size={150} className="kaya-hero" />
+        <div className="brand-hero">
+          <NexusMark big size={134} />
+          <NexusWordmark height={26} alt="Nexus" />
+        </div>
         {trip ? (
           <>
             <p className="caption">Kaya</p>

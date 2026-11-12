@@ -10,7 +10,7 @@ import { pullIsSafe, withMiniApp } from "../telegram";
 import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
-import { Kaya } from "./Kaya";
+import { NexusMark } from "./NexusMark";
 
 /** True while the page is being scrolled down (past its top, short of its end):
  * the floating buttons step aside then, so they never sit on what's being read,
@@ -126,7 +126,7 @@ function PullIndicator({ status, onRefresh }: { status: PullStatus; onRefresh?: 
 function BrandMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
-      <Kaya size={34} />
+      <NexusMark size={34} />
     </span>
   );
 }
@@ -224,7 +224,7 @@ export function Shell({
   }
   const nexus = (where: string) => (
     <button type="button" className={`nexus-button ${where}`} aria-label="Ask Kaya" title="Ask Kaya" onClick={onOpenChat}>
-      <Kaya size={where === "in-rail" ? 28 : 38} />
+      <NexusMark size={where === "in-rail" ? 28 : 38} variant="mono" />
       {where === "in-rail" && <span>Ask Kaya</span>}
     </button>
   );

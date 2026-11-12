@@ -2934,3 +2934,17 @@ a.set-row:focus-visible { outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { .step-spin { animation: none; border-right-color: var(--accent); opacity: 0.6; } }
 .steps .msg-avatar { animation: kaya-bob 1.1s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .steps .msg-avatar { animation: none; } }
+
+/* ===== Nexus mark and wordmark (components/NexusMark.tsx; assets in docs/brand/README.md) =====
+   The mark's colours are the brand palette, fixed on purpose. Only its Midnight pixels change with the
+   theme: on a dark surface the left stroke turns Blue, the diagonal's edge and the inner blue turn Teal. */
+.nexus-mark, .nexus-wordmark { display: block; flex: none; }
+.nexus-mark-big { margin: 0 auto; }
+.brand-hero { display: grid; justify-items: center; gap: var(--space-3); }
+.brand-hero .nexus-wordmark { color: var(--text-strong); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .nexus-mark .nm-K { fill: #2563EB; }
+  :root:not([data-theme="light"]) .nexus-mark .nm-k, :root:not([data-theme="light"]) .nexus-mark .nm-b { fill: #22D3EE; }
+}
+:root[data-theme="dark"] .nexus-mark .nm-K { fill: #2563EB; }
+:root[data-theme="dark"] .nexus-mark .nm-k, :root[data-theme="dark"] .nexus-mark .nm-b { fill: #22D3EE; }

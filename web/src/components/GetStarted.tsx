@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, type Me, type Page, type Setup } from "../api";
 import { Block } from "./Block";
 import { Icon } from "./Icon";
-import { Kaya } from "./Kaya";
+import { NexusMark } from "./NexusMark";
 
 /** Done: a tick. To do: an empty ring. The state is also said in words for a screen reader. */
 function Tick({ done }: { done: boolean }) {
@@ -97,7 +97,7 @@ export function GetStarted({ me }: { me: Me }) {
       id="get-started"
       title={
         <span className="title-kaya">
-          <Kaya size={30} lazy />
+          <NexusMark size={30} />
           Get started
         </span>
       }
