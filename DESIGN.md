@@ -206,6 +206,8 @@ All spacing derives from a 4px base unit.
 ### Transaction ledger
 
 - **Structure**: heading with a compact primary "Add" (a plus and the word; named "Add transaction") and a "More" menu button beside it, then one filter row: the type tabs (All, Money out, Money in, Transfers, Pending), search and a Dates select; then the transaction table/list. Import statement and Export CSV are in More. The Add button stays because the Ledger has no other way to add; Home and the Money overview have their own.
+- **Rows**: columns are select, Date, Merchant or source, Category and Amount; there is no Type column. The signed amount says money out, so a type badge appears only where it adds something: Money in, Transfer, Pending or Deleted, inline beside the merchant on wide screens (money in also stays green with a +). Plain money out has none.
+- **Dates**: the list comes newest first. On a phone it is grouped under day headings (real `h3`s in the user's timezone, 13px: Today, Yesterday, then "Mon, Nov 9", with the year for another year) and the rows do not repeat the date. On a wide screen the Date column says Today or Yesterday for those two days and "Nov 9, 2026" otherwise; there are no headings.
 - **More menu** (`components/Menu.tsx`): a button with `aria-haspopup="menu"` and `aria-expanded`; the list is `role="menu"` with links or buttons as `menuitem`s, 44px tall, under the button on its right edge. Opening focuses the first item; Arrow keys, Home and End move; Escape closes and returns focus to the button; Tab, a pick or a press outside closes it.
 - **Variants**: all, outgoing, incoming, IOU/pending
 - **Spacing**: `--space-4` card padding, `--space-2` control gaps

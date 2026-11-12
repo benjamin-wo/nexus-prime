@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
@@ -22,7 +22,7 @@ import { Sheet } from "../components/Sheet";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
-import { formatDate, formatMoney, formatShortDate, moveLabel, txName } from "../format";
+import { dayHeading, formatDate, formatMoney, isoDay, moveLabel, relativeDay, txName } from "../format";
 import { payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const PAGE = 50;
@@ -254,11 +254,11 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   const viewLabel = VIEWS.find((v) => v.key === view)?.label ?? "";
   const cardName = paidWith === "none" ? "No card set" : paidWithWallet ? walletLabel(paidWithWallet) : "…";
   const total = page.data?.total;
-  // The date on a phone's second line is short ("27 Sep"), with the year only for another year.
-  const yearOf = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: me.user.timezone, year: "numeric" }).format(d);
-  const thisYear = yearOf(new Date());
-  const rowDate = (iso: string) =>
-    yearOf(new Date(iso)) === thisYear ? formatShortDate(iso, me.user.timezone) : formatDate(iso, me.user.timezone);
+  // The list comes newest first (the ledger has no other sort), so a phone groups it under day headings and a
+  // wide screen writes "Today" or "Yesterday" in the Date column. Days are the user's own, not the browser's.
+  const today = isoDay(new Date().toISOString(), me.user.timezone);
+  const dayOf = (iso: string) => isoDay(iso, me.user.timezone);
+  const dateCell = (iso: string) => relativeDay(dayOf(iso), today) ?? formatDate(iso, me.user.timezone);
 
   function clearAll() {
     setView("all");
@@ -439,92 +439,103 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                   <th scope="col" className="hide-mobile">
                     Category
                   </th>
-                  <th scope="col" className="hide-mobile">
-                    Type
-                  </th>
                   <th scope="col" className="amount">
                     Amount
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((tx) => (
-                  <tr key={tx.id} aria-selected={selected.has(tx.id)} onClick={() => onEdit(tx)}>
-                    <td className="select" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${tx.counterparty ?? "transaction"} ${formatMoney(tx.amount)}`}
-                        checked={selected.has(tx.id)}
-                        onChange={() => toggle(tx.id)}
-                      />
-                    </td>
-                    <td className="num date">{formatDate(tx.occurred_at, me.user.timezone)}</td>
-                    <td className="wrap merchant">
-                      <button
-                        type="button"
-                        className="btn btn-ghost tx-name"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEdit(tx);
-                        }}
-                      >
-                        {txName(tx)}
-                      </button>
-                      {/* One line under the merchant. On a phone it holds the category and the date, whose own
-                          columns are gone; wider screens keep those in their columns. */}
-                      <div className="tx-meta">
-                        {tx.category_id && names.get(tx.category_id) && (
-                          <span className="category-line">{names.get(tx.category_id)}</span>
-                        )}
-                        <span className="date-line">{rowDate(tx.occurred_at)}</span>
-                        {track && tx.paid_with && <span className="caption paid-with-line">{walletLabel(tx.paid_with)}</span>}
-                        {tx.has_receipt && (
-                          <a
-                            className="receipt-link"
-                            href={receiptUrl(tx.id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <span>Receipt</span>
-                          </a>
-                        )}
-                      </div>
-                      {tx.direction === "move" && tx.counterparty && (
-                        <div className="caption">{moveLabel(tx)}</div>
-                      )}
-                      {tx.notes && <div className="caption">{tx.notes}</div>}
-                      <MoneyTrail tx={tx} timezone={me.user.timezone} onOpen={onEdit} />
-                      {tx.duplicate && (
-                        <div className="duplicate" onClick={(e) => e.stopPropagation()}>
-                          <span className="caption">
-                            Possible duplicate of {tx.duplicate.counterparty ?? "an entry"},{" "}
-                            {formatDate(tx.duplicate.occurred_at, me.user.timezone)}
+                {items.map((tx, i) => (
+                  <Fragment key={tx.id}>
+                    {/* A day heading starts each run of a day. It is a row only a phone shows; a wide screen has
+                        the Date column instead. */}
+                    {(i === 0 || dayOf(items[i - 1].occurred_at) !== dayOf(tx.occurred_at)) && (
+                      <tr className="day-row">
+                        <th scope="colgroup" colSpan={5}>
+                          <h3 className="day-heading">{dayHeading(dayOf(tx.occurred_at), today)}</h3>
+                        </th>
+                      </tr>
+                    )}
+                    <tr aria-selected={selected.has(tx.id)} onClick={() => onEdit(tx)}>
+                      <td className="select" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${tx.counterparty ?? "transaction"} ${formatMoney(tx.amount)}`}
+                          checked={selected.has(tx.id)}
+                          onChange={() => toggle(tx.id)}
+                        />
+                      </td>
+                      <td className="num date">{dateCell(tx.occurred_at)}</td>
+                      <td className="wrap merchant">
+                        <button
+                          type="button"
+                          className="btn btn-ghost tx-name"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(tx);
+                          }}
+                        >
+                          {txName(tx)}
+                        </button>
+                        {/* The signed amount already says money out, so only what adds something gets a badge:
+                            money in, a transfer, and a pending or deleted entry. Wide screens only, as before. */}
+                        {(tx.direction !== "out" || tx.deleted || tx.status === "pending") && (
+                          <span className="tx-badge hide-mobile">
+                            <DirectionBadge tx={tx} />
                           </span>
-                          <span className="quick">
-                            <button type="button" className="btn btn-small" onClick={() => void mergeTwins(tx)}>
-                              Merge
-                            </button>
-                            <button type="button" className="btn btn-small" onClick={() => void notDuplicate(tx)}>
-                              Not a duplicate
-                            </button>
-                          </span>
+                        )}
+                        {/* One line under the merchant. On a phone it holds the category and the date, whose own
+                            columns are gone; wider screens keep those in their columns. */}
+                        <div className="tx-meta">
+                          {tx.category_id && names.get(tx.category_id) && (
+                            <span className="category-line">{names.get(tx.category_id)}</span>
+                          )}
+                          {track && tx.paid_with && <span className="caption paid-with-line">{walletLabel(tx.paid_with)}</span>}
+                          {tx.has_receipt && (
+                            <a
+                              className="receipt-link"
+                              href={receiptUrl(tx.id)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span>Receipt</span>
+                            </a>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="hide-mobile secondary">
-                      {tx.category_id ? names.get(tx.category_id) : "—"}
-                      {tx.category_rule_id && patterns.has(tx.category_rule_id) && (
-                        <div className="caption">by rule “{patterns.get(tx.category_rule_id)}”</div>
-                      )}
-                    </td>
-                    <td className="hide-mobile">
-                      <DirectionBadge tx={tx} />
-                    </td>
-                    <td className={`amount num amount-${tx.direction}`}>
-                      <Amount tx={tx} />
-                    </td>
-                  </tr>
+                        {tx.direction === "move" && tx.counterparty && (
+                          <div className="caption">{moveLabel(tx)}</div>
+                        )}
+                        {tx.notes && <div className="caption">{tx.notes}</div>}
+                        <MoneyTrail tx={tx} timezone={me.user.timezone} onOpen={onEdit} />
+                        {tx.duplicate && (
+                          <div className="duplicate" onClick={(e) => e.stopPropagation()}>
+                            <span className="caption">
+                              Possible duplicate of {tx.duplicate.counterparty ?? "an entry"},{" "}
+                              {formatDate(tx.duplicate.occurred_at, me.user.timezone)}
+                            </span>
+                            <span className="quick">
+                              <button type="button" className="btn btn-small" onClick={() => void mergeTwins(tx)}>
+                                Merge
+                              </button>
+                              <button type="button" className="btn btn-small" onClick={() => void notDuplicate(tx)}>
+                                Not a duplicate
+                              </button>
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="hide-mobile secondary">
+                        {tx.category_id ? names.get(tx.category_id) : "—"}
+                        {tx.category_rule_id && patterns.has(tx.category_rule_id) && (
+                          <div className="caption">by rule “{patterns.get(tx.category_rule_id)}”</div>
+                        )}
+                      </td>
+                      <td className={`amount num amount-${tx.direction}`}>
+                        <Amount tx={tx} />
+                      </td>
+                    </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
