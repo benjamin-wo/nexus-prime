@@ -2614,3 +2614,8 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .budget-first + .plan-add { border-top: 0; padding-top: 0; margin-top: var(--space-3); }
 .card-head.budget-head-first { margin: 0; }
 .card-head.budget-head-first h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* A page that failed to render, and an address that matches no page. */
+.page-error, .not-found { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; }
+.page-error p, .not-found p { margin: 0; }
+.page-error-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
