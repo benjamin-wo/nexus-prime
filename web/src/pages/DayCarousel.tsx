@@ -185,6 +185,30 @@ export function DayCarousel({
     bar.scrollTo?.({ left: Math.max(0, left), behavior: smooth() });
   }, [shown]);
 
+  // Which edges of the strip have more chips beyond them, for the fade that says it scrolls
+  // (data-fade: "start", "end", "both"; none when every chip fits). Set on the element itself, so
+  // scrolling the strip doesn't render the page.
+  useEffect(() => {
+    const bar = strip.current;
+    if (!bar) return;
+    const read = () => {
+      const more = bar.scrollWidth - bar.clientWidth > 1;
+      const start = more && bar.scrollLeft > 1;
+      const end = more && Math.ceil(bar.scrollLeft + bar.clientWidth) < bar.scrollWidth - 1;
+      if (start && end) bar.dataset.fade = "both";
+      else if (start) bar.dataset.fade = "start";
+      else if (end) bar.dataset.fade = "end";
+      else delete bar.dataset.fade;
+    };
+    read();
+    bar.addEventListener("scroll", read, { passive: true });
+    window.addEventListener("resize", read);
+    return () => {
+      bar.removeEventListener("scroll", read);
+      window.removeEventListener("resize", read);
+    };
+  }, [days.length]);
+
   const iso = days[shown];
   return (
     <div className="day-carousel" role="region" aria-roledescription="carousel" aria-label="Days of the trip">

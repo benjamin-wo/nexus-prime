@@ -1833,17 +1833,36 @@ a.photo-credit:hover { text-decoration: underline; }
 .ways-sheet .map-app { display: grid; gap: var(--space-1); }
 .ways-sheet .map-app select { width: 100%; min-height: 44px; padding: 0 var(--space-3); font-size: 1rem; border-radius: 10px; }
 .trip-map > .trip-ways { margin: var(--space-3) 0 0; }
-/* Money and Prep read as a column on a wide screen, not stretched across it. */
+/* Money and Prep take the page's full content width, the same as the cover and the tab bar above them. */
 .trip-narrow { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); min-width: 0; }
-/* Plan and Ideas: the list or day on the left, the map on the right and stuck in view. */
+/* Narrow: the chips scroll sideways, and a fade at the edge with more beyond it says so. DayCarousel
+   sets data-fade ("start", "end" or "both") from the strip's scroll position. */
+.day-strip { --fade: 28px; }
+.day-strip[data-fade="end"] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent); }
+.day-strip[data-fade="start"] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to left, #000 calc(100% - var(--fade)), transparent); }
+.day-strip[data-fade="both"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+}
+/* Plan and Ideas: the list or day on the left (3fr), the map on the right (2fr) and stuck in view.
+   Two columns only while there is a map to put in the second: with no Google Maps key the map
+   renders nothing, and the list takes the whole width instead of leaving an empty band. */
 @media (min-width: 1024px) {
-  .plan-layout { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+  .plan-layout:has(> .trip-map) { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
   .plan-layout > .trip-map { position: sticky; top: calc(var(--trip-sticky-top, 0px) + 12px); }
   .plan-layout .trip-map-canvas { height: min(600px, calc(100vh - var(--trip-sticky-top, 0px) - 40px)); }
-  .ideas-layout { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
+  .ideas-layout:has(> .ideas-map) { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); }
   .ideas-layout > .ideas-map { position: sticky; top: calc(var(--trip-sticky-top, 0px) + 12px); }
   .ideas-map-canvas { height: min(600px, calc(100vh - var(--trip-sticky-top, 0px) - 40px)); }
-  .trip-narrow { max-width: 760px; margin-inline: auto; width: 100%; }
+  /* Wide: every day chip is on show, wrapping onto more lines, so the strip is not stuck (it would
+     take a third of the screen); the day arrows and the stops row above still reach any day. */
+  .itinerary-card .day-strip { position: static; flex-wrap: wrap; overflow-x: visible; -webkit-mask-image: none; mask-image: none; }
+}
+/* Under 1024px the Add button floats at the right of the screen: a day's pencil sits beside its
+   name on the left, so the button never lands on it. */
+@media (max-width: 1023px) {
+  .itinerary-day .day-head { justify-content: flex-start; }
+  .itinerary-day .day-title { flex: 0 1 auto; }
 }
 /* Phones: room under the last item for the Add button (52px), its gap above the bottom bar,
    so it never covers the last plan or a day's pencil. The main area adds the bar itself. */
