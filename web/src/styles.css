@@ -602,12 +602,24 @@ a.btn { text-decoration: none; }
 .cal-day[aria-pressed="true"] { border-color: var(--accent-border); background: var(--accent-soft); }
 .cal-day.is-today { border-color: var(--accent); }
 .cal-day.is-empty { visibility: hidden; }
-.cal-date { font-size: 0.7rem; font-weight: 700; color: var(--text-secondary); }
-.cal-amount { font-size: 0.7rem; font-variant-numeric: tabular-nums; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-amount.in { color: var(--emerald-accent); }
-.cal-amount.out { color: var(--rose-accent); }
-.cal-amount.expected { opacity: 0.8; font-style: italic; }
-.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.cal-date { font-size: 0.8125rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+/* The day's amount as bars under the date: height is the step (1 to 4), colour the kind. */
+.cal-bars { display: flex; align-items: flex-end; gap: 3px; height: 18px; margin-top: auto; }
+.cal-bar { flex: 0 0 14px; min-width: 0; border-radius: 3px 3px 1px 1px; box-sizing: border-box; }
+.cal-bar.out { background: var(--accent); }
+.cal-bar.in { background: var(--emerald-accent); }
+.cal-bar.expected { background: transparent; border: 2px dashed var(--accent); }
+.cal-bar.expected.in { border-color: var(--emerald-accent); }
+.cal-bar.step-1 { height: 6px; }
+.cal-bar.step-2 { height: 10px; }
+.cal-bar.step-3 { height: 14px; }
+.cal-bar.step-4 { height: 18px; }
+.cal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); align-self: center; }
+.cal-legend { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); align-items: center; }
+.cal-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.cal-key { flex: none; width: 14px; height: 10px; }
+.cal-item-amount { font-variant-numeric: tabular-nums; font-size: 0.9rem; }
+.cal-item-amount.in { color: var(--emerald-accent); }
 .flow-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
 .month-nav { display: flex; align-items: center; gap: var(--space-2); }
 /* The month picker: ‹ October 2026 › on the input surface, like the tabs. */
@@ -620,7 +632,7 @@ a.btn { text-decoration: none; }
 }
 @media (max-width: 480px) {
   .cal-day { min-height: 52px; padding: 3px; }
-  .cal-amount { font-size: 0.62rem; }
+  .cal-bar { flex-basis: 12px; }
 }
 
 /* What Kaya remembers (Settings) */

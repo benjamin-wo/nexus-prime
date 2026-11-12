@@ -806,14 +806,14 @@ test("cash flow shows logged and expected days, with detail on tap", async ({ pa
   await expect(page.getByRole("heading", { name: "Cash flow", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "September 2026" })).toBeVisible();
   const days = page.getByRole("group", { name: "Days" });
-  await expect(days.getByRole("button", { name: /^2026-09-25, net SGD\s4,200\.00/ })).toContainText("+4,200");
-  await expect(days.getByRole("button", { name: /^2026-09-12, net -SGD\s42\.10/ })).toContainText("-42.1");
-  await days.getByRole("button", { name: "2026-09-30, 1 expected" }).click();
+  await expect(days.getByRole("button", { name: /^September 25, money in SGD\s4,200\.00$/ })).toBeVisible();
+  await expect(days.getByRole("button", { name: /^September 12, spent SGD\s42\.10$/ })).toBeVisible();
+  await days.getByRole("button", { name: /^September 30, expected out SGD\s1,800\.00$/ }).click();
   const detail = page.getByRole("region", { name: /Wednesday, (30 September|September 30)/ });
   await expect(detail.getByRole("listitem").filter({ hasText: "Rent" })).toContainText("Scheduled payment");
   await page.getByRole("button", { name: "Next month" }).click();
   await expect(page.getByRole("heading", { name: "October 2026" })).toBeVisible();
-  await expect(days.getByRole("button", { name: "2026-10-12, 1 expected" })).toContainText("-17.98");
+  await expect(days.getByRole("button", { name: /^October 12, expected out SGD\s17\.98$/ })).toBeVisible();
 });
 
 test("telegram updates default to an end-of-day summary and can be changed", async ({ page }) => {
