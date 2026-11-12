@@ -2,7 +2,7 @@
 
 ## 1. Atmosphere & Identity
 
-Kaya ("Just ask Kaya") is a focused financial command center: light, cool, and quick to scan. Its
+Kaya ("Just ask Kaya") is a focused financial command center: cool and quick to scan, light by default and dark when the phone (or Telegram) is. Its
 palette is True Summer: muted blues on an icy off-white page. Home is a Today page: it opens on
 an indigo hero (the month's one big figure and Kaya's brief, not in a card) that fades into the
 page, with what needs the person directly under it; every other segment is its own white card,
@@ -34,7 +34,7 @@ Its animations are CSS-only: no script drives them. They are off under `prefers-
 | Surface/interactive | --bg-card-hover | #f5f7fb | Hovered controls and rows; tiles inside a card |
 | Input surface | --bg-input | #f3f6fa | Form controls |
 | Text/primary | --text-primary | #1b2333 | Main content (deep slate) |
-| Text/strong | --text-white | #0f1522 | Headings and emphasis (white on the hero and photos) |
+| Text/strong | --text-strong | #0f1522 | Headings and emphasis (white on the hero) |
 | Text/secondary | --text-secondary | #4d5e80 | Supporting content (slate; 5.9:1 on the page) |
 | Text/tertiary | --text-muted | #5f6b85 | Metadata and hints (4.9:1 on the page, 5.4:1 on cards) |
 | Border/default | --border-card | #e1e7ef | Card and table boundaries |
@@ -63,6 +63,19 @@ Its animations are CSS-only: no script drives them. They are off under `prefers-
 | Chart/second-text | --sky-text | #1f6788 | Sky words and focus rings on light surfaces (6.3:1 on white) |
 | Chart/second-soft | (none, in `.kind-chip`) | rgba(115,181,217,0.16) | Kind chip surface, the sky tint (text on it 5.6:1) |
 | Surface/glass | --bg-glass | #ffffff | Cards |
+| Text/on-accent | --on-accent | #ffffff | Text and icons on an accent fill (primary button, Add, numbered dots, switch knob when on) |
+| Tabs/tray | --tabs-bg | #e3e9f1 | The tray behind segmented tabs (department tabs, trip tabs, Ideas switch) |
+| Tabs/open | --tab-active-bg | #ffffff | The open tab, with `--shadow-tab` |
+| Button/hover | --btn-hover-bg | #dfe6ef | A secondary button or chip under the pointer |
+| Scrim/overlay | --overlay | rgba(27,35,51,0.4) | The dim behind a sheet or dialog |
+| Link/underline | --link-underline | rgba(27,35,51,0.35) | The underline of a link in text |
+| Switch/knob | --switch-thumb | #ffffff | The knob of an off switch (on, it is `--on-accent`) |
+| Accent/rgb | --accent-rgb | 62, 82, 182 | The accent as r, g, b, for shadows and tints with their own opacity (`rgba(var(--accent-rgb), 0.16)`) |
+| Status/rgb | --rose-rgb, --danger-rgb, --iris-rgb | 192,54,92 · 244,63,94 · 99,112,197 | The over-budget hatching, delete buttons and warnings, and the usual-month outline, as r, g, b |
+| Hero/fade | --hero-fade | #bbcdde | Where the phone's hero fades into the page |
+| Kaya button | --kaya-from, --kaya-to | #6370c5, #3e52b6 | The gradient of Kaya's button (`--on-accent` text) |
+| Bar/active | --bar-text-active, --bar-active-bg | #ffffff, rgba(255,255,255,0.1) | The open tab in the phone's bottom bar |
+| Shadows | --shadow-frame, -card, -modal, -tab, -drag, -dock, -bar, -slim, -thumb | (in `:root`) | Every shadow that sits on the page's own surfaces; the dark theme has darker ones |
 | Hero/top | --hero-top | #3e52b6 | Home hero, top (and Telegram's header on Home) |
 | Hero/mid | --hero-mid | #6370c5 | Home hero before it fades into the page (white text 4.5:1) |
 | Bar/background | --bar-bg | #1b2333 | The phone's bottom bar |
@@ -70,10 +83,39 @@ Its animations are CSS-only: no script drives them. They are off under `prefers-
 
 The palette itself (True Summer), for charts and swatches: `--pal-slate` #4d5e80, `--pal-teal` #4a93a3, `--pal-sage` #6796a2, `--pal-sky` #73b5d9, `--pal-cornflower` #92b0d9, `--pal-iris` #6370c5, `--pal-mist` #bbcdde, `--pal-indigo` #3e52b6; accents `--pal-icy` #d8e7ed, `--pal-periwinkle` #9ca8b8, `--pal-dusty-pink` #e4d8da. Category swatches go indigo, sky, iris, teal, then mist for the rest; past months are mist.
 
+### Dark
+
+The app follows the phone: the dark values apply under `@media (prefers-color-scheme: dark)` unless `<html data-theme="light">`, and always under `<html data-theme="dark">`; the same set is written out once for each (keep them identical). Inside Telegram, `telegram.ts` sets `data-theme` from `Telegram.WebApp.colorScheme` at start and on Telegram's `themeChanged`, since Telegram's theme can differ from the phone's; it then paints Telegram's header, background and bottom bar (`CHROME` in `theme.ts`, page `#0f1420`, Home hero `#2c3d94`, bar `#090d16` in dark). `index.html` declares `color-scheme: light dark` and a `theme-color` for each, and `:root` sets `color-scheme`, so native inputs, selects and scrollbars follow. There is no manual toggle.
+
+| Token | Dark | Notes |
+|-------|------|-------|
+| --bg-shell | #0f1420 | Page |
+| --bg-frame, --bg-card, --bg-glass | #182031 | Rail, cards, sheets |
+| --bg-card-hover | #1d2639 | Hovered rows, tiles inside a card |
+| --bg-input | #141b2a | Form controls |
+| --bg-raised | #202a40 | Secondary buttons, icon tiles |
+| --text-primary / strong / secondary / muted | #e8ecf4 / #f3f5fa / #b9c2d4 / #a3adc2 | 7.2–14.9:1 on cards |
+| --border-card, --border-subtle | #2a344d, #232c42 | Hairlines; cards are told apart by surface, as in light |
+| --accent, --accent-hover | #8c9cf0, #a1aef4 | A fill, with `--on-accent` #0f1420 on it (7.1:1) |
+| --accent-text | #b3bdf6 | Accent words and links (8.9:1 on cards) |
+| --accent-soft, --accent-border, --accent-rgb | #232c49, rgba(140,156,240,0.4), 140,156,240 | |
+| --emerald-accent, --status-warning, --rose-accent | #5fd3a5, #f2b06a, #f08aa5 | Text and fills; soft surfaces are the same colours at 14% |
+| --cyan-accent, --cyan-text, --sky-accent, --sky-text | #5aa5b5, #7cc4d4, #73b5d9, #8fd0f0 | |
+| --tabs-bg, --tab-active-bg, --btn-hover-bg | #0b101b, #26314c, #2a3552 | The tray is darker than the page, the open tab lighter |
+| --overlay | rgba(4,7,13,0.68) | |
+| --hero-top, --hero-mid, --hero-fade | #2c3d94, #3a4aa8, #26336f | White text 9.5:1 and 7.7:1 |
+| --bar-bg, --bar-text, --bar-active-bg | #090d16, #a3adc2, #1f2840 | |
+| --kaya-from, --kaya-to | #a3aff5, #8c9cf0 | |
+| --pal-* | slate #9aa8c8, teal #5aa5b5, sage #7fb0ba, sky #73b5d9, cornflower #7f9fd0, iris #6f7fe0, mist #5d6b8c, indigo #8c9cf0, icy #232c42, periwinkle #8a96ad | Chart marks are 3:1 or more on a card; past months (mist) are 3.1:1 |
+| Shadows | black at 35–60% | Darker, because a shadow on a dark page hardly shows |
+
+Every text pair is at least 4.5:1 and every chart mark and focus ring at least 3:1 in both schemes (card borders are decorative, in light and dark alike). The ticked checkbox's check is drawn near-black on the dark accent.
+
 ### Rules
 
-- One theme: icy off-white page, white cards, deep slate text, indigo for actions and the Home hero; do not introduce a second visual theme.
-- Light text sits only on the hero (4.5–6.8:1) and on photos (under a dark fade).
+- Two schemes of the same palette, light and dark (below); do not introduce a third visual theme. Every colour outside `:root` is a token: no hex or `rgb()` literals in rules, except the constants named below.
+- Constant colours, the same in both schemes because what they sit on is: the white text and glass buttons on the Home hero (a dark indigo panel in both), and the white text, scrims and light-glass buttons on a trip's cover photo.
+- Light text sits only on the hero (4.5–6.8:1 light, 7.7:1 dark) and on photos (under a dark fade).
 - Accent colors communicate action or transaction direction, not decoration.
 - New colors must be added here before they are used in CSS.
 
@@ -145,7 +187,7 @@ All spacing derives from a 4px base unit.
 - Department tabs are a rounded segmented control on one row, sharing the width on phones; keep a department to five tabs or fewer. Money has four (Overview, Ledger, Budgets, Cash flow) and Investment three (Portfolio, Watchlist, Trade plans); Travel's one tab means no bar. Setup that is done once (Receipts by email, Import a statement) is not a tab: it lives in Settings under Connections, and the Ledger's More menu links to the import.
 - The accent is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
 - Fresh on return and pull to refresh: when the app comes back to the front (Telegram's `activated`, `visibilitychange`, `focus`, a restored `pageshow`; one return refreshes once) what is on screen is refetched: money data always, other data once stale, and everything after more than 5 minutes away. Home, the Money overview, the Ledger and Budgets can also be pulled down at the top of the page (the page follows the finger with a 28px accent ring, letting go past 64px refreshes; "Refreshing…" and "Updated" are announced, and a "Refresh" button shows for keyboards while focused). The pull works because the Mini App has turned off swipe-to-close; in a Telegram without that call it stays off.
-- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, a page inside Settings), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's indigo on Home and the page colour elsewhere, its bottom bar deep slate like ours, and no swipe-to-close while scrolling.
+- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, a page inside Settings), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's indigo on Home and the page colour elsewhere, its bottom bar deep slate like ours (all in Telegram's own light or dark theme), and no swipe-to-close while scrolling.
 - The phone's bottom bar is deep slate with rounded top corners: Home, Money, the indigo Kaya button in the middle, showing the Kaya mascot (it opens the chat), Invest (Investment), Travel. Each tab is its icon over a short label (Caption size, 0.8125rem; Home, Money, Invest, Travel; under 360px the bar tightens its side padding and the Kaya button narrows to 52px to keep them whole), at least 48px tall and 44px wide; the current one is white, bold and on a soft pill, the others the bar's grey, so it reads without colour alone. A tab's accessible name keeps the full one where the label is shorter ("Money", "Invest (Investment)"); Kaya stays an icon named "Ask Kaya". The rail on a wide screen keeps the full names. Settings is the cog at the top of Home (and in the rail on a wide screen, under the indigo Ask Kaya button).
 - No floating chat bubble: Kaya lives in the bar. The only floating button is the labelled Add button (`.fab`: white on indigo, a plus and "Add"), 20px above the bottom bar on a phone, where it steps aside while the page scrolls down and comes back on the way up, and where it also steps aside while typing. A trip page always has it (and from 1024px has the trip header's Add beside Share instead); the Ledger shows it only once its header Add has scrolled out of view, named "Add a transaction" so it never doubles the header's "Add transaction", and there it stays put while scrolling down (`.fab-steady`), with room left under the list so it never covers the last row.
 - An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words, not with a minus sign in green.
