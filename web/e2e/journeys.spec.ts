@@ -81,7 +81,7 @@ test("inside Telegram the Mini App signs in by itself", async ({ page }) => {
     () => (window as unknown as { tgCalls: string[] }).tgCalls,
   );
   expect(calls).toEqual(
-    expect.arrayContaining(["ready", "expand", "header #f1f4f8"]),
+    expect.arrayContaining(["ready", "expand", "header #f8fafc"]),
   );
 });
 
