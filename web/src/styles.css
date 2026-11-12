@@ -1453,10 +1453,12 @@ table.ledger tbody tr.day-row:hover { background: none; }
 /* Light text on the hero: a faint shadow keeps it crisp where it's lightest. */
 .hero-top, .hero-figure, .hero-note, .hero-brief { text-shadow: 0 1px 2px rgba(27, 35, 51, 0.25); }
 @media (max-width: 900px) {
-  /* On a phone the hero runs to the edges and the top, fading into the page. */
+  /* On a phone the hero runs to the edges and the top, fading into the page. The fade lives in the
+     bottom padding only, so the brief's last line always sits on solid colour (white on the faded
+     part fell below 3:1). */
   .hero {
-    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0; padding: var(--space-5) var(--space-4) calc(var(--space-8) * 1.5);
-    border-radius: 0; background: linear-gradient(180deg, var(--hero-top) 0%, var(--hero-mid) 82%, var(--pal-mist) 94%, var(--bg-shell) 100%);
+    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0; padding: var(--space-5) var(--space-4) calc(var(--space-8) * 1.75);
+    border-radius: 0; background: linear-gradient(180deg, var(--hero-top) 0%, var(--hero-mid) calc(100% - 44px), var(--pal-mist) calc(100% - 14px), var(--bg-shell) 100%);
   }
 }
 
