@@ -42,7 +42,7 @@ from nexus.domain.ledger import User
 from nexus.domain.source_links import PREFIX as SOURCE_PREFIX
 from nexus.evals import clips, photos, seed
 from nexus.evals.cases import WRITES, Call, Case, Has, Turn, searches_web
-from nexus.evals.checks import World
+from nexus.evals.checks import World, mentions_amount
 from nexus.evals.prices import CannedPrices
 from nexus.evals.web import CannedLookup
 from nexus.infra.db import tables
@@ -418,6 +418,16 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
     for wanted in case.reply:
         if not _in_reply(last.last_reply, wanted):
             failures.append(f"reply lacks {wanted!r}")
+    for wanted in case.amounts:
+        options = (wanted,) if isinstance(wanted, str) else wanted
+        if not any(mentions_amount(last.last_reply, o) for o in options):
+            failures.append(f"reply lacks the figure {' or '.join(options)}")
+    for figure in case.never_amounts:
+        if any(mentions_amount(r, figure) for t in turns for r in t.replies):
+            failures.append(f"reply states {figure}, which is wrong")
+    for tool in case.used:
+        if tool not in called:
+            failures.append(f"never called {tool}")
     if case.source_buttons and not last.source_links:
         failures.append("reply has no source link buttons")
     for phrase in case.never_say:
@@ -468,8 +478,12 @@ async def run_case(
     lookup: WebLooker | None = None,
     now: datetime = seed.NOW,
 ) -> CaseResult:
-    seeded = await seed.seed_user(lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared)
+    seeded = await seed.seed_user(
+        lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared, november=case.november
+    )
     user = seeded.user
+    if case.november and now == seed.NOW:  # the default clock: this case starts on 13 November
+        now = seed.NOV_NOW
     agent = Agent(engine, model, photo_cache, vision, memory, speech, lookup, now)
     world = World(
         agent.uow,
@@ -487,6 +501,14 @@ async def run_case(
         return CaseResult(case, turns, [], error=f"{type(exc).__name__}: {exc}")
     changed = await fingerprint(engine, user, seeded.owner) != before
     return CaseResult(case, turns, await grade(case, turns, world, changed))
+
+
+def clock_of(case: Case, live: datetime | None) -> datetime:
+    """The clock a case starts on: the real time for a web case in a live run, 13 November
+    for a case that starts then, and otherwise the seed's 28 September."""
+    if live is not None and searches_web(case):
+        return live
+    return seed.NOV_NOW if case.november else seed.NOW
 
 
 async def run_cases(
@@ -523,7 +545,7 @@ async def run_cases(
                 memory=memory,
                 speech=speech,
                 lookup=lookup,
-                now=now if now is not None and searches_web(case) else seed.NOW,
+                now=clock_of(case, now),
             )
         result.round_no = round_no
         if on_result:

@@ -7,6 +7,11 @@ fresh on). Nothing here is real data.
 
 "Now" is Monday 28 September 2026, 2pm in Singapore. The figures the cases check
 against are the constants below; a test recomputes them from the ledger.
+
+A case with ``november`` set starts on Friday 13 November 2026 instead, with the first twelve
+days of November already in the ledger (rent, a few small expenses, some freelance income)
+and two more scheduled payments (see ``_NOV_ROWS``), so that payday on the 25th, the
+Singtel bill and the rest of the month are still ahead. The money-math cases use it.
 """
 
 from collections.abc import Callable
@@ -40,6 +45,7 @@ type UowFactory = Callable[[], UnitOfWork]
 
 TZ = ZoneInfo("Asia/Singapore")
 NOW = datetime(2026, 9, 28, 14, 0, tzinfo=TZ)
+NOV_NOW = datetime(2026, 11, 13, 14, 0, tzinfo=TZ)
 USD_SGD = Decimal("1.35")  # the one published rate, from 1 Sep 2026
 
 # (day, merchant, amount, currency, category, direction)
@@ -71,6 +77,16 @@ _ROWS: tuple[tuple[date, str, str, str, str, Direction], ...] = (
     (date(2026, 9, 28), "Kopitiam", "4.20", "SGD", "Dining Out", Direction.OUT),
 )
 
+# The first days of November, for the cases that start on 13 November (``november``).
+_NOV_ROWS: tuple[tuple[date, str, str, str, str, Direction], ...] = (
+    (date(2026, 11, 1), "Rent", "1800.00", "SGD", "Bills & Utilities", Direction.OUT),
+    (date(2026, 11, 3), "NTUC FairPrice", "76.40", "SGD", "Groceries", Direction.OUT),
+    (date(2026, 11, 6), "Grab", "18.90", "SGD", "Transport", Direction.OUT),
+    (date(2026, 11, 9), "Kopitiam", "9.50", "SGD", "Dining Out", Direction.OUT),
+    (date(2026, 11, 10), "Freelance design", "250.00", "SGD", "Income", Direction.IN),
+    (date(2026, 11, 12), "Netflix", "17.98", "SGD", "Subscriptions & Software", Direction.OUT),
+)
+
 # What the cases check replies against (home currency, SGD).
 SEPT_SPENT = "460.03"  # includes USD 20.00 at 1.35
 AUG_SPENT = "246.78"
@@ -82,6 +98,23 @@ SEPT_BIGGEST = "120.00"  # Jumbo Seafood, 19 Sep
 ANN_OWES = "40.00"  # from the Jumbo Seafood dinner, split three ways
 DINING_BUDGET = "300.00"
 
+# The same, for the cases that start on 13 November (``november``). Spent and received are
+# the month so far. The rest of the month holds payday on the 25th (4,798.00 in: the usual
+# salary is 4,798.00 for these cases), Singtel on the 28th (45.00), a gym membership on the
+# 30th (88.00) and an electricity bill on the 20th with no amount set. Netflix (12th) and
+# rent (1st) are past. A test recomputes these from the ledger.
+NOV_PAYDAY = "4798.00"
+AUG_NET = "4753.22"  # 5,000.00 received less 246.78 spent
+NOV_RECEIVED = "250.00"
+NOV_SPENT = "1922.78"
+NOV_NET_SO_FAR = "-1672.78"
+NOV_EXPECTED_IN = NOV_PAYDAY
+NOV_EXPECTED_OUT = "133.00"
+NOV_PROJECTED = "2992.22"  # -1,672.78 + 4,798.00 - 133.00
+NOV_CARRY = "2308.42"  # the user's carry-over from October
+NOV_OVERALL = "5300.64"  # NOV_PROJECTED + NOV_CARRY
+NOV_AFTER_DINNER = "2492.22"  # NOV_PROJECTED less a 500.00 dinner
+NOV_WITH_GIFT = "5450.64"  # NOV_OVERALL and 150.00 more expected
 
 # The owner of the shared Japan trip gets this id on top of the case user's.
 OWNER_OFFSET = 5_000_000
@@ -174,9 +207,12 @@ def open_plan(user: User, symbol: str, close: str, *, keep_fresh: bool) -> Saved
     )
 
 
-async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = False) -> Seeded:
+async def seed_user(
+    new_uow: UowFactory, telegram_id: int, *, shared: bool = False, november: bool = False
+) -> Seeded:
     """The case's user. With ``shared`` they don't own the Japan trip: Alex does, and
-    the user was added to it as a member."""
+    the user was added to it as a member. With ``november`` the first days of November are
+    in the ledger too (the case then starts on ``NOV_NOW``)."""
     user = (
         await register_user(
             new_uow(),
@@ -209,7 +245,9 @@ async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = Fal
         await db.commit()
     user = replace(user, track_cards=True)
     jumbo = None
-    for day, merchant, amount, currency, category, direction in _ROWS:
+    for day, merchant, amount, currency, category, direction in (
+        _ROWS + _NOV_ROWS if november else _ROWS
+    ):
         tx = await tx_cases.log_transaction(
             new_uow(),
             user.id,
@@ -240,8 +278,18 @@ async def seed_user(new_uow: UowFactory, telegram_id: int, *, shared: bool = Fal
         new_uow(), user, "Singtel", date(2026, 10, 28), Cadence.MONTHLY, Money.of("45", "SGD"),
         now=NOW,
     )  # fmt: skip
+    if november:
+        await bill_cases.add_bill(
+            new_uow(), user, "Electricity", date(2026, 11, 20), Cadence.MONTHLY, None, now=NOW
+        )
+        await bill_cases.add_bill(
+            new_uow(), user, "Gym", date(2026, 11, 30), Cadence.MONTHLY, Money.of("88", "SGD"),
+            now=NOW,
+        )  # fmt: skip
     await salary_cases.set_schedule(new_uow(), user, PayRule.MONTHLY_DAY, day=25, now=NOW)
-    await salary_cases.set_baseline(new_uow(), user, Money.of("5000", "SGD"), now=NOW)
+    await salary_cases.set_baseline(
+        new_uow(), user, Money.of(NOV_PAYDAY if november else "5000", "SGD"), now=NOW
+    )
     await rule_cases.set_rule(new_uow(), user, "grab", cats["Transport"], now=NOW)
     async with new_uow() as db:
         await db.investments.insert_plan(open_plan(user, "NVDA", "130.00", keep_fresh=False))

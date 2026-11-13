@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nexus.agent import price_text
 from nexus.agent.confirmation import Ask, entry_text
+from nexus.agent.outlook_text import describe_calculation, describe_outlook
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
@@ -31,6 +32,7 @@ from nexus.application import email as email_cases
 from nexus.application import income as income_cases
 from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
+from nexus.application import month_outlook as outlook_cases
 from nexus.application import moves as move_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import people as people_cases
@@ -65,6 +67,7 @@ from nexus.application.web_search import WebSearchError
 from nexus.application.whereabouts import ZoneFinder
 from nexus.domain import airports, itinerary
 from nexus.domain.bookings import Booking, BookingDraft, BookingKind
+from nexus.domain.calc import calculate
 from nexus.domain.email import InboundEmail
 from nexus.domain.errors import Forbidden, InvalidInput, NexusError, NotFound
 from nexus.domain.history import describe as describe_history
@@ -2089,6 +2092,56 @@ async def _cash_flow(ctx: ToolContext, a: CashFlowArgs) -> ToolResult:
     if flow.unknown_amounts:
         lines.append(f"{flow.unknown_amounts} item(s) have no amount set, so aren't counted.")
     return ToolResult("\n".join(lines))
+
+
+class AdjustmentArgs(Args):
+    amount: str = Field(
+        description='Signed, in the home currency: "+2,308.42" or "4000" for money the user '
+        'has or expects, "-500" for something they are thinking of spending. A written sum '
+        'like "4000 + 798" is fine.'
+    )
+    label: str = Field(
+        "", description="What it is, in the user's words (carried over from October)"
+    )
+
+
+class MonthOutlookArgs(Args):
+    month: str | None = Field(
+        None,
+        description="YYYY-MM; this month when left out. A month that is over gives what "
+        "happened, with no projection.",
+    )
+    adjustments: list[AdjustmentArgs] = Field(
+        default_factory=list,
+        description="Every amount the user mentioned that isn't in their data yet: a "
+        "carry-over from last month, money they expect, or a purchase they are considering "
+        "(negative). Code adds them to the month's figure. Pass them all, again, whenever "
+        "you re-run this after a correction.",
+    )
+
+
+async def _month_outlook(ctx: ToolContext, a: MonthOutlookArgs) -> ToolResult:
+    outlook = await outlook_cases.month_outlook(
+        ctx.uow,
+        _rates(ctx),
+        ctx.user,
+        now=ctx.now,
+        month=a.month,
+        adjustments=[(x.amount, x.label) for x in a.adjustments],
+    )
+    return ToolResult(describe_outlook(outlook))
+
+
+class CalculateArgs(Args):
+    expression: str = Field(
+        description="Numbers with + - * / and brackets, e.g. 1,234.50 + 987.25 - 42 or "
+        "186.40 / 3. Commas and a currency code are fine. A percentage is a decimal: 18% "
+        "of 2350 is 0.18 * 2350."
+    )
+
+
+async def _calculate(_: ToolContext, a: CalculateArgs) -> ToolResult:
+    return ToolResult(describe_calculation(calculate(a.expression)))
 
 
 class UpdatesArgs(Args):
@@ -4182,11 +4235,11 @@ def _skill_tool(load: Callable[[str], str]) -> ToolSpec:
 # withheld from image turns until it's listed here or confirms first.
 READ_ONLY = frozenset(
     {
-        "cash_flow", "email_status", "explain_category", "find_duplicates", "find_ideas",
-        "find_places",
+        "calculate", "cash_flow", "email_status", "explain_category", "find_duplicates",
+        "find_ideas", "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
         "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
-        "list_split_habits", "show_voice",
+        "list_split_habits", "month_outlook", "show_voice",
         "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
@@ -4579,6 +4632,25 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "subscriptions and payday, with the net. Not a balance.",
             CashFlowArgs,
             _cash_flow,
+        ),
+        ToolSpec(
+            "month_outlook",
+            "Where a month ends up, worked out exactly in code: received, spent and net so "
+            "far, what is still expected by month end (bills, tracked subscriptions, payday, "
+            "scheduled moves), the projected month-end net and the headroom: how much more "
+            "everyday spending keeps it at zero or above. Use it for can I afford, how much "
+            "is left to spend, leeway, will I end the month positive, net by month end. "
+            "Pass amounts the user mentions (a carry-over, money they expect, a purchase "
+            "they are considering) as adjustments. Not an account balance.",
+            MonthOutlookArgs,
+            _month_outlook,
+        ),
+        ToolSpec(
+            "calculate",
+            "Exact arithmetic on money figures: + - * / and brackets. Use it for every sum, "
+            "difference, product, share or comparison of amounts; never do them yourself.",
+            CalculateArgs,
+            _calculate,
         ),
         ToolSpec(
             "list_subscriptions",
