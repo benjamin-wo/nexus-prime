@@ -2579,7 +2579,7 @@ CASES: tuple[Case, ...] = (
     Case(
         "money-math-split-three",
         "money-math",
-        _t("split 186.40 three ways"),
+        _t("what's 186.40 split three ways?"),
         unchanged=True,
         calls=(Call("calculate"),),
         forbid=("split_bill",),

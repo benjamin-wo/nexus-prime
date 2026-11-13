@@ -36,8 +36,11 @@ pytestmark = pytest.mark.integration
 # calculate", 718 characters, after the first rule) and by the cashflow skill's line in the skill
 # index (its description and tools, 169 characters, now naming leeway, left to spend and
 # month_outlook): taking those two out gives the text before, hash 833626db... (13513).
-DEFAULT_PREFIX_SHA256 = "72858f9b4d9fbba11634394a23dd37104a693b656ce616e410a2ef8192130540"
-DEFAULT_PREFIX_LENGTH = 14400
+# Then the rule was sharpened after live evals (a plain "1.8k for a new laptop" must be logged,
+# not weighed; a month's net, past ones too; restate the figure on a correction): 72858f9b...
+# (14400) became the text below, the rule's wording being the only difference.
+DEFAULT_PREFIX_SHA256 = "3b544a176da1f06be1a8f2bd00b6871299109fb8e1140701f70e7d08bb13ac12"
+DEFAULT_PREFIX_LENGTH = 14678
 
 
 def prefix_of(prompt: str) -> str:
