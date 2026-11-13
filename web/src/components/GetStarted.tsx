@@ -16,14 +16,6 @@ function Tick({ done }: { done: boolean }) {
   );
 }
 
-/** Home's "Just ask Nexus" box is where a first expense is typed on this page: bring the person to it. */
-function focusAsk() {
-  const box = document.getElementById("ask-input");
-  if (!box) return;
-  box.scrollIntoView({ block: "center", behavior: "smooth" });
-  box.focus({ preventScroll: true });
-}
-
 /** One row: a tick, what it is, and (until it is done) one small action. */
 function Step({ done, label, children }: { done: boolean; label: string; children: ReactNode }) {
   return (
@@ -47,7 +39,7 @@ function Step({ done, label, children }: { done: boolean; label: string; childre
  * account is filled in already. While anything it needs is still loading, or fails to load, it stays
  * out rather than flash steps that are not true.
  */
-export function GetStarted({ me }: { me: Me }) {
+export function GetStarted({ me, onLog }: { me: Me; onLog: () => void }) {
   const client = useQueryClient();
   const away = Boolean(me.demo);
   const [busy, setBusy] = useState(false);
@@ -123,7 +115,7 @@ export function GetStarted({ me }: { me: Me }) {
           )}
         </Step>
         <Step done={hasEntry} label="Log your first expense">
-          <button type="button" className="btn btn-soft btn-small" onClick={focusAsk}>
+          <button type="button" className="btn btn-soft btn-small" onClick={onLog}>
             Log one<span className="sr-only"> expense</span>
           </button>
         </Step>

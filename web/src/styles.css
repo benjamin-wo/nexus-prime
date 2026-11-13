@@ -98,7 +98,6 @@
   --shadow-modal: 0 24px 60px rgba(11, 16, 32, 0.22);
   --shadow-tab: 0 1px 3px rgba(11, 16, 32, 0.12);
   --shadow-drag: 0 8px 24px rgba(11, 16, 32, 0.18);
-  --shadow-dock: 0 -10px 16px -14px rgba(11, 16, 32, 0.5);
   --shadow-bar: 0 -10px 30px -18px rgba(11, 16, 32, 0.5);
   --shadow-slim: 0 1px 0 var(--border-subtle), 0 8px 16px -12px rgba(11, 16, 32, 0.3);
   --shadow-thumb: 0 1px 3px rgba(11, 16, 32, 0.3);
@@ -183,7 +182,6 @@
     --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.55);
     --shadow-tab: 0 1px 3px rgba(0, 0, 0, 0.45);
     --shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
-    --shadow-dock: 0 -10px 16px -14px rgba(0, 0, 0, 0.6);
     --shadow-bar: 0 -10px 30px -18px rgba(0, 0, 0, 0.6);
     --shadow-slim: 0 1px 0 var(--border-subtle), 0 8px 16px -12px rgba(0, 0, 0, 0.5);
     --shadow-thumb: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -259,7 +257,6 @@
   --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.55);
   --shadow-tab: 0 1px 3px rgba(0, 0, 0, 0.45);
   --shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-dock: 0 -10px 16px -14px rgba(0, 0, 0, 0.6);
   --shadow-bar: 0 -10px 30px -18px rgba(0, 0, 0, 0.6);
   --shadow-slim: 0 1px 0 var(--border-subtle), 0 8px 16px -12px rgba(0, 0, 0, 0.5);
   --shadow-thumb: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -370,8 +367,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .dept-tab:hover { color: var(--text-primary); }
 .dept-tab.active { color: var(--text-strong); background: var(--tab-active-bg); box-shadow: var(--shadow-tab); }
 /* Home: the front desk. */
-.ask { display: flex; gap: var(--space-2); }
-.ask .input { flex: 1; min-width: 0; }
 .feed { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .feed-item {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
@@ -1183,15 +1178,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
   transition: background var(--t-micro), border-color var(--t-micro);
 }
 .ask-chip:hover { border-color: var(--accent-border); background: var(--bg-card-hover); }
-.ask-input {
-  flex: 1; min-width: 0; height: 44px; border: 0; background: transparent; color: var(--text-primary);
-  font: inherit; font-size: 1rem; outline: none;
-}
-.ask-send {
-  width: 44px; height: 44px; flex: none; border-radius: var(--radius-inner); border: 0; display: grid; place-items: center;
-  background: var(--accent); color: var(--on-accent); cursor: pointer;
-}
-.ask-send:disabled { background: var(--bg-raised); color: var(--text-muted); cursor: not-allowed; }
 .pair { display: flex; flex-wrap: wrap; gap: var(--space-6); align-items: stretch; }
 .pair > :first-child { flex: 3 1 520px; min-width: 0; }
 .pair > :last-child { flex: 2 1 340px; min-width: 0; }
@@ -1675,43 +1661,8 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .ask-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 /* Long suggestions wrap inside their pill rather than pushing the card wider on a narrow phone. */
 .ask-panel .ask-chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-.ask-panel .ask { align-items: center; gap: var(--space-2); padding: 4px 4px 4px var(--space-4); border-radius: 16px; background: var(--bg-input); border: 1px solid var(--border-card); }
-/* Focus on the ask box: the same 2px accent ring as the rest of the app, on the pill (the input
-   itself has no outline of its own), so it clears 3:1 against the card and the page. */
-.ask:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }
-.ask-panel .ask:focus-within { border-color: var(--accent); }
-/* Home on a phone: the page sits in one flex column (a sticky box only travels inside its parent,
-   and a grid item's parent is just its own row) and the ask box is docked above the bottom bar,
-   sticky at the end of the page: always in view while it scrolls, and in the flow at the very end,
-   so the page's own bottom padding still clears it and the bar. Wider, .home adds no box. */
+/* Home needs no wrapper box: .home adds none of its own. */
 .home { display: contents; }
-@media (max-width: 900px) {
-  .home-docked { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
-  .home-docked > * { min-width: 0; }
-  .ask-dock {
-    /* A sticky box's bottom is measured from inside its scroller's padding, and that padding
-       (below) already clears the bar: bottom 0 rests the dock right on top of the bar. */
-    position: sticky; z-index: 10; bottom: 0;
-    margin: 0 calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4);
-    background: var(--bg-shell); box-shadow: var(--shadow-dock);
-  }
-  .ask-dock .ask {
-    align-items: center; gap: 0; height: 48px; padding: 0 0 0 var(--space-4); border-radius: 999px;
-    background: var(--bg-input); border: 2px solid var(--accent);
-  }
-  .ask-dock .ask-input { height: 44px; }
-  .ask-dock .ask-send { border-radius: 999px; }
-  /* Focusing something else on the page scrolls it clear of the dock and the bar. */
-  /* On Home the page's bottom padding is exactly the bar (no extra air: the dock carries its
-     own), so the dock sits flush on the bar however far the page is scrolled. */
-  .main-viewport:has(.ask-dock) {
-    padding-bottom: var(--bar-h, calc(68px + env(safe-area-inset-bottom)));
-    scroll-padding-bottom: calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + 72px);
-  }
-  /* With the keyboard up the bar is hidden (viewport.ts), so the dock drops to the bottom edge. */
-  html.keyboard .main-viewport:has(.ask-dock) { padding-bottom: 0; }
-}
-@media (max-width: 720px) { .home-docked { gap: var(--space-4); } }
 .glance { display: grid; gap: var(--space-2); align-content: start; }
 .glance > .meter { margin: var(--space-1) 0; }
 .glance > p { margin: 0; }
@@ -1764,7 +1715,15 @@ table.ledger tbody tr.day-row:hover { background: none; }
   .bottom-nav .nav-link.active::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 3px; height: 2px; border-radius: 2px; background: var(--bar-indicator); }
   .bottom-nav .nav-link.active .nav-label { font-weight: 700; }
   .bottom-nav .nav-glyph { width: 24px; height: 24px; }
-  .nexus-button.in-bar { display: grid; place-items: center; flex: 0 0 auto; width: 64px; height: 44px; border-radius: 999px; color: var(--on-accent); }
+  /* In the bar the N is just the full-colour mark: no pill, no fill, no shadow. The tap target is 56x48. */
+  .nexus-button.in-bar {
+    display: grid; place-items: center; flex: 0 0 auto; width: 56px; height: 48px; padding: 0; border-radius: 14px;
+    background: transparent; box-shadow: none;
+  }
+  .nexus-button.in-bar:focus-visible { outline: 2px solid var(--bar-text-active); outline-offset: 2px; }
+  /* The bar is dark in both themes, so the mark's Midnight pixels always take their dark-surface colours here. */
+  .nexus-button.in-bar .nexus-mark .nm-K { fill: #2563EB; }
+  .nexus-button.in-bar .nexus-mark .nm-k, .nexus-button.in-bar .nexus-mark .nm-b { fill: #22D3EE; }
   /* The places sit in two equal halves either side of the Nexus button, so it stays in the middle whether the
      bar has three, four or five items (Invest and Travel are in the menu only when turned on). */
   .bottom-nav .bar-side { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: space-around; gap: var(--space-1); }
@@ -1773,7 +1732,8 @@ table.ledger tbody tr.day-row:hover { background: none; }
 /* The smallest phones: the bar gives its side padding back to the four labelled tabs. */
 @media (max-width: 359px) {
   .bottom-nav { padding-left: var(--space-1); padding-right: var(--space-1); gap: 2px; }
-  .nexus-button.in-bar { width: 52px; }
+  .nexus-button.in-bar { width: 48px; }
+  .nexus-button.in-bar .nexus-mark { width: 28px; height: 28px; }
   .bottom-nav .bar-side { gap: 0; }
   .bottom-nav .nav-label { font-size: 0.8125rem; letter-spacing: 0; }
 }

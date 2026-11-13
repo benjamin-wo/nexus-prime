@@ -224,7 +224,7 @@ export function Shell({
   }
   const nexus = (where: string) => (
     <button type="button" className={`nexus-button ${where}`} aria-label="Ask Nexus" title="Ask Nexus" onClick={onOpenChat}>
-      <NexusMark size={where === "in-rail" ? 28 : 38} variant="mono" />
+      <NexusMark size={where === "in-rail" ? 28 : 32} variant={where === "in-rail" ? "mono" : "auto"} />
       {where === "in-rail" && <span>Ask Nexus</span>}
     </button>
   );
