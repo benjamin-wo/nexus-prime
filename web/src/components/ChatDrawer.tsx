@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { api, apiForm, ApiError, type ChatHistory, type Demo, type Reply } from "../api";
 import {
@@ -199,6 +200,8 @@ export function ChatDrawer({
   const input = useRef<HTMLInputElement>(null);
   const stopButton = useRef<HTMLButtonElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  // Whether the list is scrolled to the newest message, so it can stay there when the keyboard resizes it.
+  const atEnd = useRef(true);
   // Keep to the newest message, except right after loading older ones.
   const stick = useRef(true);
 
@@ -214,6 +217,17 @@ export function ChatDrawer({
   useEffect(() => {
     if (busy) end.current?.scrollIntoView?.({ block: "end" });
   }, [busy]);
+  // The keyboard opening or closing resizes the visible screen (and with it the drawer): stay on the
+  // newest message if that is where the person was.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      if (atEnd.current) end.current?.scrollIntoView?.({ block: "end" });
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
   useEffect(() => {
     let live = true;
     api<ChatHistory>("/chat/history")
@@ -397,7 +411,9 @@ export function ChatDrawer({
     void run(api<Reply[]>("/chat/press", { method: "POST", body: { data } }));
   }
 
-  return (
+  // In the body, not in the page: the page's pull-to-refresh listens on (and slides) everything inside
+  // it, and a drag in the chat must neither refresh the page nor move the chat.
+  return createPortal(
     <aside
       className="drawer"
       role="dialog"
@@ -420,7 +436,14 @@ export function ChatDrawer({
           ×
         </button>
       </header>
-      <div className="messages" aria-live="polite">
+      <div
+        className="messages"
+        aria-live="polite"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+      >
         {more && (
           <button
             type="button"
@@ -555,6 +578,7 @@ export function ChatDrawer({
           </button>
         )}
       </form>
-    </aside>
+    </aside>,
+    document.body,
   );
 }

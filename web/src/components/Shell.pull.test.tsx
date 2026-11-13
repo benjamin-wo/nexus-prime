@@ -16,6 +16,9 @@ function page(at: string, onRefresh: () => Promise<unknown>) {
     <MemoryRouter initialEntries={[at]}>
       <Shell me={me} onOpenChat={() => {}} onLogout={() => {}} onRefresh={onRefresh}>
         <p>The page</p>
+        <div role="dialog" aria-label="A dialog">
+          <p>Inside the dialog</p>
+        </div>
       </Shell>
     </MemoryRouter>,
   );
@@ -59,6 +62,23 @@ describe("pull to refresh", () => {
     main.dispatchEvent(move);
     expect(move.defaultPrevented).toBe(true);
     expect(main.classList.contains("ptr-active")).toBe(true);
+  });
+
+  it("leaves a touch that starts inside a dialog to the dialog, and still pulls from the page", () => {
+    const onRefresh = vi.fn().mockResolvedValue(undefined);
+    const main = page("/", onRefresh);
+    const inside = screen.getByText("Inside the dialog");
+    fireEvent.touchStart(inside, touch(100));
+    const move = new Event("touchmove", { bubbles: true, cancelable: true });
+    Object.assign(move, touch(260));
+    inside.dispatchEvent(move);
+    fireEvent.touchEnd(inside);
+    expect(move.defaultPrevented).toBe(false);
+    expect(main.classList.contains("ptr-active")).toBe(false);
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    pull(screen.getByText("The page"), 100, 260);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("does nothing for a short pull", () => {

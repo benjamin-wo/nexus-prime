@@ -7,7 +7,10 @@
  * - `--stable-height` holds the screen's height without the keyboard: set on load,
  *   on rotation, and on any resize that isn't the keyboard opening.
  * - `html.keyboard` is set while a text field has focus on a touch screen; the bar
- *   and the floating buttons hide until it closes. */
+ *   and the floating buttons hide until it closes.
+ * - `--vv-height` and `--vv-top` hold the visible screen (what the keyboard leaves,
+ *   and where the browser has panned to) so the chat can fit above the keyboard
+ *   instead of sitting partly under it. */
 
 const NOT_TYPED = new Set(["checkbox", "radio", "button", "submit", "reset", "file", "range", "color", "image"]);
 
@@ -46,13 +49,29 @@ export function watchViewport(win: Window = window): () => void {
     }, 150);
   };
 
+  // The visual viewport is what is left above the keyboard; `innerHeight` and a fixed
+  // `bottom: 0` still count the keyboard on iOS.
+  const vv = win.visualViewport;
+  const follow = () => {
+    if (!vv) return;
+    root.style.setProperty("--vv-height", `${vv.height}px`);
+    root.style.setProperty("--vv-top", `${vv.offsetTop}px`);
+  };
+
   remember();
+  follow();
   win.addEventListener("resize", onResize);
+  vv?.addEventListener("resize", follow);
+  vv?.addEventListener("scroll", follow);
   doc.addEventListener("focusin", onFocusIn);
   doc.addEventListener("focusout", onFocusOut);
   return () => {
     win.clearTimeout(closing);
     win.removeEventListener("resize", onResize);
+    vv?.removeEventListener("resize", follow);
+    vv?.removeEventListener("scroll", follow);
+    root.style.removeProperty("--vv-height");
+    root.style.removeProperty("--vv-top");
     doc.removeEventListener("focusin", onFocusIn);
     doc.removeEventListener("focusout", onFocusOut);
     root.classList.remove("keyboard");
