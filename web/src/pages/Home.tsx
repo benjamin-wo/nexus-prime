@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -166,60 +166,11 @@ function Hero({
   );
 }
 
-/** The width at which the shell swaps its rail for the bottom bar (the same query as in styles.css). */
-const PHONE = "(max-width: 900px)";
-
-function usePhone(): boolean {
-  return useSyncExternalStore(
-    (changed) => {
-      if (typeof window.matchMedia !== "function") return () => undefined;
-      const query = window.matchMedia(PHONE);
-      query.addEventListener("change", changed);
-      return () => query.removeEventListener("change", changed);
-    },
-    () => typeof window.matchMedia === "function" && window.matchMedia(PHONE).matches,
-    () => false,
-  );
-}
-
-/** The box to ask anything or log an expense in words; submitting opens the chat with it. It sits
- * in the Just ask Nexus card on a wide screen and docked above the bottom bar on a phone. */
-function AskForm({ onAsk }: { onAsk: (text: string) => void }) {
-  const [draft, setDraft] = useState("");
-  function ask(event: FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    setDraft("");
-    onAsk(text);
-  }
-  return (
-    <form className="ask" onSubmit={ask}>
-      <label className="sr-only" htmlFor="ask-input">
-        Ask Nexus
-      </label>
-      <input
-        id="ask-input"
-        className="ask-input"
-        value={draft}
-        maxLength={2000}
-        onChange={(e) => setDraft(e.target.value)}
-        placeholder='Just ask Nexus… e.g. "kopi 4.20"'
-      />
-      <button type="submit" className="ask-send" aria-label="Ask" disabled={!draft.trim()}>
-        <Icon name="send" size={18} />
-      </button>
-    </form>
-  );
-}
-
-/** One-tap questions, and on a wide screen the box to ask anything above them; each opens the
- * chat. On a phone the box is docked at the bottom of the page instead (see Home), so the card
- * holds only the questions. */
-function AskPanel({ chips, onAsk, form }: { chips: string[]; onAsk: (text: string) => void; form: ReactNode }) {
+/** One-tap questions; each opens the chat with it. To ask anything else, open the chat with the
+ * Nexus button (the N in the phone's bottom bar, "Ask Nexus" in the desktop rail). */
+function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => void }) {
   return (
     <Block id="ask" title="Just ask Nexus" className="ask-panel">
-      {form}
       <div className="chips" aria-label="Suggested questions">
         {chips.map((c) => (
           <button key={c} type="button" className="ask-chip" onClick={() => onAsk(c)}>
@@ -434,11 +385,8 @@ export function Home({
   const going = (runs.data ?? []).slice(0, 3);
   const detail = trip.data;
   const tripOn = detail && detail.trip.status === "ongoing" ? detail : null;
-  // On a phone the ask box is docked above the bottom bar, sticky at the end of the page (a
-  // sticky box only travels inside its parent, so the page sits in one flex column then).
-  const docked = usePhone();
   return (
-    <div className={docked ? "home home-docked" : "home"}>
+    <div className="home">
       <Hero
         date={today(me.user.timezone)}
         greeting={greeting(me.user.timezone)}
@@ -452,7 +400,7 @@ export function Home({
 
       <div className="today">
         <div className="stack">
-          <GetStarted me={me} />
+          <GetStarted me={me} onLog={onLog} />
           <NeedsYou feed={feed} onSettled={settled} />
           {going.length > 0 && (
             <Block id="working-on" title="Working on" className="working">
@@ -463,11 +411,7 @@ export function Home({
               </ul>
             </Block>
           )}
-          <AskPanel
-            chips={suggestions({ trip: detail, holdings: held })}
-            onAsk={onAsk}
-            form={docked ? null : <AskForm onAsk={onAsk} />}
-          />
+          <AskPanel chips={suggestions({ trip: detail, holdings: held })} onAsk={onAsk} />
         </div>
         <div className="stack">
           <MoneyGlance
@@ -479,11 +423,6 @@ export function Home({
           {!tripOn && <TripGlance detail={trip.isLoading ? undefined : (detail ?? null)} />}
         </div>
       </div>
-      {docked && (
-        <div className="ask-dock">
-          <AskForm onAsk={onAsk} />
-        </div>
-      )}
       {notice && <Toast message={notice} onClose={() => setNotice(null)} />}
     </div>
   );

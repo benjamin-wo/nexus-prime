@@ -32,7 +32,8 @@ function serve({ entries = 0, setup = setupOf() as Setup | Response } = {}) {
   });
 }
 
-const show = (me: Me) => renderWithProviders(<GetStarted me={me} />);
+const onLog = vi.fn();
+const show = (me: Me) => renderWithProviders(<GetStarted me={me} onLog={onLog} />);
 const card = () => screen.findByRole("region", { name: "Get started" });
 const stepOf = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
 const urls = () => vi.mocked(fetch).mock.calls.map(([url]) => String(url));
@@ -105,18 +106,13 @@ describe("GetStarted: each step's state", () => {
     expect(urls()).toContain("/api/transactions?limit=1");
   });
 
-  it("Log one brings the person to the Just ask Nexus box", async () => {
+  it("Log one opens the entry sheet", async () => {
     serve();
-    const input = document.createElement("input");
-    input.id = "ask-input";
-    input.scrollIntoView = vi.fn();
-    document.body.append(input);
+    onLog.mockClear();
     show(meWith());
     await card();
     await userEvent.setup().click(within(stepOf("Log your first expense")).getByRole("button", { name: /Log one/ }));
-    expect(input).toHaveFocus();
-    expect(input.scrollIntoView).toHaveBeenCalled();
-    input.remove();
+    expect(onLog).toHaveBeenCalledOnce();
   });
 });
 

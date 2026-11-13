@@ -1149,14 +1149,13 @@ test("a suggested question on home opens the chat with it", async ({ page }) => 
   await expect(chat.locator(".msg-user").first()).toHaveText("Where did my money go this month?");
 });
 
-test("asking on home opens the chat with the question", async ({ page }) => {
+test("home has no typing box; the Nexus button opens the chat", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  await page.getByRole("textbox", { name: "Ask Nexus", exact: true }).fill("how much on grab?");
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
-  const chat = page.getByRole("dialog", { name: "Chat" });
-  await expect(chat.locator(".msg-user").first()).toHaveText("how much on grab?");
-  await expect(chat.locator(".msg-bot")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Just ask Nexus" })).toBeVisible();
+  await expect(page.locator("#ask-input, .ask-input")).toHaveCount(0);
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
 });
 
 test("departments have their own pages, and old links still work", async ({ page, isMobile }) => {

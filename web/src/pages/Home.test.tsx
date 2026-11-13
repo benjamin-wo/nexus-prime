@@ -173,7 +173,6 @@ describe("Home: the hero's buttons", () => {
     // A quick manual entry beside the chat, for when there's no time to chat.
     await userEvent.click(within(hero).getByRole("button", { name: "Log expense" }));
     expect(onLog).toHaveBeenCalledOnce();
-    expect(screen.getByPlaceholderText(/^Just ask Nexus… e.g./)).toBeInTheDocument();
     expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
     expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
   });
@@ -192,51 +191,25 @@ function screenIs(phone: boolean) {
   );
 }
 
-describe("Home: the ask box", () => {
+describe("Home: the Just ask Nexus card", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("sits in the Just ask Nexus card on a wide screen, above the suggestions", async () => {
-    screenIs(false);
-    serve();
-    const onAsk = vi.fn();
-    const { container } = renderHome(onAsk);
-    const card = await screen.findByRole("region", { name: "Just ask Nexus" });
-    expect(within(card).getAllByRole("textbox")).toHaveLength(1);
-    expect(container.querySelector(".ask-dock")).toBeNull();
-    await userEvent.type(within(card).getByRole("textbox", { name: "Ask Nexus" }), "kopi 4.20{Enter}");
-    expect(onAsk).toHaveBeenCalledExactlyOnceWith("kopi 4.20");
-  });
+  for (const phone of [false, true]) {
+    it(`has suggestion chips and no typing box on a ${phone ? "phone" : "wide screen"}`, async () => {
+      screenIs(phone);
+      serve();
+      const onAsk = vi.fn();
+      const { container } = renderHome(onAsk);
+      const card = await screen.findByRole("region", { name: "Just ask Nexus" });
+      expect(screen.queryByRole("textbox")).toBeNull();
+      expect(container.querySelector(".ask-input, #ask-input, .ask-dock, .home-docked")).toBeNull();
 
-  it("is docked at the bottom of the page on a phone, with the suggestions staying in the card", async () => {
-    screenIs(true);
-    serve();
-    const onAsk = vi.fn();
-    const { container } = renderHome(onAsk);
-    const card = await screen.findByRole("region", { name: "Just ask Nexus" });
-    const dock = container.querySelector<HTMLElement>(".ask-dock")!;
-    expect(dock).not.toBeNull();
-    // One box only, in the dock and not in the card; the dock is the last thing on the page.
-    expect(screen.getAllByRole("textbox", { name: "Ask Nexus" })).toHaveLength(1);
-    expect(within(dock).getByRole("textbox", { name: "Ask Nexus" })).toHaveAttribute("id", "ask-input");
-    expect(within(card).queryByRole("textbox")).toBeNull();
-    expect(container.querySelector(".home")).toHaveClass("home-docked");
-    expect(container.querySelector(".home")!.lastElementChild).toBe(dock);
-    expect(within(card).getByLabelText("Suggested questions")).toBeInTheDocument();
-
-    // Asking from the dock opens the chat with the question, as before, and clears the box.
-    const box = within(dock).getByRole("textbox", { name: "Ask Nexus" });
-    const send = within(dock).getByRole("button", { name: "Ask" });
-    expect(send).toBeDisabled();
-    await userEvent.type(box, "how much on grab?");
-    await userEvent.click(send);
-    expect(onAsk).toHaveBeenCalledExactlyOnceWith("how much on grab?");
-    expect(box).toHaveValue("");
-
-    // A suggestion in the card still opens the chat too.
-    const chip = within(card).getAllByRole("button")[0];
-    await userEvent.click(chip);
-    expect(onAsk).toHaveBeenLastCalledWith(chip.textContent);
-  });
+      // A suggestion still opens the chat with it.
+      const chip = within(card).getAllByRole("button")[0];
+      await userEvent.click(chip);
+      expect(onAsk).toHaveBeenCalledExactlyOnceWith(chip.textContent);
+    });
+  }
 });
 
 describe("Home: Needs you", () => {
