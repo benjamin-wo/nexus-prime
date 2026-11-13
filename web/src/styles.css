@@ -611,6 +611,9 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .drawer header, .drawer form { padding: var(--space-4); border-bottom: 1px solid var(--border-subtle); display: flex; gap: var(--space-2); align-items: center; }
 .drawer form { border-bottom: 0; border-top: 1px solid var(--border-subtle); }
 .drawer form { flex-wrap: wrap; }
+/* With the keyboard up, the drawer is exactly the screen that is left: the form sits on the keyboard and the
+   messages scroll within what shows. The values come from viewport.ts. */
+html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-height, 100%); }
 .drawer form .input { flex: 1; min-width: 0; width: auto; }
 /* Send and the mic are the same size, so the row doesn't shift as one turns into the other. */
 .chat-action { min-width: 72px; }
@@ -624,7 +627,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
 @keyframes rec-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .chat-rec-dot { animation: none; } }
 .drawer header h2 { flex: 1; }
-.messages { overflow-y: auto; padding: var(--space-4); display: grid; gap: var(--space-3); align-content: start; }
+.messages { overflow-y: auto; overscroll-behavior: contain; padding: var(--space-4); display: grid; gap: var(--space-3); align-content: start; }
 .msg { padding: var(--space-3); border-radius: 10px; max-width: 90%; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg-user { justify-self: end; background: var(--accent-soft); border: 1px solid var(--accent-border); }
 .msg-bot { justify-self: start; position: relative; margin-left: 36px; max-width: calc(90% - 36px); background: var(--bg-card); border: 1px solid var(--border-card); }
@@ -2203,6 +2206,8 @@ a.photo-credit:hover { text-decoration: underline; }
 .sheet-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--space-4); background: var(--overlay); animation: fade var(--t-standard); }
 /* While a sheet is open the page behind it stays put, even as the keyboard opens. */
 body:has(.sheet-backdrop) .main-viewport { overflow: hidden; }
+/* The chat covers the whole screen on a phone: the page behind stays put too, so a drag in the chat can't scroll it. */
+@media (max-width: 480px) { body:has(.drawer) .main-viewport { overflow: hidden; } }
 .sheet-dialog {
   display: flex; flex-direction: column; width: min(640px, calc(100vw - 48px)); max-height: 85vh; max-height: 85dvh; overflow: hidden;
   border-radius: 20px; border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-modal);

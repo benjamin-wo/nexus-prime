@@ -25,7 +25,7 @@ function show(area: HTMLElement, pull: number, dragging: boolean): void {
 /**
  * Pull-to-refresh for a scrolling area: pulling down with one finger while it is scrolled to the top drags
  * the page down, and letting go past `PULL_THRESHOLD` calls `onRefresh`. A mostly sideways move, or one that
- * starts while the area is scrolled, is left to the page. The area gets `--pull` and `--pull-ratio` (and
+ * starts while the area is scrolled, is left to the page, and so is one that starts inside a dialog. The area gets `--pull` and `--pull-ratio` (and
  * the classes `ptr-active` and `ptr-drag`) for the stylesheet to draw the drag; nothing re-renders while the
  * finger moves, only the status changes.
  *
@@ -97,6 +97,8 @@ export function usePullToRefresh(
     const onStart = (e: TouchEvent) => {
       tracking = false;
       if (busy.current || e.touches.length !== 1 || el.scrollTop > 0 || !latest.current.allowed()) return;
+      // Only a touch that starts on the page pulls it: one in a dialog (the chat, a sheet) is that dialog's own.
+      if (e.target instanceof Element && e.target.closest('[role="dialog"]')) return;
       window.clearTimeout(timer.current);
       tracking = true;
       startX = e.touches[0].clientX;
