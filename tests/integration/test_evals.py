@@ -20,7 +20,7 @@ from nexus.application.ports import LedgerQuery
 from nexus.domain.ledger import Direction
 from nexus.evals import clips, photos, seed
 from nexus.evals.cases import CASES, WRITES, Case
-from nexus.evals.runner import FixedRates, run_cases
+from nexus.evals.runner import FixedRates, clock_of, run_cases
 from nexus.evals.web import CannedLookup
 from nexus.infra.db.uow import SqlUnitOfWork
 from tests.fakes import call, say, scripted
@@ -532,3 +532,145 @@ async def test_only_the_web_cases_run_on_the_clock_a_live_run_gives(engine: Asyn
     # And the pages the canned lookup cites reach the reply as source buttons.
     web = next(r for r in results if r.case.id == "web-gold-price")
     assert web.turns[0].source_links == ["https://news.example.com/nexus-evals/latest"]
+
+
+async def test_the_november_seed_matches_the_money_math_figures(engine: AsyncEngine) -> None:
+    """The figures the money-math cases expect, worked out again from the ledger by the same
+    code the tool uses, not copied from the seed's constants."""
+    from nexus.application.month_outlook import month_outlook
+
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(engine)
+
+    user = (await seed.seed_user(uow, 780, november=True)).user
+    now = seed.NOV_NOW
+    o = await month_outlook(uow, FixedRates(), user, now=now, adjustments=[(seed.NOV_CARRY, "oct")])
+    assert o.received.amount == Decimal(seed.NOV_RECEIVED)
+    assert o.spent.amount == Decimal(seed.NOV_SPENT)
+    assert o.net_so_far.amount == Decimal(seed.NOV_NET_SO_FAR)
+    assert (o.expected_in.amount, o.expected_out.amount) == (
+        Decimal(seed.NOV_EXPECTED_IN),
+        Decimal(seed.NOV_EXPECTED_OUT),
+    )
+    assert o.projected_net.amount == Decimal(seed.NOV_PROJECTED)
+    assert o.overall.amount == Decimal(seed.NOV_OVERALL)
+    assert o.overall.amount - Decimal(seed.NOV_CARRY) == o.projected_net.amount
+    assert o.projected_net.amount - Decimal(500) == Decimal(seed.NOV_AFTER_DINNER)
+    assert o.overall.amount + Decimal(150) == Decimal(seed.NOV_WITH_GIFT)
+    august = await month_outlook(uow, FixedRates(), user, now=now, month="2026-08")
+    assert august.net_so_far.amount == Decimal(seed.AUG_NET)
+    # The default seed is untouched by the option: nothing in November, no extra bills.
+    plain = (await seed.seed_user(uow, 781)).user
+    assert (await month_outlook(uow, FixedRates(), plain, now=now)).received.amount == 0
+    async with uow() as tx:
+        assert {b.name for b in await tx.planning.list_bills(plain.id)} == {"Rent", "Singtel"}
+
+
+def test_the_money_math_cases_are_wired_to_the_figures_and_the_clock() -> None:
+    cases = [c for c in CASES if c.area == "money-math"]
+    assert 8 <= len(cases) <= 12
+    assert {c.id for c in cases} >= {
+        "money-math-forgot-payday",
+        "money-math-sum",
+        "money-math-split-three",
+        "money-math-past-month",
+        "money-math-electricity-no-amount",
+    }
+    for case in cases:
+        assert case.amounts, case.id  # every case states the figure it wants
+        assert case.calls or case.used or case.reply, case.id
+    assert clock_of(next(c for c in cases if c.november), None) == seed.NOV_NOW
+    assert clock_of(next(c for c in cases if not c.november), None) == seed.NOW
+    web = next(c for c in CASES if c.id == "web-gold-price")
+    live = datetime(2027, 3, 4, 6, 30, tzinfo=UTC)
+    assert clock_of(web, live) == live and clock_of(web, None) == seed.NOW
+
+
+async def test_the_money_math_cases_are_graded_on_the_tool_and_the_exact_figure(
+    engine: AsyncEngine,
+) -> None:
+    carry = [{"amount": "+2308.42", "label": "net from October"}]
+    nothing = (say("Nothing to remember."),) * 2  # the memory writer, after each turn
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        # Right: the tool, with the carry-over; the correction is answered with the same
+        # figure (payday was already in it), not the 4000 added again.
+        "money-math-forgot-payday": lambda: scripted(
+            call("month_outlook", adjustments=carry),
+            say("Overall about +5,300.64 (payday on 25 Nov already counted)."),
+            *nothing,
+            say("Payday (4,798.00 on 25 Nov) was already in it: still +5,300.64 overall."),
+            *nothing,
+        ),
+        "money-math-sum": lambda: scripted(
+            call("calculate", expression="1,234.50 + 987.25 - 42"),
+            say("2,179.75"),
+            *nothing,
+        ),
+        "money-math-split-three": lambda: scripted(
+            call("calculate", expression="186.40 / 3"), say("62.13 each."), *nothing
+        ),
+        "money-math-past-month": lambda: scripted(
+            call("month_outlook", month="2026-08"), say("August's net was +4,753.22."), *nothing
+        ),
+        # Wrong: the right tool, then the figure rounded by the model; and no tool at all.
+        "money-math-left-to-spend": lambda: scripted(
+            call("month_outlook"), say("About 3,000 left."), *nothing
+        ),
+        "money-math-compare": lambda: scripted(say("Yes, it's more."), *nothing),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in (
+        "money-math-forgot-payday",
+        "money-math-sum",
+        "money-math-split-three",
+        "money-math-past-month",
+    ):
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+    assert results["money-math-left-to-spend"].failures == [
+        f"reply lacks the figure {seed.NOV_PROJECTED}"
+    ]
+    assert results["money-math-compare"].failures == [
+        "no calculate call with any arguments",
+        "reply lacks the figure 2350.75",
+    ]
+    first = results["money-math-forgot-payday"].turns[0]
+    assert first.calls[0][0] == "month_outlook"
+
+
+async def test_a_double_counted_payday_fails_the_correction_case(engine: AsyncEngine) -> None:
+    nothing = (say("Nothing to remember."),) * 2
+    script = scripted(
+        call("month_outlook", adjustments=[{"amount": "+2308.42", "label": "oct"}]),
+        say("Overall +5,300.64."),
+        *nothing,
+        say("Adding the 4,000: +9,300.64 overall."),  # the old bug in a new form
+        *nothing,
+    )
+    [result] = await run_cases(
+        engine, lambda case: script, _only("money-math-forgot-payday"), concurrency=1
+    )
+    assert result.failures == [
+        f"reply lacks the figure {seed.NOV_OVERALL}",
+        "reply states 9300.64, which is wrong",
+    ]
+
+
+async def test_never_calling_the_tool_fails_the_correction_case(engine: AsyncEngine) -> None:
+    nothing = (say("Nothing to remember."),) * 2
+    script = scripted(
+        say("No leeway: you're already under."),
+        *nothing,
+        say("Right, payday's 25 Nov, 4,798.00."),  # the user's real transcript
+        *nothing,
+    )
+    [result] = await run_cases(
+        engine, lambda case: script, _only("money-math-forgot-payday"), concurrency=1
+    )
+    assert "never called month_outlook" in result.failures
+    assert "said 'no leeway'" in result.failures
+    assert f"reply lacks the figure {seed.NOV_OVERALL}" in result.failures

@@ -1,10 +1,11 @@
 """What an evaluation case expects of the data afterwards. Each check reads the
 user's data through the use cases and says, in words, what it looked for."""
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -46,6 +47,21 @@ class World:
 
     def local_day(self, tx: Transaction) -> date:
         return tx.occurred_at.astimezone(ZoneInfo(self.user.timezone)).date()
+
+
+# A number as people write it in a reply: "4,798.00", "4798", "2,308.42", "62.13".
+_NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?")
+
+
+def mentions_amount(reply: str, amount: str | Decimal) -> bool:
+    """Whether the reply states this figure exactly: "4,798", "4798.00" and "SGD 4,798.00" all
+    state 4798.00. The sign is ignored ("short by 1,672.78" states -1672.78). A figure
+    rounded to a whole number ("about 5,301" for 5300.64) is a different figure."""
+    try:
+        wanted = abs(Decimal(str(amount).replace(",", "")))
+    except InvalidOperation:
+        return False
+    return any(Decimal(m.group().replace(",", "")) == wanted for m in _NUMBER.finditer(reply))
 
 
 class Check(Protocol):

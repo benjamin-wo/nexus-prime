@@ -15,14 +15,17 @@ from nexus.agent.tools import ToolContext, _rates
 from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import email as email_cases
+from nexus.application import month_outlook as outlook_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
+from nexus.application.cashflow import ExpectedKind
 from nexus.application.categories import list_categories
 from nexus.application.ports import LedgerQuery
 from nexus.application.wallet_figures import month_figures
 from nexus.application.wallets import list_wallets
 from nexus.domain.ledger import Direction, Wallet, WalletKind
 from nexus.domain.money import Money
+from nexus.domain.planning import next_month_start
 
 log = logging.getLogger(__name__)
 
@@ -30,21 +33,38 @@ MAX_CHARS = 2000
 TOP_CATEGORIES = 3
 RECENT = 5
 AHEAD_DAYS = 7
+# The month-end line names at most this many items (payday first); the cap never cuts it.
+MONTH_END_ITEMS = 5
 
 
 async def money_snapshot(ctx: ToolContext) -> str:
     """The snapshot as plain lines, or "" if nothing could be read."""
-    parts: list[str] = []
-    for build in (_cards, _emails, _month, _wallets, _budgets, _ahead, _ious, _recent):
+    parts: list[tuple[str, bool]] = []
+    # In this order. The month-end line is kept whole when the cap cuts: without it the model
+    # can't see a payday more than a week away, and works out "left this month" without it.
+    for build in (_cards, _emails, _month, _month_end, _wallets, _budgets, _ahead, _ious, _recent):
         try:
             text = await build(ctx)
         except Exception:
             log.exception("snapshot part failed: %s", build.__name__)
             continue
         if text:
-            parts.append(text)
-    text = "\n".join(parts)
-    return text if len(text) <= MAX_CHARS else text[: MAX_CHARS - 1] + "…"
+            parts.append((text, build is _month_end))
+    return _fit(parts)
+
+
+def _fit(parts: list[tuple[str, bool]]) -> str:
+    """The parts as lines, cut from the end to MAX_CHARS, but never a part that is kept."""
+    over = sum(len(t) for t, _ in parts) + len(parts) - 1 - MAX_CHARS
+    kept: list[str] = []
+    for text, keep in reversed(parts):
+        if over > 0 and not keep:
+            if len(text) <= over:  # all of it goes, with its line break
+                over -= len(text) + 1
+                continue
+            text, over = text[: len(text) - over - 1] + "…", 0
+        kept.append(text)
+    return "\n".join(reversed(kept))
 
 
 def _money(amount: Money) -> str:
@@ -72,6 +92,38 @@ async def _month(ctx: ToolContext) -> str:
     if unconverted:
         line += " Not converted (no rate): " + ", ".join(map(_money, unconverted)) + "."
     return line
+
+
+async def _month_end(ctx: ToolContext) -> str:
+    """What is still expected from today to month end, so a payday a fortnight away is seen
+    (the 7-day line below only shows the next week). Payday first, then by date."""
+    today = ctx.today()
+    last = next_month_start(today) - timedelta(days=1)
+    found = await cashflow_cases.expected_between(
+        ctx.uow, _rates(ctx), ctx.user, today, last, now=ctx.now
+    )
+    items = outlook_cases.items_of(found)
+    if not items:
+        return f"Expected by month end ({last:%-d %b}): nothing, no bills, subscriptions or payday."
+    sums = outlook_cases.sum_expected(items, ctx.user.home_currency)
+    ranked = sorted(items, key=lambda i: (i.kind is not ExpectedKind.SALARY, i.day, i.name))
+    named = []
+    for i in ranked[:MONTH_END_ITEMS]:
+        if i.amount is None:
+            amount = " no amount"
+        else:
+            amount = (
+                f" {'+' if i.direction is Direction.IN else '-'}{outlook_cases.plain(i.amount)}"
+            )
+        what = "payday" if i.kind is ExpectedKind.SALARY else i.name
+        named.append(f"{what} {i.day:%-d %b}{amount}")
+    if len(ranked) > MONTH_END_ITEMS:
+        named.append(f"+{len(ranked) - MONTH_END_ITEMS} more")
+    return (
+        f"Expected by month end ({ctx.user.home_currency}; bills, subscriptions and payday only, "
+        f"not everyday spending): in {outlook_cases.plain(sums.money_in)}, "
+        f"out {outlook_cases.plain(sums.money_out)} ({', '.join(named)})."
+    )
 
 
 async def _cards(ctx: ToolContext) -> str:

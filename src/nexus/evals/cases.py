@@ -139,6 +139,13 @@ class Case:
     never_say: tuple[str, ...] = ()  # in no reply at all
     max_reply: int | None = None  # the last reply's length at most
     max_lines: int | None = None  # the last reply's non-empty lines at most
+    # Figures the last reply must state (a tuple: any of), however written: "4,798", "4798.00".
+    # Worked out from the seed (see ``seed``), never by the model.
+    amounts: tuple[str | tuple[str, ...], ...] = ()
+    never_amounts: tuple[str, ...] = ()  # figures no reply states (a double count)
+    used: tuple[str, ...] = ()  # tools some turn must call (``calls`` is the last turn's)
+    # Starts on 13 November, with the start of November in the ledger (see ``seed``).
+    november: bool = False
     never_match: tuple[str, ...] = ()  # regexes (any case) that match no reply at all
     last_never_match: tuple[str, ...] = ()  # regexes (any case) the last turn's replies avoid
     at_most: tuple[AtMost, ...] = ()  # caps on tool calls in the last turn
@@ -2474,4 +2481,124 @@ CASES: tuple[Case, ...] = (
     _no_web("percent", "what's 18% of 2350", reply=("423",)),
     _no_web("capital", "what's the capital of australia", reply=("canberra",)),
     _no_web("compound-interest", "explain compound interest"),
+    # --- money math: sums in code, never in the model's head ---------------------------
+    # The cases marked ``november`` start on 13 November 2026 with payday (4,798.00) on the
+    # 25th still ahead: month so far -1,672.78, still expected in 4,798.00 and out 133.00,
+    # so the month ends at 2,992.22 before anything the user adds. The figures are in ``seed``
+    # and a test recomputes them. A reply must state the figure, however it writes it.
+    Case(
+        "money-math-forgot-payday",
+        "money-math",
+        _t(
+            "+2308.42 (net from oct) how much leeway do i have to have positive net overall?",
+            "you forgot the 4000+ coming in at the end of the month",
+        ),
+        november=True,
+        unchanged=True,
+        used=("month_outlook",),
+        # The overall figure, payday counted once: not the 4000 or the payday added again.
+        amounts=(seed.NOV_OVERALL,),
+        never_amounts=("9300.64", "10098.64"),
+        never_say=("no leeway",),
+    ),
+    Case(
+        "money-math-left-to-spend",
+        "money-math",
+        _t("how much can i still spend this month and stay positive?"),
+        november=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        amounts=(seed.NOV_PROJECTED,),
+    ),
+    Case(
+        "money-math-carry-over",
+        "money-math",
+        _t("i've got 2,308.42 left over from october. how much leeway to end november positive?"),
+        november=True,
+        unchanged=True,
+        calls=(Call("month_outlook", {"adjustments": Has("308.42")}),),
+        amounts=(seed.NOV_OVERALL,),
+    ),
+    Case(
+        "money-math-two-amounts",
+        "money-math",
+        _t(
+            "i've got 2,308.42 left over from october and my cousin is paying me back 150 on "
+            "the 20th. how much leeway do i have to end positive?"
+        ),
+        november=True,
+        unchanged=True,
+        calls=(Call("month_outlook", {"adjustments": Has("150")}),),
+        amounts=(seed.NOV_WITH_GIFT,),
+    ),
+    Case(
+        "money-math-afford-dinner",
+        "money-math",
+        _t("can i afford a 500 dinner this month?"),
+        november=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        # What is left after the dinner, or the headroom before it.
+        amounts=((seed.NOV_AFTER_DINNER, seed.NOV_PROJECTED),),
+    ),
+    Case(
+        "money-math-electricity-no-amount",
+        "money-math",
+        _t("what bills are still to come this month, and where do i end up by month end?"),
+        november=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        reply=("electricity",),
+        amounts=(seed.NOV_PROJECTED,),
+    ),
+    Case(
+        "money-math-payday-visible",
+        "money-math",
+        _t("how much is my next payday and when is it?"),
+        november=True,
+        unchanged=True,
+        reply=(("25 nov", "nov 25", "25th"),),
+        amounts=(seed.NOV_PAYDAY,),
+    ),
+    Case(
+        "money-math-past-month",
+        "money-math",
+        _t("what was my net in august?"),
+        unchanged=True,
+        calls=(Call("month_outlook", {"month": "2026-08"}),),
+        amounts=(seed.AUG_NET,),
+    ),
+    Case(
+        "money-math-sum",
+        "money-math",
+        _t("what's 1,234.50 + 987.25 - 42"),
+        unchanged=True,
+        calls=(Call("calculate"),),
+        amounts=("2179.75",),
+    ),
+    Case(
+        "money-math-split-three",
+        "money-math",
+        _t("split 186.40 three ways"),
+        unchanged=True,
+        calls=(Call("calculate"),),
+        forbid=("split_bill",),
+        amounts=("62.13",),
+    ),
+    Case(
+        "money-math-compare",
+        "money-math",
+        _t("is 2,308.42 more than 1,950.75 plus 400?"),
+        unchanged=True,
+        calls=(Call("calculate"),),
+        amounts=("2350.75",),
+    ),
+    Case(
+        "money-math-gst",
+        "money-math",
+        _t("what's 9% gst on 1,250"),
+        unchanged=True,
+        calls=(Call("calculate"),),
+        amounts=("112.50",),
+    ),
 )

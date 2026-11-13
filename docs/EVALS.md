@@ -29,6 +29,35 @@ It prints each case's pass rate in both, side by side, and flags the cases whose
 
 **Use:** run the areas a change touches with `--repeat 3`, and before calling a failure a regression, run main the same way and compare. A case that is flaky or always failing on main is not the branch's doing; a case that falls by 2 or more out of 3 or 4 is.
 
+## Money math (13 November 2026)
+
+The `money-math` area (`--area money-math`, 12 cases) checks that sums are done by the tools and not in the model's head, after a user was told "No leeway" for a month that was positive once the 25 November payday was counted, and the "correction" got no new figure. Each case wants the right tool (`calls` for the last turn, `used` for any turn) and a reply that states the exact figure, worked out in code from the seed (`amounts`: any way of writing it counts, "4,798", "4798.00" or "SGD 4,798.00", but a rounded figure does not; `never_amounts` is a figure no reply may state, a double count). Nothing here is checked against what the model says it computed.
+
+Seven cases start on a different clock: `november=True` (the seed's `NOV_NOW`, Friday 13 November 2026, 2pm) gives the user the first twelve days of November (rent 1,800.00, 76.40, 18.90, 9.50 and 17.98 spent; 250.00 freelance income), a usual salary of 4,798.00 (payday the 25th), Singtel 45.00 on the 28th, a gym membership of 88.00 on the 30th and an electricity bill on the 20th with no amount. So: received 250.00, spent 1,922.78, net so far -1,672.78; still expected in 4,798.00 and out 133.00; **projected month-end net 2,992.22**. The default seed (28 September) has nothing left to come in September, so it would not test this. A test recomputes every figure from the ledger (`test_the_november_seed_matches_the_money_math_figures`).
+
+| Case | Asks | Wants |
+|---|---|---|
+| `money-math-forgot-payday` | the real two-turn chat: "+2308.42 (net from oct) how much leeway do i have to have positive net overall?", then "you forgot the 4000+ coming in at the end of the month" | `month_outlook` called; the overall figure 5,300.64 (2,992.22 + 2,308.42, payday counted once); never 9,300.64 or 10,098.64 (a double count); never "no leeway" |
+| `money-math-left-to-spend` | how much can I still spend this month and stay positive | `month_outlook`; 2,992.22 |
+| `money-math-carry-over` | 2,308.42 left over from October, leeway to end November positive | `month_outlook` with the amount in `adjustments`; 5,300.64 |
+| `money-math-two-amounts` | the carry-over and 150 expected on the 20th | `adjustments` with the 150; 5,450.64 |
+| `money-math-afford-dinner` | can I afford a 500 dinner this month | `month_outlook`; 2,492.22 (left after it) or 2,992.22 |
+| `money-math-electricity-no-amount` | what bills are still to come, and where do I end up | `month_outlook`; names Electricity; 2,992.22 |
+| `money-math-payday-visible` | how much is my next payday and when | no tool needed (it is in the snapshot): 4,798.00 and the 25th |
+| `money-math-past-month` (28 September clock) | what was my net in August | `month_outlook` with `month` 2026-08; 4,753.22 |
+| `money-math-sum` | what's 1,234.50 + 987.25 - 42 | `calculate`; 2,179.75 |
+| `money-math-split-three` | split 186.40 three ways | `calculate`, no `split_bill`; 62.13 |
+| `money-math-compare` | is 2,308.42 more than 1,950.75 plus 400 | `calculate`; 2,350.75 |
+| `money-math-gst` | what's 9% gst on 1,250 | `calculate`; 112.50 |
+
+The cases were written and graded offline with a scripted model, and have not been scored against a real model yet. To run just this area against a model (needs `OPENROUTER_API_KEY` and `EVAL_DATABASE_URL`):
+
+```
+python -m nexus.evals --model deepseek/deepseek-v4.1-flash --area money-math --repeat 3
+```
+
+Run the same on main for comparison (the cases are the same; main has neither tool, so expect the tool checks to fail there) and use `compare` as above.
+
 ## Web search in evals
 
 The `web_search` tool works in evals. By default it is **canned**: offline, free and the same every time. Every question gets one short made-up answer that cites a single made-up page (`news.example.com`, dated the eval clock's day) with `[1]`, and `CannedLookup` (`src/nexus/evals/web.py`) remembers each question asked. The `web` area (`--area web`) has 20 cases that need a search (weather, news, exchange rate, prices, MRT status, opening hours, F1, COE, gold, events, visa rules, Changi T5, savings rates, console prices, sunset, PSI, a phone launch, SORA, the Causeway) and 3 that must not search (a percentage, a capital city, compound interest). Each searching case wants a `web_search` call with a key word in the question, at most 2 searches (3 for `web-savings-rates`, which compares rates across banks), and no change to the user's data or trips. The two that ask what a product costs (`web-console-price`, `web-phone-price`) want a `product_prices` call with a key word in its `query` instead (at most 2), since that tool answers shop prices; they still check for source link buttons. The cases that cite a source (`cites=True` in `cases.py`) check two things. The reply text names where it came from, loosely: any of "source", "per ", "according to", "http" or, for the canned page, "example" ("per HardwareZone, 11 May" passes). And the last reply carries at least one source link button (`Case.source_buttons`): a web answer's links come as `src:` reply buttons, not as addresses in the text, so a model that skipped the tool or whose search cited nothing fails here whatever it wrote. The runner keeps each turn's last reply's button data (`TurnLog.buttons`, `TurnLog.source_links`) for this.

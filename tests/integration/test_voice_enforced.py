@@ -32,8 +32,12 @@ pytestmark = pytest.mark.integration
 # on purpose only (and know that it invalidates every cached prefix). Last changed by the
 # rename of the assistant to Nexus ("Kaya" became "Nexus", "a personal finance assistant"
 # became "an AI lifestyle manager"; the two are the only differences from the text before).
-DEFAULT_PREFIX_SHA256 = "833626dbc653252636a72c54fbfb522d4157c2ee292814ba54a611c46f290bc5"
-DEFAULT_PREFIX_LENGTH = 13513
+# Changed again by the money-arithmetic rule ("Money arithmetic only through month_outlook or
+# calculate", 718 characters, after the first rule) and by the cashflow skill's line in the skill
+# index (its description and tools, 169 characters, now naming leeway, left to spend and
+# month_outlook): taking those two out gives the text before, hash 833626db... (13513).
+DEFAULT_PREFIX_SHA256 = "72858f9b4d9fbba11634394a23dd37104a693b656ce616e410a2ef8192130540"
+DEFAULT_PREFIX_LENGTH = 14400
 
 
 def prefix_of(prompt: str) -> str:
@@ -83,6 +87,7 @@ async def test_the_default_prompt_is_byte_for_byte_what_it_was(
     assert "a light touch of humour when it fits" in prompt
     assert '"4.50 at Kopi Corner ✅"' in prompt
     assert "(✅ done, ⚠️ near a limit, 🎉 a win)" in prompt
+    assert "Money arithmetic only through month_outlook or calculate" in prompt
     # Nothing is added for this user, at the end either: the prompt ends at the clock.
     assert "Reply in the user's chosen voice" not in prompt
     assert prompt.splitlines()[-1].startswith("Now: ")
@@ -107,6 +112,7 @@ async def test_a_chosen_voice_gets_a_neutral_persona_and_no_emoji_examples(
     assert '"4.50 at Kopi Corner"' in prompt
     assert "Emoji only as the voice block allows" in prompt
     assert prompt.count("How you talk") == 1
+    assert "Money arithmetic only through month_outlook or calculate" in prompt  # every voice
 
 
 @pytest.mark.parametrize("voice", NON_DEFAULT, ids=name)

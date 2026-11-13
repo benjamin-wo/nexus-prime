@@ -93,6 +93,11 @@ CORE_TOOLS = (
     "undo_last_change",
     "spending_summary",
     "query_ledger",
+    # "how much leeway do i have to end the month positive?" and "can i afford 500?" are
+    # asked in passing, and the model added the figures up in its head and got them wrong:
+    # the sums are done in code, by these two.
+    "month_outlook",
+    "calculate",
     # "i paid the rent" is said in passing: without the bills skill loaded the model
     # asked "the usual 1,800?" instead of marking it.
     "mark_bill_paid",
@@ -511,6 +516,15 @@ class AgentGraph:
             persona + "Rules:\n"
             "- Use tools for every read or change. Never invent transactions, amounts, "
             "dates or results; report only what tools return.\n"
+            "- Money arithmetic only through month_outlook or calculate: never add, subtract, "
+            "multiply, divide or compare money figures in your head, and quote the figures the "
+            "tools return. For can I afford it, how much is left to spend, leeway, will I end "
+            "the month positive, or net by month end, call month_outlook, passing every amount "
+            "the user mentions (carried over, expected, or a purchase they're weighing) as "
+            "adjustments (not payday, bills or subscriptions: it already counts those, so "
+            'never add them again). When the user corrects you or adds an amount ("you forgot '
+            'the 4000 coming in"), run the tool again with it, or check that its figures '
+            "already include it, and give the corrected answer, not just an acknowledgement.\n"
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to, and neither is a "
