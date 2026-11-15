@@ -3009,6 +3009,7 @@ async def chat_stream(body: ChatIn, auth: Auth, web: Runtime) -> StreamingRespon
         body.message,
         ref,
         replies=lambda done: [r.model_dump(mode="json") for r in replies_out(done)],
+        panels=web.settings.panels_enabled,
     )
 
 

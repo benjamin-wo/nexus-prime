@@ -35,7 +35,7 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
-from nexus.agent import kernel, open_items, progress
+from nexus.agent import kernel, open_items, panels, progress
 from nexus.agent.confirmation import combine
 from nexus.agent.image_look import acts
 from nexus.agent.open_items import OpenItem
@@ -1099,6 +1099,7 @@ class AgentGraph:
                 if "user_id" in call["args"]:
                     log.warning("dropped model-supplied user_id on %s", call["name"])
                 started = time.monotonic()
+                opened: list[panels.PanelRef] = []
                 await progress.report(call["name"], "running")
                 try:
                     result = await run_tool(spec, ctx, dict(call["args"]))
@@ -1111,6 +1112,11 @@ class AgentGraph:
                     # A tool's "Error: ..." is the model's to fix (a bad argument, a
                     # missing thing): counted, so a tool the model keeps misusing shows.
                     refused = content.startswith("Error:")
+                    if not refused:
+                        name = call["name"]
+                        # Only a tool that answered opens a panel, and only a kind the
+                        # registry gives it.
+                        opened = [p for p in result.panels or [] if panels.opened_by(name, p)]
                     if not refused and call["name"] in MENU_OF:
                         menu_added = await self._show_in_menu(ctx, MENU_OF[call["name"]])
                     ops.emit(
@@ -1135,8 +1141,10 @@ class AgentGraph:
                     )
                     if not from_kernel:
                         mistakes.tool_error(call["name"], type(exc).__name__, crashed=True)
-                    content, wrote = "Error: something went wrong running that.", False
+                    content, wrote, opened = "Error: something went wrong running that.", False, []
                 await progress.report(call["name"], "done")
+                for panel in opened:
+                    await progress.report_panel(panel)
             kwargs: dict[str, Any] = {WROTE: wrote}
             if buttons:
                 kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]

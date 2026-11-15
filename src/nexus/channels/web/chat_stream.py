@@ -3,6 +3,11 @@
 Frames, each ``event: <name>`` and one line of JSON as ``data``:
 
 - ``step``    ``{"label": "Logging the expense", "state": "running" | "done"}``
+- ``panel.upsert``  a domain panel a tool that answered opened (ADR 0001), sent after the
+  tool's ``done`` step and before the reply: ``{"panel_id": "travel.trip_budget:<id>",
+  "kind", "version", "params", "topic", "as_of" (ISO 8601, UTC), "message_id" (the turn's
+  ref)}``. The same ``panel_id`` again updates that panel. Only when panels are switched on
+  (``settings.panels_enabled``); off, the stream is what it was.
 - ``replies`` the same list ``POST /api/chat`` returns (the last frame of a turn)
 - ``error``   ``{"detail": "..."}`` (the last frame, when the turn failed)
 
@@ -19,10 +24,12 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi.responses import StreamingResponse
 
+from nexus.agent.panels import PanelRef
 from nexus.agent.progress import Step
 from nexus.agent.service import AgentService, Reply
 from nexus.domain.errors import NexusError
@@ -56,17 +63,26 @@ def stream_turn(
     ref: str,
     *,
     replies: Callable[[list[Reply]], list[dict[str, Any]]],
+    panels: bool = False,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> StreamingResponse:
     """Run the turn in the background and stream its steps and replies. ``replies`` turns
-    the service's replies into the JSON-ready list ``POST /api/chat`` sends."""
+    the service's replies into the JSON-ready list ``POST /api/chat`` sends. ``panels`` is
+    ``settings.panels_enabled``: when off, no panel frame is sent. ``clock`` says when a
+    panel's data was read."""
     queue: asyncio.Queue[Frame | None] = asyncio.Queue()
 
     async def on_step(step: Step) -> None:
         queue.put_nowait(("step", {"label": step.label, "state": step.state}))
 
+    async def on_panel(panel: PanelRef) -> None:
+        queue.put_nowait(("panel.upsert", panel.event(ref, clock().astimezone(UTC))))
+
     async def turn() -> None:
         try:
-            done = await service.handle_text(user, message, ref, on_step=on_step)
+            done = await service.handle_text(
+                user, message, ref, on_step=on_step, on_panel=on_panel if panels else None
+            )
             queue.put_nowait(("replies", replies(done)))
         except NexusError as exc:
             queue.put_nowait(("error", {"detail": str(exc)}))

@@ -7,6 +7,9 @@ passes a sink to ``AgentService.handle_text``; the graph reports to whichever si
 running turn has (a context variable, so the graph's own state and replies are untouched).
 With no sink, reporting does nothing: Telegram and every other caller never notice.
 
+Panels (ADR 0001) go the same way, on a sink of their own: a tool that answered reports
+the panels it opened, and the graph passes each to ``report_panel`` once the tool is done.
+
 A stop request is read the same way: the graph asks ``stop_requested()`` between steps.
 """
 
@@ -16,6 +19,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal
+
+from nexus.agent.panels import PanelRef
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +36,7 @@ class Step:
 
 
 type StepSink = Callable[[Step], Awaitable[None]]
+type PanelSink = Callable[[PanelRef], Awaitable[None]]
 
 GENERIC = "Working on it"
 
@@ -151,19 +157,26 @@ def label_for(tool: str) -> str:
 
 
 _sink: ContextVar[StepSink | None] = ContextVar("turn_step_sink", default=None)
+_panel_sink: ContextVar[PanelSink | None] = ContextVar("turn_panel_sink", default=None)
 _stop: ContextVar[Callable[[], bool] | None] = ContextVar("turn_stop", default=None)
 
 
 @contextmanager
-def watching(sink: StepSink | None, stop: Callable[[], bool] | None = None) -> Iterator[None]:
-    """For the turn run inside: report its steps to ``sink`` and ask ``stop`` whether the
-    user wants it ended."""
+def watching(
+    sink: StepSink | None,
+    stop: Callable[[], bool] | None = None,
+    panels: PanelSink | None = None,
+) -> Iterator[None]:
+    """For the turn run inside: report its steps to ``sink``, its panels to ``panels`` and
+    ask ``stop`` whether the user wants it ended."""
     steps = _sink.set(sink)
+    shown = _panel_sink.set(panels)
     stopper = _stop.set(stop)
     try:
         yield
     finally:
         _stop.reset(stopper)
+        _panel_sink.reset(shown)
         _sink.reset(steps)
 
 
@@ -177,6 +190,17 @@ async def report(tool: str, state: StepState) -> None:
         await sink(Step(label_for(tool), state))
     except Exception:
         log.exception("could not report a step")
+
+
+async def report_panel(panel: PanelRef) -> None:
+    """Tell the turn's panel sink a tool opened a panel. Never raises, for the same reason."""
+    sink = _panel_sink.get()
+    if sink is None:
+        return
+    try:
+        await sink(panel)
+    except Exception:
+        log.exception("could not report a panel")
 
 
 def stop_requested() -> bool:
