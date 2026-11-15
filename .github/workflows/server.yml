@@ -9,7 +9,7 @@ on:
       action:
         description: What to do on the server
         type: choice
-        options: [health, status, deploy, restart]
+        options: [health, status, telegram, deploy, restart]
         default: health
 
 permissions:

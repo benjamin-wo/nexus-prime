@@ -97,7 +97,7 @@ What it does and doesn't do:
 
 ## Running actions from GitHub (optional)
 
-The **Server** workflow (Actions tab → Server → Run workflow) runs one of `health`, `status`, `deploy` or `restart` on the server over SSH. Its key can run only `deploy/remote.sh`, which is enforced on the server as a forced command. Workflow logs are public on a public repo, so the script prints statuses and counts only, never app logs or data.
+The **Server** workflow (Actions tab → Server → Run workflow) runs one of `health`, `status`, `telegram`, `deploy` or `restart` on the server over SSH. Its key can run only `deploy/remote.sh`, which is enforced on the server as a forced command. Workflow logs are public on a public repo, so the script prints statuses and counts only, never app logs or data.
 
 One-time setup, as root on the server:
 
