@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     demo_enabled: bool = False
     trusted_proxy_hops: int = Field(1, ge=0, le=5)
 
+    # --- Domain panels (ADR 0001, prototype): the web chat streams panel.upsert events from
+    # the tools Prime calls, and wide screens show them beside the chat. Off by default. ---
+    panels_enabled: bool = False
+
     # --- Background jobs (reminders, budget alerts). Unset: on in prod only, so
     # tests and local runs don't send messages unless asked to. ---
     jobs_enabled: bool | None = None
