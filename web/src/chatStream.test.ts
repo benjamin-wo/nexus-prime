@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, type ChatHistory } from "./api";
 import { repliesAfter, SseParser, streamChat, StreamInterrupted, StreamNotStarted, type ChatStep } from "./chatStream";
+import type { PanelEvent } from "./panels/types";
 
 describe("SseParser", () => {
   it("reads whole frames", () => {
@@ -123,6 +124,54 @@ describe("streamChat", () => {
     const second = streamChat("hi", () => {});
     ended.end(); // closed with no replies
     await expect(second).rejects.toBeInstanceOf(StreamInterrupted);
+  });
+});
+
+describe("streamChat panels", () => {
+  const panel = {
+    panel_id: "finance.month_outlook",
+    kind: "finance.month_outlook",
+    version: 1,
+    params: { month: "2026-11" },
+    topic: "November outlook",
+    as_of: "2026-11-15T10:00:00Z",
+    message_id: "m1",
+  };
+
+  it("passes valid panel.upsert events to onPanel and ignores the rest", async () => {
+    const stream = sseBody();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(stream.response);
+    const panels: PanelEvent[] = [];
+    const steps: ChatStep[] = [];
+    const done = streamChat("outlook", (s) => steps.push(s), (p) => panels.push(p));
+    stream.send(frame("panel.upsert", panel));
+    stream.send(frame("panel.upsert", { ...panel, kind: "finance.nope" }));
+    stream.send(frame("panel.upsert", { ...panel, version: 2 }));
+    stream.send(frame("panel.upsert", { ...panel, params: { month: "soon" } }));
+    stream.send("event: panel.upsert\ndata: {not json\n\n");
+    stream.send(frame("panel.upsert", "nope"));
+    stream.send(frame("panel.upsert", { ...panel, panel_id: "finance.budgets", kind: "finance.budgets" }));
+    stream.send(frame("step", { label: "Working", state: "running" }));
+    stream.send(frame("replies", [{ text: "Done.", buttons: [] }]));
+    expect(await done).toEqual([{ text: "Done.", buttons: [] }]);
+    expect(panels.map((p) => p.panel_id)).toEqual(["finance.month_outlook", "finance.budgets"]);
+    expect(steps).toHaveLength(1);
+  });
+
+  it("works without onPanel, and a throwing onPanel does not break the turn", async () => {
+    const quiet = sseBody();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(quiet.response);
+    const first = streamChat("outlook", () => {});
+    quiet.send(frame("panel.upsert", panel) + frame("replies", []));
+    expect(await first).toEqual([]);
+
+    const loud = sseBody();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(loud.response);
+    const second = streamChat("outlook", () => {}, () => {
+      throw new Error("ui bug");
+    });
+    loud.send(frame("panel.upsert", panel) + frame("replies", []));
+    expect(await second).toEqual([]);
   });
 });
 
