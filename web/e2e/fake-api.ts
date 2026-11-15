@@ -204,6 +204,10 @@ export async function fakeApi(
     telegramLinked = true,
     /** Start with no transactions at all, as a brand-new person has (the made-up ones are not there). */
     noTransactions = false,
+    /** Domain panels are on (GET /config `panels_enabled`), and the chat stream opens them as Prime does: a message
+     * that mentions a budget opens `finance.budgets`, one about the month or what is affordable opens
+     * `finance.month_outlook`, one about transactions or spending opens `finance.transactions`. */
+    panels = false,
   } = {},
 ) {
   let session = signedIn || demo;
@@ -904,7 +908,7 @@ export async function fakeApi(
       return json(route, { detail: "guests can only open the trips they are on" }, 403);
     }
     if (path === "/config")
-      return json(route, { bot_username: "nexus_test_bot" });
+      return json(route, { bot_username: "nexus_test_bot", panels_enabled: panels });
     if (path === "/me") {
       if (!session) return json(route, { detail: "not signed in" }, 401);
       return json(route, meBody());
@@ -2783,6 +2787,30 @@ export async function fakeApi(
         ],
       });
     }
+    if (path === "/month-outlook" && method === "GET") {
+      const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
+      return json(route, {
+        month: url.searchParams.get("month") ?? "2026-11",
+        status: "current",
+        currency: "SGD",
+        received: sgd(5000),
+        spent: sgd(2600),
+        moved: sgd(0),
+        net_so_far: sgd(2400),
+        expected_in: sgd(0),
+        expected_out: sgd(1300),
+        projected_net: sgd(1100),
+        overall: sgd(1100),
+        headroom: sgd(1100),
+        shortfall: sgd(0),
+        items: [
+          { day: "2026-11-25", kind: "bill", label: "Rent", direction: "out", amount: sgd(1200) },
+          { day: "2026-11-28", kind: "subscription", label: "Netflix", direction: "out", amount: sgd(100) },
+        ],
+        no_amount: [],
+        unconverted: [],
+      });
+    }
     if (path === "/budgets/month" && method === "GET") {
       const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
       const overall = state.budgets.find((b) => b.category_id === null);
@@ -2805,7 +2833,9 @@ export async function fakeApi(
     if (path === "/budgets" && method === "GET") {
       const sgd = (amount: number) => ({ amount: amount.toFixed(4), currency: "SGD" });
       // ?month= counts that month's spending (the made-up closed months) against today's limits.
-      const month = url.searchParams.get("month");
+      const asked = url.searchParams.get("month");
+      // The month it is now (the `today` option, else the real one) is not a closed month: it has today's figures.
+      const month = asked && asked !== (today ?? new Date().toISOString().slice(0, 10)).slice(0, 7) ? asked : null;
       const closed = month ? (CLOSED_MONTHS[month] ?? { out: 0, food: 0 }) : null;
       return json(
         route,
@@ -3424,6 +3454,18 @@ export async function fakeApi(
     if (path === "/chat" || path === "/chat/stream") {
       // The stream sends the same replies as the plain endpoint, after one made-up step: the chat
       // reads both the same way.
+      const asked = String(body.message);
+      const panelFrames = (): string => {
+        if (!panels) return "";
+        const month = (today ?? new Date().toISOString().slice(0, 10)).slice(0, 7);
+        const open = (kind: string, panel_id: string, params: unknown, topic: string) =>
+          `event: panel.upsert\ndata: ${JSON.stringify({ panel_id, kind, version: 1, params, topic, as_of: new Date().toISOString(), message_id: `m${state.chatSent.length}` })}\n\n`;
+        let frames = "";
+        if (/budget/i.test(asked)) frames += open("finance.budgets", "finance.budgets", { month }, "your budgets");
+        if (/outlook|afford|month/i.test(asked)) frames += open("finance.month_outlook", "finance.month_outlook", { month }, "how this month ends");
+        if (/transactions|spend|spent/i.test(asked)) frames += open("finance.transactions", "finance.transactions", { direction: "out", start: `${month}-01` }, "what you spent");
+        return frames;
+      };
       const answer = (r: Route, replies: unknown) =>
         path === "/chat"
           ? json(r, replies)
@@ -3432,6 +3474,7 @@ export async function fakeApi(
               contentType: "text/event-stream",
               body:
                 ": open\n\n" +
+                panelFrames() +
                 `event: step\ndata: ${JSON.stringify({ label: "Working on it", state: "running" })}\n\n` +
                 `event: step\ndata: ${JSON.stringify({ label: "Working on it", state: "done" })}\n\n` +
                 `event: replies\ndata: ${JSON.stringify(replies)}\n\n`,
@@ -3443,6 +3486,7 @@ export async function fakeApi(
         demoLeft -= 1;
         return answer(route, [{ text: "Here's what I found in the demo data.", buttons: [] }]);
       }
+      if (panels && panelFrames() !== "") return answer(route, [{ text: "Here is what I found.", buttons: [] }]);
       if (String(body.message).startsWith("How much is a PS6")) {
         // A web answer: its sources come as src: buttons, two to a row, for the chat to draw as chips.
         return answer(route, [

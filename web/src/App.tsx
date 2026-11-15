@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, Suspense, useCallback, useEffect, useState } from "react";
+import { type ReactNode, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { api, ApiError, type EditedTransaction, type Me, type RuleSuggestion, setCsrf, type Transaction } from "./api";
@@ -9,6 +9,8 @@ import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
+import { PanelStageProvider, useOptionalPanelStage } from "./panels/usePanelStage";
+import { usePanelsDocked } from "./panels/useDocked";
 import { isWaiting, outboxUser, useOnline, useOutbox, useOutboxSync } from "./outbox";
 import { refetchActive, useRefreshOnReturn } from "./refreshOnReturn";
 import { DemoPage } from "./pages/DemoPage";
@@ -112,8 +114,11 @@ function useRouteNotice(): [string | null, (notice: string | null) => void] {
 /** Ends the session and sends everyone back to the sign-in page. */
 function useLogout() {
   const client = useQueryClient();
+  const stage = useOptionalPanelStage();
   return async () => {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
+    // The next person to sign in on this browser must not find this one's panels.
+    stage?.reset();
     client.setQueryData(["me"], null);
   };
 }
@@ -144,8 +149,12 @@ function Cockpit({ me }: { me: Me }) {
   const logout = useLogout();
   // Tells Nexus where this browser is, once per page load, without holding anything up.
   useReportTimeZone(me.user);
-  // The chat drawer, opened empty or with a question asked on Home.
-  const [chat, setChat] = useState<{ ask?: string } | null>(null);
+  // The chat drawer, opened empty or with a question asked on Home. With panels on and a wide window the
+  // chat is a docked column that is always open; `key` tells one question from the next then.
+  const [chat, setChat] = useState<{ ask?: string; key: number } | null>(null);
+  const docked = usePanelsDocked();
+  const asks = useRef(0);
+  const openChat = useCallback((ask?: string) => setChat({ ask, key: ++asks.current }), []);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
   // After a category correction: offer a rule, and change nothing unless accepted.
   const [offer, setOffer] = useState<{ transactionId: string; suggestion: RuleSuggestion } | null>(null);
@@ -174,15 +183,16 @@ function Cockpit({ me }: { me: Me }) {
   return (
     <Shell
       me={me}
-      onOpenChat={() => setChat({})}
+      onOpenChat={() => (docked ? document.getElementById("chat-input")?.focus() : openChat())}
+      docked={docked}
       onLogout={logout}
       onRefresh={pullRefresh}
       offlineWaiting={online ? 0 : waiting}
     >
       <RoutedPage>
         <Routes>
-          <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
-          <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
+          <Route path="/" element={<Home me={me} onAsk={openChat} onLog={() => setSheet({})} />} />
+          <Route path="/accounting" element={<Dashboard me={me} onAsk={openChat} />} />
           <Route
             path="/accounting/ledger"
             element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
@@ -194,8 +204,8 @@ function Cockpit({ me }: { me: Me }) {
           <Route path="/investment/stocks/:symbol" element={<StockPage />} />
           <Route path="/investment/plans" element={<PlansPage />} />
           <Route path="/investment/plans/:id" element={<PlanPage />} />
-          <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
-          <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
+          <Route path="/travel" element={<TripsPage onAsk={openChat} />} />
+          <Route path="/travel/trips/:id" element={<TripPage onAsk={openChat} />} />
           <Route path="/travel/research/:id" element={<ResearchPage />} />
           {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
             <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
@@ -238,7 +248,9 @@ function Cockpit({ me }: { me: Me }) {
           }}
         />
       )}
-      {chat && <ChatDrawer ask={chat.ask} demo={me.demo} onClose={closeChat} onChanged={changed} />}
+      {(chat || docked) && (
+        <ChatDrawer ask={chat?.ask} askKey={chat?.key} docked={docked} demo={me.demo} onClose={closeChat} onChanged={changed} />
+      )}
       {offer && (
         <Toast
           message={offer.suggestion.question}
@@ -317,17 +329,19 @@ export function App({ client }: { client?: QueryClient }) {
   useRefreshOnReturn(queryClient);
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <ErrorBoundary>
-          <Suspense fallback={pageLoading}>
-            <Routes>
-              {/* A trip's read-only link: opened by anyone, so it never waits on a sign-in. */}
-              <Route path="/shared/:token" element={<SharedTripPage />} />
-              <Route path="*" element={<Gate />} />
-            </Routes>
-          </Suspense>
-        </ErrorBoundary>
-      </BrowserRouter>
+      <PanelStageProvider>
+        <BrowserRouter>
+          <ErrorBoundary>
+            <Suspense fallback={pageLoading}>
+              <Routes>
+                {/* A trip's read-only link: opened by anyone, so it never waits on a sign-in. */}
+                <Route path="/shared/:token" element={<SharedTripPage />} />
+                <Route path="*" element={<Gate />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
+        </BrowserRouter>
+      </PanelStageProvider>
     </QueryClientProvider>
   );
 }

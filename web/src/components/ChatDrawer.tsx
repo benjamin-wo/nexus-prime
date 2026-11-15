@@ -12,8 +12,10 @@ import {
   type ChatStep,
 } from "../chatStream";
 import { messagesLeft } from "../demo";
+import { useOptionalPanelStage } from "../panels/usePanelStage";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
+import { useChatSlot } from "./chatSlot";
 import { Icon } from "./Icon";
 import { NexusMark } from "./NexusMark";
 
@@ -170,15 +172,25 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
  * aren't part of it), with older messages a tap away. */
 export function ChatDrawer({
   ask,
+  askKey,
+  docked = false,
   demo,
   onClose,
   onChanged,
 }: {
   ask?: string; // a question asked on Home, sent as soon as the chat opens
+  /** Changes with each question asked while the chat stays open (docked), so the same words can be asked again. */
+  askKey?: number;
+  /** A fixed column of the Shell, always open: no close button, no Escape, no focus taken on load. */
+  docked?: boolean;
   demo?: Demo | null; // in the public demo: how many messages are left
   onClose: () => void;
   onChanged: () => void;
 }) {
+  // Panels Prime opens during a turn go to the stage beside the chat, when there is one.
+  const stage = useOptionalPanelStage();
+  const onPanel = stage?.upsert;
+  const slot = useChatSlot();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -208,8 +220,8 @@ export function ChatDrawer({
   // Effects use braces so nothing is returned: React would call a returned value as a
   // cleanup, and newer browsers return a promise from scrollIntoView().
   useEffect(() => {
-    input.current?.focus();
-  }, []);
+    if (!docked) input.current?.focus();
+  }, [docked]);
   useEffect(() => {
     if (stick.current) end.current?.scrollIntoView?.({ block: "end" });
     stick.current = true;
@@ -271,10 +283,11 @@ export function ChatDrawer({
     setMessages((m) => [...fromHistory(history), ...m]);
   }
   useEffect(() => {
+    if (docked) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, docked]);
 
   async function run(call: Promise<Reply[]>, failed?: (e: unknown) => void) {
     setBusy(true);
@@ -327,7 +340,7 @@ export function ChatDrawer({
    * could not start (so nothing was sent twice). */
   async function turn(text: string): Promise<Reply[]> {
     try {
-      return await streamChat(text, onStep);
+      return await streamChat(text, onStep, onPanel);
     } catch (e) {
       if (e instanceof StreamNotStarted) return api<Reply[]>("/chat", { method: "POST", body: { message: text } });
       if (e instanceof StreamInterrupted) return recover(text, e.startedAt);
@@ -385,14 +398,14 @@ export function ChatDrawer({
     wasRecording.current = voice.recording;
   }, [voice.recording]);
 
-  const asked = useRef(false);
+  const asked = useRef<number | null>(null);
   useEffect(() => {
-    // Once, even when React runs effects twice in development.
-    if (ask && !asked.current) {
-      asked.current = true;
+    // Once per question, even when React runs effects twice in development.
+    if (ask && asked.current !== (askKey ?? 0)) {
+      asked.current = askKey ?? 0;
       say(ask);
     }
-  }, [ask]);
+  }, [ask, askKey]);
 
   function send(event: FormEvent) {
     event.preventDefault();
@@ -413,11 +426,14 @@ export function ChatDrawer({
 
   // In the body, not in the page: the page's pull-to-refresh listens on (and slides) everything inside
   // it, and a drag in the chat must neither refresh the page nor move the chat.
+  // Docked, it is drawn in the Shell's chat column (nothing until that is on the page).
+  const target = docked ? slot : document.body;
+  if (!target) return null;
   return createPortal(
     <aside
-      className="drawer"
-      role="dialog"
-      aria-modal="false"
+      className={docked ? "drawer drawer-docked" : "drawer"}
+      role={docked ? "region" : "dialog"}
+      aria-modal={docked ? undefined : "false"}
       aria-labelledby="chat-title"
     >
       <header>
@@ -427,14 +443,16 @@ export function ChatDrawer({
             {messagesLeft(demo.messages_left)}
           </span>
         )}
-        <button
-          type="button"
-          className="btn btn-ghost"
-          aria-label="Close chat"
-          onClick={onClose}
-        >
-          ×
-        </button>
+        {!docked && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            aria-label="Close chat"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        )}
       </header>
       <div
         className="messages"
@@ -579,6 +597,6 @@ export function ChatDrawer({
         )}
       </form>
     </aside>,
-    document.body,
+    target,
   );
 }

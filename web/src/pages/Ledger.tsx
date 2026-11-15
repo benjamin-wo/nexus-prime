@@ -76,8 +76,9 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   // A link from a spending category opens the ledger filtered to it.
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState<View>(() => VIEWS.find((v) => v.key === params.get("view"))?.key ?? "all");
-  const [search, setSearch] = useState("");
-  const [debounced, setDebounced] = useState("");
+  // A link from a panel can carry a search too (?search=).
+  const [search, setSearch] = useState(() => params.get("search") ?? "");
+  const [debounced, setDebounced] = useState(() => (params.get("search") ?? "").trim());
   const [start, setStart] = useState(() => params.get("start") ?? "");
   const [end, setEnd] = useState(() => params.get("end") ?? "");
   const [category, setCategory] = useState(() => params.get("category") ?? "");
