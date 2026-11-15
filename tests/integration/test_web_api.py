@@ -1096,6 +1096,75 @@ async def test_cash_flow_month_by_month(world: World) -> None:
     assert theirs["logged_out"]["amount"] == "0.0000"
 
 
+async def test_config_says_whether_panels_are_on(world: World) -> None:
+    web = world.app.state.web
+    assert (await world.browser().get("/api/config")).json()["panels_enabled"] is False
+    # The runtime and its settings are frozen: swap in a copy with panels on (per test world).
+    object.__setattr__(web, "settings", web.settings.model_copy(update={"panels_enabled": True}))
+    assert (await world.browser().get("/api/config")).json()["panels_enabled"] is True
+
+
+# --- month outlook (panel data) ------------------------------------------------------
+
+
+async def test_month_outlook_matches_the_use_case(world: World) -> None:
+    from nexus.application import month_outlook as outlook_cases
+
+    owner, token = await owner_and_invite(world)
+    await spend(owner, "12", "SGD", "2026-09-10")
+    await spend(owner, "10", "USD", "2026-09-26")  # a Saturday: Friday's rate, 12.91 SGD
+    await spend(owner, "40", "SGD", "2026-08-05")  # last month
+    income = {"direction": "in", "amount": "3000", "currency": "SGD", "date": "2026-09-01"}
+    assert (await owner.send("POST", "/api/transactions", income)).status_code == 201
+    rent = {"name": "Rent", "due": "2026-09-30", "amount": "1,800"}
+    assert (await owner.send("POST", "/api/bills", rent)).status_code == 201
+    phone = {"name": "Phone", "due": "2026-09-29"}  # no amount set
+    assert (await owner.send("POST", "/api/bills", phone)).status_code == 201
+
+    web = world.app.state.web
+    async with web.uow() as tx:
+        user = await tx.ledger.get_user_by_telegram_id(OWNER)
+    assert user is not None
+    direct = await outlook_cases.month_outlook(web.uow, web.rates, user, now=world.clock.now)
+
+    got = (await owner.get("/api/month-outlook")).json()
+    assert got["month"] == "2026-09" and got["status"] == "current" and got["currency"] == "SGD"
+    assert got["received"] == {"amount": str(direct.received.amount), "currency": "SGD"}
+    assert got["received"]["amount"] == "3000.0000"
+    assert got["spent"]["amount"] == str(direct.spent.amount) == "24.9100"
+    assert got["net_so_far"]["amount"] == str(direct.net_so_far.amount)
+    assert got["expected_out"]["amount"] == str(direct.expected_out.amount) == "1800.0000"
+    assert got["expected_in"]["amount"] == str(direct.expected_in.amount)
+    assert got["projected_net"]["amount"] == str(direct.projected_net.amount)
+    assert got["overall"]["amount"] == got["projected_net"]["amount"]
+    assert got["headroom"]["amount"] == str(direct.headroom.amount)
+    assert got["shortfall"]["amount"] == str(direct.shortfall.amount)
+    assert [
+        (i["label"], i["day"], i["amount"] and i["amount"]["amount"]) for i in got["items"]
+    ] == [(i.name, i.day.isoformat(), i.amount and str(i.amount.amount)) for i in direct.items]
+    assert ("Rent", "2026-09-30", "1800.0000") in [
+        (i["label"], i["day"], i["amount"]["amount"]) for i in got["items"] if i["amount"]
+    ]
+    assert got["no_amount"] == direct.no_amount == ["Phone"]
+    assert {i["label"] for i in got["items"] if i["amount"] is None} == {"Phone"}
+
+    # The default is this month; naming it, or another month, gives that month's figures.
+    assert (await owner.get("/api/month-outlook?month=2026-09")).json() == got
+    august = (await owner.get("/api/month-outlook?month=2026-08")).json()
+    assert (august["month"], august["status"], august["items"]) == ("2026-08", "past", [])
+    assert august["spent"]["amount"] == "40.0000" and august["received"]["amount"] == "0.0000"
+    for bad in ("soon", "2026-1", "2026-13", "2031-01"):
+        assert (await owner.get("/api/month-outlook", params={"month": bad})).status_code == 422
+
+    # Another person's figures never mix in with these.
+    member = world.browser()
+    assert (await member.login(MEMBER, invite=token)).status_code == 200
+    theirs = (await member.get("/api/month-outlook")).json()
+    assert theirs["spent"]["amount"] == theirs["received"]["amount"] == "0.0000"
+    assert theirs["items"] == [] and theirs["no_amount"] == []
+    assert (await world.browser().get("/api/month-outlook")).status_code == 401
+
+
 # --- subscriptions ----------------------------------------------------------------------
 
 
@@ -1561,7 +1630,7 @@ async def test_widget_redirect_login(world: World) -> None:
 
 async def test_config_and_security_headers(world: World) -> None:
     response = await world.browser().get("/api/config")
-    assert response.json() == {"bot_username": "nexus_test_bot"}
+    assert response.json() == {"bot_username": "nexus_test_bot", "panels_enabled": False}
     csp = response.headers["content-security-policy"]
     assert "default-src 'self'" in csp and "unsafe-eval" not in csp
     # Inline styles only, for Google's trip map; scripts are never inline.

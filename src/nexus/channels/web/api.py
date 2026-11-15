@@ -31,6 +31,7 @@ from nexus.application import duplicates as duplicate_cases
 from nexus.application import home as home_cases
 from nexus.application import memory as memory_cases
 from nexus.application import messaging as message_cases
+from nexus.application import month_outlook as outlook_cases
 from nexus.application import notifications as notify_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -461,12 +462,15 @@ def _when(user: User, value: str | None, now: datetime) -> datetime:
 
 class ConfigOut(Model):
     bot_username: str
+    panels_enabled: bool  # domain panels beside the chat (ADR 0001); off unless PANELS_ENABLED
 
 
 @router.get("/config")
 async def config(web: Runtime) -> ConfigOut:
     """What the sign-in page needs before anyone is signed in."""
-    return ConfigOut(bot_username=await web.bot_username())
+    return ConfigOut(
+        bot_username=await web.bot_username(), panels_enabled=web.settings.panels_enabled
+    )
 
 
 # --- auth ---------------------------------------------------------------------------
@@ -2092,6 +2096,76 @@ async def budgets_month(auth: Auth, web: Runtime) -> MonthPlanOut:
 class BudgetIn(Model):
     category_id: UUID | None = None
     amount: str = Field(max_length=32)
+
+
+class OutlookItemOut(Model):
+    day: date
+    kind: str  # bill, move, subscription, salary or trip
+    label: str
+    direction: str  # "in" or "out"
+    amount: MoneyOut | None  # home currency; null when no amount is set or no rate
+
+
+class MonthOutlookOut(Model):
+    """The ``month_outlook`` tool's figures for a compact panel; all in the home currency."""
+
+    month: str  # YYYY-MM
+    status: str  # "current", "past" or "future"
+    currency: str
+    received: MoneyOut
+    spent: MoneyOut
+    moved: MoneyOut  # main account to the user's other wallets (not cards)
+    net_so_far: MoneyOut
+    expected_in: MoneyOut
+    expected_out: MoneyOut
+    projected_net: MoneyOut
+    overall: MoneyOut  # projected_net; no adjustments here
+    headroom: MoneyOut  # more everyday spending that keeps overall at zero or above
+    shortfall: MoneyOut  # how far below zero overall is
+    items: list[OutlookItemOut]
+    no_amount: list[str]  # names of expected items left out for want of an amount or a rate
+    unconverted: list[MoneyOut]  # logged foreign amounts with no rate, left out
+
+
+@router.get("/month-outlook")
+async def month_outlook(
+    auth: Auth,
+    web: Runtime,
+    month: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}$")] = None,
+) -> MonthOutlookOut:
+    """Where this month (or ``month``, ``2026-10``) ends up: what came in and went out, what
+    is still expected, and what that leaves. The same use case as the agent's
+    ``month_outlook`` tool, without adjustments."""
+    outlook = await outlook_cases.month_outlook(
+        web.uow, web.rates, auth.user, now=web.clock(), month=month
+    )
+    return MonthOutlookOut(
+        month=outlook.month.strftime("%Y-%m"),
+        status=outlook.status,
+        currency=outlook.currency,
+        received=money(outlook.received),
+        spent=money(outlook.spent),
+        moved=money(outlook.moved),
+        net_so_far=money(outlook.net_so_far),
+        expected_in=money(outlook.expected_in),
+        expected_out=money(outlook.expected_out),
+        projected_net=money(outlook.projected_net),
+        overall=money(outlook.overall),
+        headroom=money(outlook.headroom),
+        shortfall=money(outlook.shortfall),
+        items=[
+            OutlookItemOut(
+                day=i.day,
+                kind=i.kind.value,
+                label=i.name,
+                direction=i.direction.value,
+                amount=money(i.amount) if i.amount is not None else None,
+            )
+            for i in outlook.items
+        ],
+        no_amount=outlook.no_amount,
+        unconverted=[money(m) for m in outlook.unconverted],
+    )
 
 
 @router.put("/budgets", status_code=204)
