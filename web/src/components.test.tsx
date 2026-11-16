@@ -240,6 +240,29 @@ describe("brief", () => {
     expect(text(brief({}))).toMatch(/^Nothing needs you right now/);
   });
 
+  it("says when paying what's still due will take the budget over", () => {
+    const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("4500"), spent: sgd("4126.56"), remaining: sgd("373.44"), percent: 92, unconverted: [] };
+    const plan = (over: object = {}) => ({
+      currency: "SGD",
+      total_out: sgd("4126.56"),
+      left_to_spend: sgd("167.54"),
+      still_due_out: sgd("515.95"),
+      income: sgd("4810.05"),
+      budget_left: sgd("373.44"),
+      spending_due: sgd("515.95"),
+      budget_left_after_due: sgd("-142.51"),
+      tighter: "budget" as const,
+      plan_warning: null,
+      skipped: [],
+      ...over,
+    });
+    const said = text(brief({ spent: sgd("4126.56"), overall, plan: plan() }));
+    expect(said).toMatch(/SGD\s?373\.44 left in your budget\. Once the SGD\s?515\.95 still due is paid you'll be SGD\s?142\.51 over your budget\.$/);
+    // Nothing to add when the bills still due fit in the budget, or none of them are spending.
+    expect(text(brief({ overall, plan: plan({ budget_left_after_due: sgd("20"), spending_due: sgd("353.44") }) }))).toMatch(/^Nothing needs you/);
+    expect(text(brief({ overall, plan: plan({ left_to_spend: sgd("900"), budget_left_after_due: sgd("373.44"), spending_due: sgd("0") }) }))).toMatch(/^Nothing needs you/);
+  });
+
   it("says when less is left to spend than the budget shows, and only then", () => {
     const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("2000"), spent: sgd("600"), remaining: sgd("1400"), percent: 30, unconverted: [] };
     const plan = (over: object = {}) => ({
@@ -249,6 +272,8 @@ describe("brief", () => {
       still_due_out: sgd("1300"),
       income: sgd("5000"),
       budget_left: sgd("1400"),
+      spending_due: sgd("300"),
+      budget_left_after_due: sgd("1100"),
       tighter: "left_to_spend" as const,
       plan_warning: null,
       skipped: [],
@@ -261,7 +286,7 @@ describe("brief", () => {
     // The budget is the tighter one, there is no overall budget, or there is no plan: nothing to add.
     expect(text(brief({ overall, plan: plan({ tighter: "budget", left_to_spend: sgd("1800") }) }))).toMatch(/^Nothing needs you/);
     expect(text(brief({ plan: plan() }))).toMatch(/^Nothing needs you/);
-    expect(text(brief({ overall, plan: plan({ budget_left: null, tighter: null }) }))).toMatch(/^Nothing needs you/);
+    expect(text(brief({ overall, plan: plan({ budget_left: null, budget_left_after_due: null, tighter: null }) }))).toMatch(/^Nothing needs you/);
     expect(text(brief({ overall }))).toMatch(/^Nothing needs you/);
     // It sits before the rest of the brief.
     const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }];

@@ -42,6 +42,9 @@ class Expected:
     direction: Direction
     amount: Money | None  # None when the amount isn't known (a bill without one)
     home: Money | None  # in the home currency; None if unknown or no rate
+    # Whether it counts as spending (against budgets) once it happens: a bill that does, a
+    # subscription. Not a move to the user's own wallet, a trip set-aside or income.
+    spending: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +195,7 @@ async def expected_between(
                 fx.convert(e.amount, today, user.home_currency, rated).home
                 if e.amount is not None
                 else None,
+                spending=e.spending,
             ),
         )
         for day, e in found
@@ -219,9 +223,15 @@ async def _expected(
         wallet = wallets.get(bill.wallet_id) if bill.wallet_id else None
         kind = ExpectedKind.MOVE if wallet else ExpectedKind.BILL
         name = f"{bill.name} → {wallet.name}" if wallet else bill.name
+        spending = bill.spending and wallet is None  # a move to a wallet is never spending
         for due in due_dates(bill.anchor, bill.cadence, start, end):
             if (bill.id, due) not in paid:
-                found.append((due, Expected(kind, name, Direction.OUT, bill.amount, None)))
+                found.append(
+                    (
+                        due,
+                        Expected(kind, name, Direction.OUT, bill.amount, None, spending=spending),
+                    )
+                )
     for sub in subscriptions:
         if sub.status is not SubscriptionStatus.ACTIVE:
             continue
@@ -232,7 +242,12 @@ async def _expected(
                     (
                         charge,
                         Expected(
-                            ExpectedKind.SUBSCRIPTION, sub.name, Direction.OUT, sub.amount, None
+                            ExpectedKind.SUBSCRIPTION,
+                            sub.name,
+                            Direction.OUT,
+                            sub.amount,
+                            None,
+                            spending=True,
                         ),
                     )
                 )
@@ -246,7 +261,12 @@ async def _expected(
                     (
                         payday,
                         Expected(
-                            ExpectedKind.SALARY, "Salary", Direction.IN, schedule.baseline, None
+                            ExpectedKind.SALARY,
+                            "Salary",
+                            Direction.IN,
+                            schedule.baseline,
+                            None,
+                            spending=False,
                         ),
                     )
                 )
@@ -261,6 +281,7 @@ async def _expected(
                                 Direction.OUT,
                                 trip.set_aside,
                                 None,
+                                spending=False,  # set aside, not spent
                             ),
                         )
                     )

@@ -388,7 +388,11 @@ export type BudgetMonth = {
   income: Money;
   /** The overall budget less spending so far; null without one. */
   budget_left: Money | null;
-  /** Whichever of the two is lower; null without an overall budget. */
+  /** Still-due bills that are spending, and subscriptions: they'll count against the budget. */
+  spending_due: Money;
+  /** budget_left less spending_due, so negative when the budget will be overspent; null without one. */
+  budget_left_after_due: Money | null;
+  /** Whichever of budget_left_after_due and left_to_spend is lower; null without an overall budget. */
   tighter: "budget" | "left_to_spend" | null;
   plan_warning: string | null;
   /** Scheduled items left out for want of an amount or a rate. */

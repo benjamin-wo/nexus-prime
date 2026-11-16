@@ -156,6 +156,23 @@ export function brief({
       { text: formatMoney(plan.budget_left), hl: true },
       { text: " budget left." },
     );
+  // The budget left so far doesn't count the bills still to be paid, which log as spending:
+  // say so when paying them takes the budget from left to over.
+  else if (
+    overall &&
+    plan?.tighter === "budget" &&
+    plan.budget_left &&
+    plan.budget_left_after_due &&
+    Number(plan.budget_left.amount) >= 0 &&
+    Number(plan.budget_left_after_due.amount) < 0
+  )
+    parts.push(
+      { text: `${parts.length ? " " : ""}Once the ` },
+      { text: formatMoney(plan.spending_due), hl: true },
+      { text: " still due is paid you'll be " },
+      { text: formatMoney({ ...plan.budget_left_after_due, amount: String(-Number(plan.budget_left_after_due.amount)) }), hl: true },
+      { text: " over your budget." },
+    );
   if (move) {
     const down = move.percent < 0;
     const shown = `${Math.round(Math.abs(move.percent))}%`;

@@ -174,7 +174,10 @@ async def _budgets(ctx: ToolContext) -> str:
         f"{_money(s.remaining)} left)"
         for s in statuses
     ]
-    return "Budgets this month: " + "; ".join(items) + "."
+    text = "Budgets this month: " + "; ".join(items) + "."
+    if any(s.budget.is_overall for s in statuses):
+        text += " (Left is before bills still due; month_outlook has it after them.)"
+    return text
 
 
 async def _ahead(ctx: ToolContext) -> str:

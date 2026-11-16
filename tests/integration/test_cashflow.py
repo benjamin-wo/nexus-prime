@@ -87,12 +87,15 @@ async def test_days_ahead_show_bills_subscriptions_and_payday(uow: UowFactory) -
     assert (date(2026, 9, 1), "Rent") not in expected  # before today: not expected any more
     netflix = expected[(date(2026, 9, 22), "Netflix")]
     assert (netflix.kind, netflix.home) == (ExpectedKind.SUBSCRIPTION, sgd("17.98"))
+    assert netflix.spending  # a subscription is spent when it is charged
     electricity = expected[(date(2026, 9, 20), "Electricity")]
     assert electricity.amount is None and electricity.home is None
     insurance = expected[(date(2026, 9, 18), "Insurance")]
     assert insurance.home == sgd("130.00")  # converted at today's rate
     pay = expected[(date(2026, 9, 25), "Salary")]
     assert (pay.direction, pay.home) == (Direction.IN, sgd("5000"))
+    assert not pay.spending
+    assert insurance.spending and electricity.spending  # a bill is spending unless marked not
     assert (flow.expected_in, flow.expected_out) == (sgd("5000"), sgd("147.98"))
     assert flow.unknown_amounts == 1
     by_day = {d.day: d for d in flow.days}
@@ -155,3 +158,4 @@ async def test_payments_that_arent_spending_are_still_expected(uow: UowFactory) 
     flow = await cash_flow(uow, RATES, user, *SEPT, now=NOW)
     (fund,) = {d.day: d for d in flow.days}[date(2026, 9, 25)].expected
     assert (fund.name, fund.direction, fund.home) == ("Index fund", Direction.OUT, sgd("500"))
+    assert not fund.spending

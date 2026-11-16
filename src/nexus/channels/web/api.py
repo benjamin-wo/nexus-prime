@@ -2067,7 +2067,12 @@ class MonthPlanOut(Model):
     still_due_out: MoneyOut  # bills, subscriptions and trip set-asides still ahead this month
     income: MoneyOut  # received so far, plus salary still due before month end
     budget_left: MoneyOut | None  # overall budget less spending so far; null without one
-    tighter: Literal["budget", "left_to_spend"] | None  # the lower of the two; null w/o budget
+    spending_due: MoneyOut  # still-due bills that are spending, and subscriptions
+    # budget_left less spending_due: what the budget has once those are paid (can be negative);
+    # null without a budget.
+    budget_left_after_due: MoneyOut | None
+    # The lower of budget_left_after_due and left_to_spend; null without a budget.
+    tighter: Literal["budget", "left_to_spend"] | None
     plan_warning: str | None  # the budget plus scheduled moves outgrow usual income
     skipped: list[str]  # scheduled items left out for want of an amount or a rate
 
@@ -2083,6 +2088,10 @@ async def budgets_month(auth: Auth, web: Runtime) -> MonthPlanOut:
         still_due_out=money(plan.still_due_out),
         income=money(plan.income),
         budget_left=money(plan.budget_left) if plan.budget_left is not None else None,
+        spending_due=money(plan.spending_due),
+        budget_left_after_due=(
+            money(plan.budget_left_after_due) if plan.budget_left_after_due is not None else None
+        ),
         tighter=plan.tighter,
         plan_warning=plan.plan_warning,
         skipped=plan.skipped,

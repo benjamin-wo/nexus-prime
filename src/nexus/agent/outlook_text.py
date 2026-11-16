@@ -23,7 +23,8 @@ KIND_WORDS = {
 }
 
 
-def item_line(item: OutlookItem) -> str:
+def item_line(item: OutlookItem, *, budget: bool = False) -> str:
+    """With ``budget``, money out says whether it will count against the overall budget."""
     if item.amount is None:
         amount = "amount not set, not counted"
     else:
@@ -31,7 +32,56 @@ def item_line(item: OutlookItem) -> str:
         amount = f"{sign}{plain(item.amount)}"
         if item.original is not None:
             amount += f" ({item.original} at today's rate)"
-    return f"- {item.day:%a %-d %b} {item.name} ({KIND_WORDS[item.kind]}) {amount}"
+    line = f"- {item.day:%a %-d %b} {item.name} ({KIND_WORDS[item.kind]}) {amount}"
+    if budget and item.amount is not None and item.direction is Direction.OUT:
+        line += " [counts against the budget]" if item.spending else " [not counted in the budget]"
+    return line
+
+
+def over_by(amount: Money) -> str:
+    return f" (over by {plain(abs_money(amount))})" if amount < Money.zero(amount.currency) else ""
+
+
+def describe_budget(o: MonthOutlook) -> list[str]:
+    """The overall budget's lines; nothing without one. Every figure is a field of ``o``."""
+    if o.budget_limit is None or o.budget_spent is None or o.budget_left is None:
+        return []
+    now = "left" if o.status == "past" else "left now"
+    out = [
+        f"Overall budget: {plain(o.budget_limit)}; spent against it {plain(o.budget_spent)}; "
+        f"budget {now} {plain(o.budget_left)}{over_by(o.budget_left)}."
+    ]
+    if o.spending_due is None or o.budget_left_after_due is None or o.tighter_by is None:
+        return out
+    names = [
+        i.name
+        for i in o.items
+        if i.spending and i.direction is Direction.OUT and i.amount is not None
+    ]
+    out.append(
+        "Still due that counts as spending (bills that are spending and subscriptions; payday, "
+        "moves to your own wallets and trip set-asides don't): "
+        f"{plain(o.spending_due)}"
+        + (f" ({', '.join(dict.fromkeys(names))})" if names else "")
+        + f". Budget left once they're paid: {plain(o.budget_left_after_due)}"
+        f"{over_by(o.budget_left_after_due)}."
+    )
+    if o.tighter_by.is_zero:
+        out.append(f"Tighter: neither, both are {plain(o.overall, signed=True)}.")
+    else:
+        who = "the budget" if o.tighter == "budget" else "the month's money movement"
+        out.append(
+            f"Tighter: {who}, by {plain(o.tighter_by)} (budget left once they're paid "
+            f"{plain(o.budget_left_after_due)} against {plain(o.overall, signed=True)} "
+            "projected net)."
+        )
+    out.append(
+        "These measure different things: the projected net (Home's left to spend) is cash "
+        "movement for the month; budget left once they're paid is what the budget allows after "
+        "what is due. A spending bill still due is in BOTH: in the projected net as expected "
+        "out, and in the budget's spent once it is paid. Never say it isn't in the budget."
+    )
+    return out
 
 
 def describe_outlook(o: MonthOutlook) -> str:
@@ -67,7 +117,7 @@ def describe_outlook(o: MonthOutlook) -> str:
     if o.status != "past":
         start = max(o.month, o.today)
         out.append(f"Still expected, {start:%-d %b} to {o.last_day:%-d %b}:")
-        out += [item_line(i) for i in o.items] or [
+        out += [item_line(i, budget=o.budget_left is not None) for i in o.items] or [
             "- nothing: no bills, tracked subscriptions or payday fall in it"
         ]
         out.append(f"Expected in {plain(o.expected_in)}, out {plain(o.expected_out)}.")
@@ -108,6 +158,7 @@ def describe_outlook(o: MonthOutlook) -> str:
             f"Overall with those: {plain(o.overall, signed=True)} "
             f"({plain(o.projected_net)} {joined} {plain(abs_money(o.adjustments_total))})."
         )
+    out += describe_budget(o)
     if o.status != "past":
         if o.overall.is_positive or o.overall.is_zero:
             out.append(

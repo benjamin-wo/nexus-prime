@@ -31,7 +31,7 @@ It prints each case's pass rate in both, side by side, and flags the cases whose
 
 ## Money math (13 November 2026)
 
-The `money-math` area (`--area money-math`, 12 cases) checks that sums are done by the tools and not in the model's head, after a user was told "No leeway" for a month that was positive once the 25 November payday was counted, and the "correction" got no new figure. Each case wants the right tool (`calls` for the last turn, `used` for any turn) and a reply that states the exact figure, worked out in code from the seed (`amounts`: any way of writing it counts, "4,798", "4798.00" or "SGD 4,798.00", but a rounded figure does not; `never_amounts` is a figure no reply may state, a double count). Nothing here is checked against what the model says it computed.
+The `money-math` area (`--area money-math`, 15 cases) checks that sums are done by the tools and not in the model's head, after a user was told "No leeway" for a month that was positive once the 25 November payday was counted, and the "correction" got no new figure. Each case wants the right tool (`calls` for the last turn, `used` for any turn) and a reply that states the exact figure, worked out in code from the seed (`amounts`: any way of writing it counts, "4,798", "4798.00" or "SGD 4,798.00", but a rounded figure does not; `never_amounts` is a figure no reply may state, a double count). Nothing here is checked against what the model says it computed.
 
 Seven cases start on a different clock: `november=True` (the seed's `NOV_NOW`, Friday 13 November 2026, 2pm) gives the user the first twelve days of November (rent 1,800.00, 76.40, 18.90, 9.50 and 17.98 spent; 250.00 freelance income), a usual salary of 4,798.00 (payday the 25th), Singtel 45.00 on the 28th, a gym membership of 88.00 on the 30th and an electricity bill on the 20th with no amount. So: received 250.00, spent 1,922.78, net so far -1,672.78; still expected in 4,798.00 and out 133.00; **projected month-end net 2,992.22**. The default seed (28 September) has nothing left to come in September, so it would not test this. A test recomputes every figure from the ledger (`test_the_november_seed_matches_the_money_math_figures`).
 
@@ -57,6 +57,33 @@ python -m nexus.evals --model deepseek/deepseek-v4.1-flash --area money-math --r
 ```
 
 Run the same on main for comparison (the cases are the same; main has neither tool, so expect the tool checks to fail there) and use `compare` as above.
+
+### Budget left after what's due (16 November 2026)
+
+A user with an overall budget of 4,500, 4,126.56 spent (373.44 left) and a 515.95 bill due asked chat to explain "left to spend" against "budget left". The reply said the bill "isn't in" the budget and called left to spend (167.54) the real leeway. But a bill is spending unless marked otherwise, and paying it logs an expense, so the budget ends 142.51 over. `month_outlook` had no budget figures, so the model compared the snapshot's budget line with them in its head. Home's `month_plan` made the same comparison. Now `month_outlook` reports the overall budget: left now, spending still due (spending bills and subscriptions; not payday, moves to the user's own wallets or trip set-asides), left once that's paid, and which of that and the month's net is tighter. Home compares left to spend with the budget left after what's due.
+
+Three cases use `november=True, budget=True`. The seed adds a 2,000.00 overall budget, an Insurance bill of 250.00 on the 26th (spending) and a Citi card bill of 300.00 on the 21st (`spending=False`). So: budget left now 77.22; spending still due 383.00 (Singtel 45.00, gym 88.00, Insurance 250.00); **budget left once paid -305.78**; projected month-end net 2,442.22. `test_the_budget_seed_matches_the_budget_figures` recomputes them.
+
+| Case | Asks | Wants |
+|---|---|---|
+| `money-math-budget-explain` | explain my left to spend and budget left amounts when I have a 250.00 payment coming up | `month_outlook`; -305.78 and 2,442.22 |
+| `money-math-budget-left` | how much budget do I have left this month? | `month_outlook`; -305.78 |
+| `money-math-budget-non-spending` | I have a 300 Citi card bill on the 21st; does that come out of my budget? | `month_outlook`; a "no" (doesn't, isn't, won't, not spending…); never 605.78 or 222.78 (the card bill taken off the budget) |
+
+Production pairing (DeepSeek v4.1 Flash on deepinfra, fireworks, atlas-cloud, streamlake; Qwen3.8 Flash for photos; low reasoning), final wording:
+
+| Run | Branch | Main |
+|---|---|---|
+| `money-math` plus `log-thousands` and `voice-laptop`, 3 rounds | 50/51 | 36/36 (money-math, 12 cases) |
+| Full set, once | 325/331 | 318/328 |
+| The 328 shared cases | 322 | 318 |
+| `mem-short-replies`, 8 rounds | 7/8 | 7/8 |
+
+For the explain case the model says the payment is "already in both figures" and gives the budget "-305.78 once the bills still due are paid". For the card bill it says the bill doesn't hit the budget, because it's a payment for purchases already counted. The one miss on the card-bill case gave that right answer without calling `month_outlook`.
+
+**Keep the wording short.** The first version of this change put whole sentences about budgets in the money rule and in `month_outlook`'s description. `mem-short-replies` (after "keep your replies short", "how much did i spend this month" in at most 160 characters) then passed 4 of 8, against 7 of 8 on main. Every failure was the same 174-character reply ending "The rest (Subscriptions, Shopping, Activities, Health) adds up to 131.38", a sum done in the model's head. Shortening only the rule didn't help (3 of 8). Main's tool description with the short rule gave 6 of 8. With both just adding "budget left" to their lists (the prompt 13 characters longer than main's, not 320), it is 7 of 8. The tool's own text explains the budget figures, so the prompt doesn't need to. With less guidance, correct answers to the card-bill question often left out -305.78, so that case now wants the "no", not the figure.
+
+Two non-web cases failed only in the final full run, `ask-which-grab` and `photo-total-not-cash`; both passed 3/3 on the branch and on main when rerun. The web cases moved both ways, as they do between any two runs. One earlier full run on the branch stalled after 309 of 331 cases (an empty model reply and its retry) and was run again.
 
 ## Web search in evals
 

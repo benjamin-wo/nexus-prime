@@ -17,6 +17,11 @@ the user's timezone, from the same figures Home shows (``month_figures``, ``expe
   adjustments it equals Home's "left to spend".
 - ``overall`` adds the user's own amounts (a carry-over, a planned purchase as a negative).
 - ``headroom`` is how much more everyday spending keeps ``overall`` at zero or above.
+- with an overall budget: ``budget_left`` is the limit less what was spent against it (as
+  Home shows it, so it can be negative); ``spending_due`` is the still-expected payments that
+  will count as spending when paid (bills that are spending, subscriptions; not moves to the
+  user's own wallets, trip set-asides or payday); ``budget_left_after_due`` is the first less
+  the second. ``tighter`` says which is lower, that or ``overall``, and by how much.
 
 Everyday spending for the rest of the month is not forecast, and none of this is an
 account balance. A month already over has actuals only.
@@ -26,8 +31,10 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from typing import Literal
 from zoneinfo import ZoneInfo
 
+from nexus.application.budgets import budget_statuses
 from nexus.application.cashflow import Expected, ExpectedKind, expected_between
 from nexus.application.fx import RateSource
 from nexus.application.ports import UnitOfWork
@@ -52,6 +59,7 @@ class OutlookItem:
     direction: Direction
     amount: Money | None  # in the home currency; None: no amount set, or no rate
     original: Money | None  # in its own currency, when that isn't the home currency
+    spending: bool  # will count as spending (against budgets) once it happens
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +99,16 @@ class MonthOutlook:
     headroom: Money  # more everyday spending that keeps overall at zero or above (>= 0)
     shortfall: Money  # how far below zero overall is (>= 0)
     unconverted: list[Money]  # logged foreign amounts with no rate, left out
+    # The overall budget, None when the user has none. Limit, spent and left are for the month
+    # asked for (spent against today's limit; a future month has nothing spent yet).
+    budget_limit: Money | None
+    budget_spent: Money | None
+    budget_left: Money | None  # limit - spent, as Home shows it: negative when over
+    # The rest are None without a budget, and for a month already over (nothing is due).
+    spending_due: Money | None  # still-expected payments that count as spending
+    budget_left_after_due: Money | None  # budget_left - spending_due: negative when it'll be over
+    tighter: Literal["budget", "outlook"] | None  # lower of budget_left_after_due and overall
+    tighter_by: Money | None  # how far apart they are (>= 0)
 
     @property
     def last_day(self) -> date:
@@ -121,6 +139,15 @@ def sum_expected(items: Iterable[OutlookItem], currency: str) -> Expectations:
     return Expectations(money_in, money_out, missing)
 
 
+def spending_due(items: Iterable[OutlookItem], currency: str) -> Money:
+    """Expected payments with an amount that will count as spending when they happen."""
+    total = Money.zero(currency)
+    for item in items:
+        if item.direction is Direction.OUT and item.spending and item.amount is not None:
+            total = total + item.amount
+    return total
+
+
 def items_of(found: Sequence[tuple[date, Expected]]) -> list[OutlookItem]:
     """Expected items by day, then name, with their own-currency amount when it differs."""
     return sorted(
@@ -134,6 +161,7 @@ def items_of(found: Sequence[tuple[date, Expected]]) -> list[OutlookItem]:
                 e.amount
                 if e.amount is not None and e.home is not None and e.amount != e.home
                 else None,
+                e.spending,
             )
             for day, e in found
         ),
@@ -160,8 +188,11 @@ def build_outlook(
     items: list[OutlookItem],
     adjustments: Sequence[Adjustment] = (),
     unconverted: Sequence[Money] = (),
+    budget_limit: Money | None = None,
+    budget_spent: Money | None = None,
 ) -> MonthOutlook:
-    """The month's figures from its parts. Pure: all the arithmetic is here."""
+    """The month's figures from its parts. Pure: all the arithmetic is here. The budget
+    figures are worked out only when both ``budget_limit`` and ``budget_spent`` are given."""
     expected = sum_expected(items, currency)
     first = month_start(month)
     this_month = month_start(today)
@@ -173,6 +204,19 @@ def build_outlook(
     projected_before_moves = received + expected.money_in - spent - expected.money_out
     projected = projected_before_moves - moved
     overall = projected + adjusted
+    budget_left = None
+    due = after_due = tighter_by = None
+    tighter: Literal["budget", "outlook"] | None = None
+    if budget_limit is not None and budget_spent is not None:
+        budget_left = budget_limit - budget_spent
+        if status != "past":
+            due = spending_due(items, currency)
+            after_due = budget_left - due
+            # Compared with ``overall`` (not the clamped headroom), so a shortfall counts in full.
+            tighter = "budget" if after_due < overall else "outlook"
+            tighter_by = after_due - overall if after_due > overall else overall - after_due
+    else:
+        budget_limit = budget_spent = None
     return MonthOutlook(
         month=first,
         today=today,
@@ -194,6 +238,13 @@ def build_outlook(
         headroom=overall if overall.is_positive else zero,
         shortfall=-overall if overall < zero else zero,
         unconverted=list(unconverted),
+        budget_limit=budget_limit,
+        budget_spent=budget_spent,
+        budget_left=budget_left,
+        spending_due=due,
+        budget_left_after_due=after_due,
+        tighter=tighter,
+        tighter_by=tighter_by,
     )
 
 
@@ -239,6 +290,15 @@ async def month_outlook(
         # be logged already, and is then in what was received): as Home's left to spend.
         found = await expected_between(uow, rates, user, max(first, today), last_day, now=now)
         items = items_of(found)
+    # The overall budget (None without one), spent against for the month asked for.
+    overall_budget = next(
+        (
+            s
+            for s in await budget_statuses(uow, rates, user, now=now, month=first)
+            if s.budget.is_overall
+        ),
+        None,
+    )
     return build_outlook(
         month=first,
         today=today,
@@ -249,4 +309,6 @@ async def month_outlook(
         items=items,
         adjustments=[parse_adjustment(a, label, home) for a, label in adjustments],
         unconverted=figures.unconverted,
+        budget_limit=overall_budget.budget.limit if overall_budget else None,
+        budget_spent=overall_budget.spent if overall_budget else None,
     )

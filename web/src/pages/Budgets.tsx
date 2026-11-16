@@ -171,7 +171,11 @@ function MonthPlan({ plan }: { plan: BudgetMonth }) {
           >
             <span className="caption">Budget left {watch("budget")}</span>
             <span className="num month-value">{formatMoney(plan.budget_left)}</span>
-            <span className="caption">of your overall budget</span>
+            <span className="caption">
+              {plan.budget_left_after_due && Number(plan.spending_due.amount) > 0
+                ? `of your overall budget · ${formatMoney(plan.budget_left_after_due)} after bills due`
+                : "of your overall budget"}
+            </span>
           </div>
         )}
       </div>

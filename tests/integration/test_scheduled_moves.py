@@ -312,6 +312,7 @@ async def test_cash_flow_shows_a_scheduled_move_as_its_own_kind_out_of_spending(
     )
     plain = found[(date(2026, 10, 26), "Pocket money")]
     assert plain.kind is ExpectedKind.BILL  # without a wallet: as before
+    assert not top_up.spending and not plain.spending  # neither is spending
     assert flow.expected_out == sgd("1400")
 
 
