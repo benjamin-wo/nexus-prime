@@ -582,7 +582,8 @@ def test_the_money_math_cases_are_wired_to_the_figures_and_the_clock() -> None:
     for case in cases:
         assert case.november or not case.budget, case.id  # the budget variant is a November one
     for case in cases:
-        assert case.amounts, case.id  # every case states the figure it wants
+        # Every case states the figure it wants, or (a yes/no question) a figure it never may.
+        assert case.amounts or case.never_amounts, case.id
         assert case.calls or case.used or case.reply, case.id
     assert clock_of(next(c for c in cases if c.november), None) == seed.NOV_NOW
     assert clock_of(next(c for c in cases if not c.november), None) == seed.NOW
@@ -711,7 +712,7 @@ async def test_the_budget_cases_are_graded_on_the_after_due_figure(engine: Async
         # Wrong: the card bill taken off the budget as well.
         "money-math-budget-non-spending": lambda: scripted(
             call("month_outlook"),
-            say("Over by 305.78 after bills, and 605.78 with the card bill."),
+            say("It doesn't help: over by 305.78 after bills, and 605.78 with the card bill."),
             *nothing,
         ),
     }

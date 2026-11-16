@@ -39,11 +39,10 @@ pytestmark = pytest.mark.integration
 # Then the rule was sharpened after live evals (a plain "1.8k for a new laptop" must be logged,
 # not weighed; a month's net, past ones too; restate the figure on a correction): 72858f9b...
 # (14400) became the text below, the rule's wording being the only difference.
-# Then budget questions were added to that rule (through month_outlook, never compared in the
-# head; a payment still due that counts as spending comes out of the budget): 3b544a17... (14678)
-# became the text below, that sentence being the only difference.
-DEFAULT_PREFIX_SHA256 = "393e7d8b1c10ca507ebba7ed99440887d0a16d2118636828ad1a04dcbb892999"
-DEFAULT_PREFIX_LENGTH = 14998
+# Then "budget left" was added to that rule's list of questions for month_outlook:
+# 3b544a17... (14678) became the text below, those 13 characters being the only difference.
+DEFAULT_PREFIX_SHA256 = "a8571d1eff7e11e21670a18a4372b9f147e90b6218b4eb2f0a8e348e05624659"
+DEFAULT_PREFIX_LENGTH = 14691
 
 
 def prefix_of(prompt: str) -> str:

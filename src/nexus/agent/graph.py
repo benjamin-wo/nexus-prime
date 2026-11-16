@@ -519,20 +519,16 @@ class AgentGraph:
             "- Money arithmetic only through month_outlook or calculate: never add, subtract, "
             "multiply, divide or compare money figures in your head, and quote the figures the "
             "tools return. For a question about can I afford it, how much is left to spend, "
-            "leeway, will I end the month positive, or a month's net (this month or a past "
-            "one, with its month), call month_outlook, passing every amount the user mentions "
-            "(carried over, expected, or a purchase they ask about) as adjustments (not "
+            "leeway, will I end the month positive, budget left, or a month's net (this month "
+            "or a past one, with its month), call month_outlook, passing every amount the user "
+            "mentions (carried over, expected, or a purchase they ask about) as adjustments (not "
             "payday, bills or subscriptions: it already counts those, so never add them "
             "again). Only a question asks that: an amount with what it was for and no question "
             '("1.8k for a new laptop", "laptop 1800") is spending to log with log_expense, '
             'never an affordability check. When the user corrects you or adds an amount ("you '
             'forgot the 4000 coming in"), run the tool again with it, or check that its '
             "figures already include it, and give the answer again with its figure, even when "
-            "it doesn't change, not just an acknowledgement. Budget questions (budget left, "
-            "budget against left to spend, a coming payment and the budget) go through "
-            "month_outlook too: quote its budget figures, and never compare or subtract the "
-            "snapshot's budget line and other figures yourself. A payment still due that "
-            "counts as spending comes out of the budget once it is paid.\n"
+            "it doesn't change, not just an acknowledgement.\n"
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to, and neither is a "

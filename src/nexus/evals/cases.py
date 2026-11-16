@@ -2641,9 +2641,10 @@ CASES: tuple[Case, ...] = (
         budget=True,
         unchanged=True,
         calls=(Call("month_outlook"),),
-        # The card bill is not spending (its purchases are already counted), so the budget
-        # after what's due is the same -305.78. Not that less the card bill, or 77.22 less it.
-        amounts=(seed.BUDGET_AFTER_DUE,),
+        # The card bill is not spending (its purchases are already counted): the answer is no,
+        # and the budget after what's due stays -305.78 if stated. Never that less the card
+        # bill, or 77.22 less it. The figure isn't required: the question is yes or no.
+        reply=(("doesn't", "does not", "isn't", "won't", "not spending", "not count"),),
         never_amounts=(seed.BUDGET_CARD_SUBTRACTED, seed.BUDGET_ONLY_CARD),
     ),
 )
