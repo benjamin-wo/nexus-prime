@@ -2795,6 +2795,8 @@ export async function fakeApi(
         still_due_out: sgd(1300),
         income: sgd(5000),
         budget_left: overall ? sgd(1400) : null,
+        spending_due: sgd(300),
+        budget_left_after_due: overall ? sgd(1100) : null,
         tighter: overall ? "left_to_spend" : null,
         plan_warning: planWarning
           ? "Your budget and the moves you've scheduled add up to more than you usually bring in."

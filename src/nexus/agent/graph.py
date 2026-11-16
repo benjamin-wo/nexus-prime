@@ -528,7 +528,11 @@ class AgentGraph:
             'never an affordability check. When the user corrects you or adds an amount ("you '
             'forgot the 4000 coming in"), run the tool again with it, or check that its '
             "figures already include it, and give the answer again with its figure, even when "
-            "it doesn't change, not just an acknowledgement.\n"
+            "it doesn't change, not just an acknowledgement. Budget questions (budget left, "
+            "budget against left to spend, a coming payment and the budget) go through "
+            "month_outlook too: quote its budget figures, and never compare or subtract the "
+            "snapshot's budget line and other figures yourself. A payment still due that "
+            "counts as spending comes out of the budget once it is paid.\n"
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to, and neither is a "

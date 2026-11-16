@@ -479,7 +479,11 @@ async def run_case(
     now: datetime = seed.NOW,
 ) -> CaseResult:
     seeded = await seed.seed_user(
-        lambda: SqlUnitOfWork(engine), telegram_id, shared=case.shared, november=case.november
+        lambda: SqlUnitOfWork(engine),
+        telegram_id,
+        shared=case.shared,
+        november=case.november,
+        budget=case.budget,
     )
     user = seeded.user
     if case.november and now == seed.NOW:  # the default clock: this case starts on 13 November

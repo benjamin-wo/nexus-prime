@@ -14,6 +14,7 @@ from nexus.agent import snapshot as snapshot_module
 from nexus.agent.snapshot import money_snapshot
 from nexus.agent.tools import ToolContext
 from nexus.application import bills as bill_cases
+from nexus.application import budgets as budget_cases
 from nexus.application import salary as salary_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application.cashflow import ExpectedKind
@@ -190,6 +191,57 @@ async def test_money_moved_to_own_wallets_comes_off_the_projection_not_the_spend
     assert o.net_so_far == sgd(seed.NOV_NET_SO_FAR) and o.moved == sgd("1000")
     assert o.projected_net == sgd("1992.22") and o.projected_net_before_moves == sgd("2992.22")
     assert o.projected_net == (await month_plan(uow, RATES, user, now=NOV)).left_to_spend
+
+
+async def test_a_bill_still_due_comes_off_the_budget_left_and_a_move_does_not(
+    uow: UowFactory,
+) -> None:
+    """A 4,500 budget with 4,126.56 spent leaves 373.44, but the 515.95 bill due this month
+    is spending too: 142.51 over once paid. A bill that is money moved is not."""
+    user = await person(uow, 6500)
+    now = datetime(2026, 11, 13, 12, tzinfo=seed.TZ)
+    await budget_cases.set_budget(uow(), user, None, sgd("4500"), now=now)
+    await log(uow, user, "4126.56", datetime(2026, 11, 3, 12, tzinfo=seed.TZ))
+    await log(uow, user, "6000", datetime(2026, 11, 1, 12, tzinfo=seed.TZ), direction=Direction.IN)
+    await bill_cases.add_bill(
+        uow(), user, "Electricity", date(2026, 11, 20), Cadence.MONTHLY, sgd("515.95"), now=now
+    )
+    await bill_cases.add_bill(
+        uow(), user, "Index fund", date(2026, 11, 22), Cadence.MONTHLY, sgd("500"), now=now,
+        spending=False,
+    )  # fmt: skip
+    o = await month_outlook(uow, RATES, user, now=now)
+    assert (o.budget_limit, o.budget_spent, o.budget_left) == (
+        sgd("4500"),
+        sgd("4126.56"),
+        sgd("373.44"),
+    )
+    assert o.spending_due == sgd("515.95")  # the index fund is money out, but not spending
+    assert o.budget_left_after_due == sgd("-142.51")
+    assert o.expected_out == sgd("1015.95") and o.overall == sgd("857.49")
+    assert (o.tighter, o.tighter_by) == ("budget", sgd("1000.00"))
+    assert {i.name: i.spending for i in o.items} == {"Electricity": True, "Index fund": False}
+    assert o.budget_left == (await month_plan(uow, RATES, user, now=now)).budget_left
+
+    december = await month_outlook(uow, RATES, user, now=now, month="2026-12")
+    assert (december.budget_left, december.spending_due) == (sgd("4500"), sgd("515.95"))
+    assert december.budget_left_after_due == sgd("3984.05")
+    october = await month_outlook(uow, RATES, user, now=now, month="2026-10")
+    assert october.budget_left == sgd("4500") and october.spending_due is None
+
+
+async def test_without_an_overall_budget_the_outlook_has_no_budget_figures(
+    uow: UowFactory,
+) -> None:
+    user = await november(uow, 6510)
+    o = await month_outlook(uow, RATES, user, now=NOV)
+    assert (o.budget_limit, o.budget_spent, o.budget_left) == (None, None, None)
+    assert (o.spending_due, o.budget_left_after_due, o.tighter, o.tighter_by) == (
+        None,
+        None,
+        None,
+        None,
+    )
 
 
 async def test_the_month_and_today_are_the_users_own(uow: UowFactory) -> None:

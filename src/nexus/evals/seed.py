@@ -12,6 +12,8 @@ A case with ``november`` set starts on Friday 13 November 2026 instead, with the
 days of November already in the ledger (rent, a few small expenses, some freelance income)
 and two more scheduled payments (see ``_NOV_ROWS``), so that payday on the 25th, the
 Singtel bill and the rest of the month are still ahead. The money-math cases use it.
+With ``budget`` as well (the ``money-math-budget-`` cases) the user also has an overall
+monthly budget and two more bills, one that counts as spending and one that doesn't.
 """
 
 from collections.abc import Callable
@@ -116,6 +118,24 @@ NOV_OVERALL = "5300.64"  # NOV_PROJECTED + NOV_CARRY
 NOV_AFTER_DINNER = "2492.22"  # NOV_PROJECTED less a 500.00 dinner
 NOV_WITH_GIFT = "5450.64"  # NOV_OVERALL and 150.00 more expected
 
+# The same November, for the cases with ``budget`` set (on top of ``november``): an overall
+# monthly budget of 2,000.00, an Insurance bill of 250.00 on the 26th that counts as spending
+# and a Citi card bill of 300.00 on the 21st that doesn't (the card's purchases are already in
+# the month's spending). So the budget is fine now (77.22 left) and over once what is due is
+# paid: Singtel 45.00, Gym 88.00 and Insurance 250.00 count as spending (383.00; Electricity has
+# no amount, the card bill is not spending). The month still ends positive, since the 550.00
+# of the two new bills is far less than the 2,992.22 the month would end at. A test recomputes
+# these from the ledger.
+BUDGET_LIMIT = "2000.00"
+BUDGET_INSURANCE = "250.00"
+BUDGET_CARD_BILL = "300.00"
+BUDGET_LEFT = "77.22"  # 2,000.00 less NOV_SPENT
+BUDGET_DUE = "383.00"  # 45.00 + 88.00 + 250.00
+BUDGET_AFTER_DUE = "-305.78"  # 77.22 less 383.00: over by 305.78
+BUDGET_PROJECTED = "2442.22"  # NOV_PROJECTED less the insurance and the card bill
+BUDGET_CARD_SUBTRACTED = "-605.78"  # BUDGET_AFTER_DUE less the card bill: the card bill counted
+BUDGET_ONLY_CARD = "-222.78"  # BUDGET_LEFT less just the card bill
+
 # The owner of the shared Japan trip gets this id on top of the case user's.
 OWNER_OFFSET = 5_000_000
 OWNER_NAME = "Alex"
@@ -208,11 +228,19 @@ def open_plan(user: User, symbol: str, close: str, *, keep_fresh: bool) -> Saved
 
 
 async def seed_user(
-    new_uow: UowFactory, telegram_id: int, *, shared: bool = False, november: bool = False
+    new_uow: UowFactory,
+    telegram_id: int,
+    *,
+    shared: bool = False,
+    november: bool = False,
+    budget: bool = False,
 ) -> Seeded:
     """The case's user. With ``shared`` they don't own the Japan trip: Alex does, and
     the user was added to it as a member. With ``november`` the first days of November are
-    in the ledger too (the case then starts on ``NOV_NOW``)."""
+    in the ledger too (the case then starts on ``NOV_NOW``). With ``budget`` (only with
+    ``november``) there is also an overall monthly budget and two more bills: see ``BUDGET_*``."""
+    if budget and not november:
+        raise ValueError("the budget variant is a November one")
     user = (
         await register_user(
             new_uow(),
@@ -285,6 +313,16 @@ async def seed_user(
         await bill_cases.add_bill(
             new_uow(), user, "Gym", date(2026, 11, 30), Cadence.MONTHLY, Money.of("88", "SGD"),
             now=NOW,
+        )  # fmt: skip
+    if budget:
+        await budget_cases.set_budget(new_uow(), user, None, Money.of(BUDGET_LIMIT, "SGD"), now=NOW)
+        await bill_cases.add_bill(
+            new_uow(), user, "Insurance", date(2026, 11, 26), Cadence.MONTHLY,
+            Money.of(BUDGET_INSURANCE, "SGD"), now=NOW,
+        )  # fmt: skip
+        await bill_cases.add_bill(
+            new_uow(), user, "Citi card bill", date(2026, 11, 21), Cadence.MONTHLY,
+            Money.of(BUDGET_CARD_BILL, "SGD"), now=NOW, spending=False,
         )  # fmt: skip
     await salary_cases.set_schedule(new_uow(), user, PayRule.MONTHLY_DAY, day=25, now=NOW)
     await salary_cases.set_baseline(

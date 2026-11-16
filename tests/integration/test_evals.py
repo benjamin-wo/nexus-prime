@@ -568,14 +568,19 @@ async def test_the_november_seed_matches_the_money_math_figures(engine: AsyncEng
 
 def test_the_money_math_cases_are_wired_to_the_figures_and_the_clock() -> None:
     cases = [c for c in CASES if c.area == "money-math"]
-    assert 8 <= len(cases) <= 12
+    assert 8 <= len(cases) <= 15
     assert {c.id for c in cases} >= {
         "money-math-forgot-payday",
         "money-math-sum",
         "money-math-split-three",
         "money-math-past-month",
         "money-math-electricity-no-amount",
+        "money-math-budget-explain",
+        "money-math-budget-left",
+        "money-math-budget-non-spending",
     }
+    for case in cases:
+        assert case.november or not case.budget, case.id  # the budget variant is a November one
     for case in cases:
         assert case.amounts, case.id  # every case states the figure it wants
         assert case.calls or case.used or case.reply, case.id
@@ -640,6 +645,90 @@ async def test_the_money_math_cases_are_graded_on_the_tool_and_the_exact_figure(
     ]
     first = results["money-math-forgot-payday"].turns[0]
     assert first.calls[0][0] == "month_outlook"
+
+
+async def test_the_budget_seed_matches_the_budget_figures(engine: AsyncEngine) -> None:
+    """The budget figures the money-math-budget cases expect, worked out again from the ledger
+    and the bills by the same code the tool uses, not copied from the seed's constants."""
+    from nexus.application.month_outlook import month_outlook
+
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(engine)
+
+    user = (await seed.seed_user(uow, 790, november=True, budget=True)).user
+    now = seed.NOV_NOW
+    o = await month_outlook(uow, FixedRates(), user, now=now)
+    # Bills count as spending by default; the card bill is the one that doesn't.
+    async with uow() as tx:
+        bills = {b.name: b for b in await tx.planning.list_bills(user.id)}
+    assert {n for n, b in bills.items() if not b.spending} == {"Citi card bill"}
+    assert bills["Insurance"].spending and bills["Singtel"].spending and bills["Gym"].spending
+    due = Decimal(45) + Decimal(88) + Decimal(seed.BUDGET_INSURANCE)  # not Electricity (no amount)
+    assert o.budget_limit is not None and o.budget_limit.amount == Decimal(seed.BUDGET_LIMIT)
+    assert o.budget_spent is not None and o.budget_spent.amount == Decimal(seed.NOV_SPENT)
+    assert o.budget_left is not None and o.budget_left.amount == Decimal(seed.BUDGET_LEFT)
+    assert o.budget_left.amount == Decimal(seed.BUDGET_LIMIT) - Decimal(seed.NOV_SPENT)
+    assert o.spending_due is not None and o.spending_due.amount == due == Decimal(seed.BUDGET_DUE)
+    assert o.budget_left_after_due is not None
+    assert o.budget_left_after_due.amount == o.budget_left.amount - due
+    assert o.budget_left_after_due.amount == Decimal(seed.BUDGET_AFTER_DUE)
+    # Fine now, over once what is due is paid, while the month still ends positive.
+    assert o.budget_left.is_positive and o.budget_left_after_due.amount < 0
+    assert o.projected_net.amount == Decimal(seed.BUDGET_PROJECTED) > 0
+    assert o.projected_net.amount == Decimal(seed.NOV_PROJECTED) - Decimal(
+        seed.BUDGET_INSURANCE
+    ) - Decimal(seed.BUDGET_CARD_BILL)
+    assert o.tighter == "budget"
+    # The card bill is in what goes out but not in what counts against the budget, so the
+    # two wrong answers the case forbids are what you get by subtracting it.
+    card = Decimal(seed.BUDGET_CARD_BILL)
+    assert o.budget_left_after_due.amount - card == Decimal(seed.BUDGET_CARD_SUBTRACTED)
+    assert o.budget_left.amount - card == Decimal(seed.BUDGET_ONLY_CARD)
+    # The plain November seed has no budget: its figures are as before.
+    plain = (await seed.seed_user(uow, 791, november=True)).user
+    p = await month_outlook(uow, FixedRates(), plain, now=now)
+    assert p.budget_limit is None and p.budget_left_after_due is None
+    assert p.projected_net.amount == Decimal(seed.NOV_PROJECTED)
+    with pytest.raises(ValueError):
+        await seed.seed_user(uow, 792, budget=True)
+
+
+async def test_the_budget_cases_are_graded_on_the_after_due_figure(engine: AsyncEngine) -> None:
+    nothing = (say("Nothing to remember."),) * 2
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "money-math-budget-explain": lambda: scripted(
+            call("month_outlook"),
+            say(
+                "Budget left is 77.22 now, but -305.78 once what's due is paid. "
+                "Left to spend: 2,442.22."
+            ),
+            *nothing,
+        ),
+        # Wrong: the budget left now only, as if the bills were not in it.
+        "money-math-budget-left": lambda: scripted(
+            call("month_outlook"), say("You have 77.22 left."), *nothing
+        ),
+        # Wrong: the card bill taken off the budget as well.
+        "money-math-budget-non-spending": lambda: scripted(
+            call("month_outlook"),
+            say("Over by 305.78 after bills, and 605.78 with the card bill."),
+            *nothing,
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    explain = results["money-math-budget-explain"]
+    assert explain.passed, (explain.failures, explain.error)
+    assert results["money-math-budget-left"].failures == [
+        f"reply lacks the figure {seed.BUDGET_AFTER_DUE}"
+    ]
+    assert results["money-math-budget-non-spending"].failures == [
+        "reply states -605.78, which is wrong"
+    ]
 
 
 async def test_a_double_counted_payday_fails_the_correction_case(engine: AsyncEngine) -> None:

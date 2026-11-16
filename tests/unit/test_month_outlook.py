@@ -12,6 +12,7 @@ from nexus.agent.snapshot import MAX_CHARS, _fit
 from nexus.application.cashflow import ExpectedKind
 from nexus.application.month_outlook import (
     Adjustment,
+    MonthOutlook,
     OutlookItem,
     build_outlook,
     parse_adjustment,
@@ -32,10 +33,18 @@ def sgd(amount: str) -> Money:
 
 
 def item(
-    day: int, name: str, amount: str | None, kind: ExpectedKind, direction: Direction
+    day: int,
+    name: str,
+    amount: str | None,
+    kind: ExpectedKind,
+    direction: Direction,
+    *,
+    spending: bool | None = None,
 ) -> OutlookItem:
+    """``spending`` defaults to what is usual: money out counts as spending, money in doesn't."""
+    counts = direction is Direction.OUT if spending is None else spending
     return OutlookItem(
-        date(2026, 11, day), kind, name, direction, sgd(amount) if amount else None, None
+        date(2026, 11, day), kind, name, direction, sgd(amount) if amount else None, None, counts
     )
 
 
@@ -196,7 +205,7 @@ def test_a_future_month_has_a_status_of_its_own() -> None:
 def test_a_foreign_item_shows_what_it_costs_in_its_own_currency() -> None:
     usd = OutlookItem(
         date(2026, 11, 20), ExpectedKind.SUBSCRIPTION, "ChatGPT", Direction.OUT,
-        sgd("27.00"), Money.of("20", "USD"),
+        sgd("27.00"), Money.of("20", "USD"), True,
     )  # fmt: skip
     o = build_outlook(
         month=date(2026, 11, 1), today=TODAY, currency="SGD",
@@ -279,3 +288,144 @@ def test_under_the_cap_nothing_is_cut() -> None:
     exact = [("x" * 999, False), ("y" * 1000, False)]  # 999 + 1 + 1000 = the cap
     assert len(_fit(exact)) == MAX_CHARS
     assert _fit([("x" * 999, False), ("y" * 1001, False)]).endswith("…")
+
+
+# --- the budget, with what is still due ------------------------------------------------------
+
+
+def with_budget(
+    items: list[OutlookItem],
+    *,
+    limit: str | None = "4500",
+    spent: str | None = "4126.56",
+    received: str = "5000.00",
+    month: date = date(2026, 11, 1),
+) -> MonthOutlook:
+    """The bug's case: a 4,500 budget, 4,126.56 spent against it."""
+    return build_outlook(
+        month=month, today=TODAY, currency="SGD",
+        received=sgd(received), spent=sgd(spent or "0"), moved=sgd("0"), items=items,
+        budget_limit=sgd(limit) if limit else None,
+        budget_spent=sgd(spent) if spent else None,
+    )  # fmt: skip
+
+
+def bill(name: str, amount: str, *, spending: bool = True) -> OutlookItem:
+    return item(20, name, amount, ExpectedKind.BILL, Direction.OUT, spending=spending)
+
+
+def test_a_bill_still_due_comes_off_the_budget_left_because_paying_it_is_spending() -> None:
+    o = with_budget([bill("Electricity", "515.95")])
+    assert (o.budget_limit, o.budget_spent) == (sgd("4500"), sgd("4126.56"))
+    assert o.budget_left == sgd("373.44")
+    assert o.spending_due == sgd("515.95")
+    assert o.budget_left_after_due == sgd("-142.51")  # over by 142.51 once it is paid
+
+
+def test_the_same_bill_that_is_not_spending_leaves_the_budget_alone() -> None:
+    o = with_budget([bill("Index fund", "515.95", spending=False)])
+    assert o.budget_left == sgd("373.44")
+    assert o.spending_due == sgd("0")
+    assert o.budget_left_after_due == sgd("373.44")
+
+
+def test_a_subscription_counts_but_a_move_a_set_aside_and_payday_do_not() -> None:
+    o = with_budget(
+        [
+            item(21, "Netflix", "17.98", ExpectedKind.SUBSCRIPTION, Direction.OUT, spending=True),
+            item(22, "Top-up → IBKR", "1000", ExpectedKind.MOVE, Direction.OUT, spending=False),
+            item(
+                23, "Set aside for Tokyo", "500", ExpectedKind.TRIP, Direction.OUT, spending=False
+            ),
+            item(25, "Salary", "4798", ExpectedKind.SALARY, Direction.IN, spending=False),
+        ]
+    )
+    assert o.spending_due == sgd("17.98")
+    assert o.budget_left_after_due == sgd("355.46")
+
+
+def test_items_without_an_amount_are_not_in_what_is_due() -> None:
+    o = with_budget([bill("Electricity", "515.95"), item(
+        21, "Water", None, ExpectedKind.BILL, Direction.OUT, spending=True)])  # fmt: skip
+    assert o.spending_due == sgd("515.95") and o.no_amount == ["Water"]
+
+
+def test_it_says_which_is_tighter_the_budget_or_the_outlook_and_by_how_much() -> None:
+    # Received 5,000 less 4,126.56 spent, less the bill: the outlook is +357.49; the budget -142.51.
+    o = with_budget([bill("Electricity", "515.95")])
+    assert o.overall == sgd("357.49")
+    assert (o.tighter, o.tighter_by) == ("budget", sgd("500.00"))
+    # With little coming in, the outlook is the lower of the two.
+    low = with_budget([bill("Electricity", "100")], received="0.00")
+    assert low.budget_left_after_due == sgd("273.44")
+    assert low.overall == sgd("-4226.56")
+    assert (low.tighter, low.tighter_by) == ("outlook", sgd("4500.00"))
+    same = with_budget([bill("Electricity", "100")], received="4400.00")
+    assert same.overall == sgd("173.44") and same.budget_left_after_due == sgd("273.44")
+    assert (same.tighter, same.tighter_by) == ("outlook", sgd("100.00"))
+
+
+def test_adjustments_move_the_outlook_side_of_the_comparison() -> None:
+    o = build_outlook(
+        month=date(2026, 11, 1), today=TODAY, currency="SGD",
+        received=sgd("5000"), spent=sgd("4126.56"), moved=sgd("0"),
+        items=[bill("Electricity", "515.95")],
+        adjustments=[parse_adjustment("-800", "holiday", "SGD")],
+        budget_limit=sgd("4500"), budget_spent=sgd("4126.56"),
+    )  # fmt: skip
+    assert o.overall == sgd("-442.51")
+    assert (o.tighter, o.tighter_by) == ("outlook", sgd("300.00"))
+
+
+def test_without_an_overall_budget_there_are_no_budget_figures() -> None:
+    o = with_budget([bill("Electricity", "515.95")], limit=None, spent=None)
+    assert (o.budget_limit, o.budget_spent, o.budget_left) == (None, None, None)
+    assert (o.spending_due, o.budget_left_after_due) == (None, None)
+    assert (o.tighter, o.tighter_by) == (None, None)
+
+
+def test_a_future_month_has_nothing_spent_and_a_past_month_has_nothing_due() -> None:
+    future = with_budget([bill("Rent", "1800")], spent="0", received="0", month=date(2026, 12, 1))
+    assert future.status == "future"
+    assert (future.budget_left, future.spending_due) == (sgd("4500"), sgd("1800"))
+    assert future.budget_left_after_due == sgd("2700")
+    past = with_budget([], month=date(2026, 10, 1))
+    assert past.status == "past" and past.budget_left == sgd("373.44")
+    assert (past.spending_due, past.budget_left_after_due) == (None, None)
+    assert (past.tighter, past.tighter_by) == (None, None)
+
+
+# --- the budget in the words -------------------------------------------------------------------
+
+
+def test_the_words_for_the_bug_case_say_the_bill_is_in_both_figures() -> None:
+    text = describe_outlook(with_budget([bill("Electricity", "515.95")]))
+    for expected in (
+        "Overall budget: 4,500.00; spent against it 4,126.56; budget left now 373.44.",
+        "- Fri 20 Nov Electricity (bill) -515.95 [counts against the budget]",
+        "Still due that counts as spending",
+        "515.95 (Electricity)",
+        "Budget left once they're paid: -142.51 (over by 142.51).",
+        "Tighter: the budget, by 500.00",
+        "A spending bill still due is in BOTH",
+        "Never say it isn't in the budget",
+    ):
+        assert expected in text, expected
+
+
+def test_a_bill_that_is_not_spending_is_marked_as_not_counting() -> None:
+    text = describe_outlook(with_budget([bill("Index fund", "515.95", spending=False)]))
+    assert "Index fund (bill) -515.95 [not counted in the budget]" in text
+    assert "counts against the budget" not in text.replace("[not counted in the budget]", "")
+    assert "Budget left once they're paid: 373.44." in text and "over by" not in text
+
+
+def test_without_a_budget_the_words_have_no_budget_lines() -> None:
+    text = describe_outlook(with_budget([bill("Electricity", "515.95")], limit=None, spent=None))
+    assert "budget" not in text.lower()
+
+
+def test_a_month_that_is_over_has_the_budget_figures_and_nothing_due() -> None:
+    text = describe_outlook(with_budget([], month=date(2026, 10, 1)))
+    assert "Overall budget: 4,500.00; spent against it 4,126.56; budget left 373.44." in text
+    assert "Still due" not in text and "Tighter" not in text

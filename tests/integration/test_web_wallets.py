@@ -414,6 +414,8 @@ async def test_budgets_month_has_left_to_spend_and_the_plan_check(world: World) 
         "still_due_out": money(1300),
         "income": money(5000),
         "budget_left": None,
+        "spending_due": money(300),
+        "budget_left_after_due": None,
         "tighter": None,
         "plan_warning": None,
         "skipped": [],
@@ -425,6 +427,8 @@ async def test_budgets_month_has_left_to_spend_and_the_plan_check(world: World) 
     assert [b["name"] for b in listed] == ["Overall"] and listed[0]["remaining"] == money(1400)
     month = (await owner.get("/api/budgets/month")).json()
     assert month["budget_left"] == money(1400) and month["tighter"] == "left_to_spend"
+    # Only the phone plan is spending; the top-up is a move, not an expense.
+    assert month["spending_due"] == money(300) and month["budget_left_after_due"] == money(1100)
     assert month["plan_warning"] is None  # nothing to compare with: no pay schedule, no history
 
     # Pay is 4,500 a month: 4,000 of budget plus the 1,000 top-up is more than that.

@@ -140,6 +140,7 @@ async def test_set_aside_shows_in_the_cash_flow_and_says_if_it_covers_the_budget
         (d.day, e.home) for d in flow.days for e in d.expected if e.kind is ExpectedKind.TRIP
     ]
     assert set_aside == [(date(2026, 11, 25), sgd("500")), (date(2026, 12, 25), sgd("500"))]
+    assert not any(e.spending for d in flow.days for e in d.expected if e.kind is ExpectedKind.TRIP)
 
     view = await trip_cases.trip_view(uow, RATES, user, trip.id, now=MADE)
     a = view.saving

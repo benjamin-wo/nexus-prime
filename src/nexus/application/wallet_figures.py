@@ -172,7 +172,12 @@ class MonthPlan:
     income: Money  # received this month so far, plus salary still due before month end
     left_to_spend: Money  # can be negative
     budget_left: Money | None  # the overall budget less spending so far; None without one
-    tighter: Literal["budget", "left_to_spend"] | None  # the lower of the two; None w/o budget
+    # Still-due payments that count as spending (bills that are spending, subscriptions) and
+    # what the budget has left once they're paid: negative when it will be overspent.
+    spending_due: Money
+    budget_left_after_due: Money | None  # budget_left - spending_due; None without a budget
+    # The lower of budget_left_after_due and left_to_spend; None without a budget.
+    tighter: Literal["budget", "left_to_spend"] | None
     plan_warning: str | None  # the budget plus scheduled moves outgrow usual income
     # Names of scheduled items left out for want of an amount or a rate.
     skipped: list[str]
@@ -187,6 +192,7 @@ async def month_plan(uow: UowFactory, rates: RateSource, user: User, *, now: dat
 
     skipped: list[str] = []
     due_out = Money.zero(home)
+    spending_ahead = Money.zero(home)  # the part of due_out that will count against the budget
     salary_due = Money.zero(home)
     # Today's unpaid items count as still due; payday only from tomorrow (today's may be
     # logged already, and is then in the income received).
@@ -198,6 +204,8 @@ async def month_plan(uow: UowFactory, rates: RateSource, user: User, *, now: dat
             salary_due = salary_due + item.home
         elif item.direction is Direction.OUT:
             due_out = due_out + item.home
+            if item.spending:
+                spending_ahead = spending_ahead + item.home
 
     income = figures.income + salary_due
     left = income - figures.total_out - due_out
@@ -207,9 +215,12 @@ async def month_plan(uow: UowFactory, rates: RateSource, user: User, *, now: dat
         None,
     )
     budget_left = overall.remaining if overall else None
+    # Paying a spending bill logs an expense against the budget, so what the budget really
+    # has left is after those, which is what left to spend is compared with.
+    after_due = budget_left - spending_ahead if budget_left is not None else None
     tighter: Literal["budget", "left_to_spend"] | None = None
-    if budget_left is not None:
-        tighter = "budget" if budget_left < left else "left_to_spend"
+    if after_due is not None:
+        tighter = "budget" if after_due < left else "left_to_spend"
 
     warning = None
     if overall is not None:
@@ -223,6 +234,8 @@ async def month_plan(uow: UowFactory, rates: RateSource, user: User, *, now: dat
         income=income,
         left_to_spend=left,
         budget_left=budget_left,
+        spending_due=spending_ahead,
+        budget_left_after_due=after_due,
         tighter=tighter,
         plan_warning=warning,
         skipped=skipped,

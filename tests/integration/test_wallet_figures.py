@@ -511,6 +511,68 @@ async def test_left_to_spend_the_agreed_example(uow: UowFactory) -> None:
     assert plan.budget_left == sgd("400") and plan.tighter == "budget"
 
 
+async def reported_month(uow: UowFactory, *, spending: bool = True) -> User:
+    """The 18th: 4,810.05 in, 4,126.56 spent, a 515.95 bill due on the 25th, a 4,500 budget."""
+    user = await person(uow)
+    await log(uow, user, "4810.05", sg(1), direction=Direction.IN, counterparty="Employer")
+    await log(uow, user, "4126.56", sg(5), category="Shopping", counterparty="Mall")
+    await bill(uow, user, "Tuition", 25, "515.95", spending=spending)
+    await budget_cases.set_budget(uow(), user, None, sgd("4500"), now=sg(1))
+    return user
+
+
+async def test_the_budget_is_judged_after_the_spending_bills_still_due(uow: UowFactory) -> None:
+    user = await reported_month(uow)
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.left_to_spend == sgd("167.54")
+    assert plan.budget_left == sgd("373.44")  # as before: the limit less what's spent so far
+    assert plan.spending_due == sgd("515.95")
+    assert plan.budget_left_after_due == sgd("-142.51")  # once the bill is paid it's overspent
+    assert plan.tighter == "budget"  # not left to spend, which looked lower than 373.44
+
+
+async def test_a_bill_that_is_not_spending_leaves_the_budget_alone(uow: UowFactory) -> None:
+    user = await reported_month(uow, spending=False)
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.left_to_spend == sgd("167.54")  # still due out of the month's money
+    assert plan.still_due_out == sgd("515.95")
+    assert plan.spending_due == sgd("0")
+    assert plan.budget_left == plan.budget_left_after_due == sgd("373.44")
+    assert plan.tighter == "left_to_spend"  # 167.54 < 373.44
+
+
+async def test_subscriptions_count_as_spending_due_and_scheduled_moves_do_not(
+    uow: UowFactory,
+) -> None:
+    user = await person(uow)
+    w = await Wallets.create(uow, user)
+    await log(uow, user, "1000", sg(1), direction=Direction.IN)
+    for month in (6, 7, 8):
+        await log(uow, user, "15.98", sg(20, 9, month), counterparty=f"NETFLIX.COM {880 + month}")
+    await subscription_cases.check(uow, user, now=sg(18))
+    [proposed] = (await subscription_cases.overview(uow(), user.id)).proposed
+    await subscription_cases.track(uow(), user.id, proposed.subscription.id, now=sg(18))
+    await bill_cases.add_bill(
+        uow(), user, "IBKR top-up", date(2026, 9, 25), Cadence.MONTHLY, sgd("200"),
+        now=sg(1), spending=False, wallet_id=w.investments,
+    )  # fmt: skip
+    await budget_cases.set_budget(uow(), user, None, sgd("500"), now=sg(1))
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.still_due_out == sgd("215.98")  # the charge and the move
+    assert plan.spending_due == sgd("15.98")  # only the charge counts against the budget
+    assert plan.budget_left == sgd("500")
+    assert plan.budget_left_after_due == sgd("484.02")
+
+
+async def test_without_a_budget_there_is_nothing_after_due_to_compare(uow: UowFactory) -> None:
+    user = await person(uow)
+    await log(uow, user, "1000", sg(1), direction=Direction.IN)
+    await bill(uow, user, "Gym", 25, "50")
+    plan = await month_plan(uow, FakeRates(), user, now=sg(18))
+    assert plan.spending_due == sgd("50")
+    assert (plan.budget_left, plan.budget_left_after_due, plan.tighter) == (None, None, None)
+
+
 async def test_only_what_is_still_ahead_this_month_is_due(uow: UowFactory) -> None:
     user = await person(uow)
     await log(uow, user, "1000", sg(1), direction=Direction.IN)

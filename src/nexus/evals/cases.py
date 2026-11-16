@@ -146,6 +146,8 @@ class Case:
     used: tuple[str, ...] = ()  # tools some turn must call (``calls`` is the last turn's)
     # Starts on 13 November, with the start of November in the ledger (see ``seed``).
     november: bool = False
+    # With ``november``: an overall budget and two more bills too (see ``seed.BUDGET_*``).
+    budget: bool = False
     never_match: tuple[str, ...] = ()  # regexes (any case) that match no reply at all
     last_never_match: tuple[str, ...] = ()  # regexes (any case) the last turn's replies avoid
     at_most: tuple[AtMost, ...] = ()  # caps on tool calls in the last turn
@@ -2600,5 +2602,48 @@ CASES: tuple[Case, ...] = (
         unchanged=True,
         calls=(Call("calculate"),),
         amounts=("112.50",),
+    ),
+    # With a budget (``budget``): 2,000.00 for the month, 1,922.78 spent, so 77.22 left; due
+    # still: Singtel 45.00, Gym 88.00 and Insurance 250.00 (all spending, 383.00) and a Citi
+    # card bill of 300.00 that is not spending. Budget left after what's due: -305.78; the
+    # month still ends at 2,442.22. Bills count as spending, so the budget goes over once they
+    # are paid, whatever the month-end net says.
+    Case(
+        "money-math-budget-explain",
+        "money-math",
+        _t(
+            "explain my left to spend and budget left amounts when i have a 250.00 payment "
+            "coming up"
+        ),
+        november=True,
+        budget=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        # The budget after the bills due (over by 305.78) and the left to spend (2,442.22).
+        amounts=(seed.BUDGET_AFTER_DUE, seed.BUDGET_PROJECTED),
+    ),
+    Case(
+        "money-math-budget-left",
+        "money-math",
+        _t("how much budget do i have left this month?"),
+        november=True,
+        budget=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        # After what's due; the 77.22 left now may be stated too.
+        amounts=(seed.BUDGET_AFTER_DUE,),
+    ),
+    Case(
+        "money-math-budget-non-spending",
+        "money-math",
+        _t("i have a 300 citi card bill on the 21st. does that come out of my budget?"),
+        november=True,
+        budget=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        # The card bill is not spending (its purchases are already counted), so the budget
+        # after what's due is the same -305.78. Not that less the card bill, or 77.22 less it.
+        amounts=(seed.BUDGET_AFTER_DUE,),
+        never_amounts=(seed.BUDGET_CARD_SUBTRACTED, seed.BUDGET_ONLY_CARD),
     ),
 )

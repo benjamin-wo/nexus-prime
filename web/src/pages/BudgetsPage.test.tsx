@@ -56,15 +56,17 @@ describe("the Budgets page for this month", () => {
     still_due_out: sgd("1300.00"),
     income: sgd("5000.00"),
     budget_left: null,
+    spending_due: sgd("0.00"),
+    budget_left_after_due: null,
     tighter: null,
     plan_warning: null,
     skipped: [],
   };
   const overall = { id: "b1", category_id: null, name: "Overall", limit: sgd("2000.00"), spent: sgd("600.00"), remaining: sgd("1400.00"), percent: 30, unconverted: [] };
-  const serve = (budgets: unknown[]) =>
+  const serve = (budgets: unknown[], month: object = plan) =>
     mockApi({
       "GET /budgets": () => budgets,
-      "GET /budgets/month": () => plan,
+      "GET /budgets/month": () => month,
       "GET /categories": () => [{ id: "food", name: "Dining Out" }],
       "GET /bills": () => [],
       "GET /salary": () => null,
@@ -93,5 +95,19 @@ describe("the Budgets page for this month", () => {
     expect(screen.getByRole("group", { name: "Left to spend" })).toHaveTextContent(/SGD.1,100\.00/);
     expect(screen.queryByRole("heading", { name: "Set a monthly limit" })).toBeNull();
     expect(screen.getByRole("meter", { name: "Overall budget used" })).toBeInTheDocument();
+  });
+
+  it("shows what the budget has left once the spending bills still due are paid", async () => {
+    serve([overall], {
+      ...plan,
+      budget_left: sgd("1400.00"),
+      spending_due: sgd("1500.00"),
+      budget_left_after_due: sgd("-100.00"),
+      tighter: "budget",
+    });
+    renderWithProviders(<BudgetsPage me={me} />, "/accounting/budgets");
+    const card = await screen.findByRole("group", { name: "Budget left" });
+    expect(card).toHaveTextContent(/SGD.1,400\.00/);
+    expect(card).toHaveTextContent(/-SGD.100\.00 after bills due|SGD.-100\.00 after bills due/);
   });
 });

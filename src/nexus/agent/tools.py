@@ -4639,9 +4639,11 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "far, what is still expected by month end (bills, tracked subscriptions, payday, "
             "scheduled moves), the projected month-end net and the headroom: how much more "
             "everyday spending keeps it at zero or above. Use it for can I afford, how much "
-            "is left to spend, leeway, will I end the month positive, net by month end. "
-            "Pass amounts the user mentions (a carry-over, money they expect, a purchase "
-            "they are considering) as adjustments. Not an account balance.",
+            "is left to spend, leeway, will I end the month positive, net by month end. Also "
+            "for budget questions: how much budget is left, budget against left to spend, "
+            "will a coming payment push me over budget (its budget figures already count "
+            "the spending bills still due). Pass amounts the user mentions (a carry-over, money "
+            "they expect, a purchase they are considering) as adjustments. Not an account balance.",
             MonthOutlookArgs,
             _month_outlook,
         ),
