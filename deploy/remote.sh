@@ -16,7 +16,9 @@ if [ -z "${KAYA_REMOTE_COPY:-}" ]; then
 fi
 DIR=/opt/kaya
 cd "$DIR/deploy"
-SITE=$(grep -m1 '^SITE_ADDRESS=' .env | cut -d= -f2)
+# Read the address the way docker compose does: without surrounding quotes, spaces or a
+# Windows line ending (SITE_ADDRESS="nexus-prime.app" is a valid .env line).
+SITE=$(grep -m1 '^SITE_ADDRESS=' .env | cut -d= -f2- | tr -d "\"' \r")
 
 health() {
   for _ in $(seq 1 30); do
