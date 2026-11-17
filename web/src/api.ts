@@ -337,6 +337,9 @@ export function setTimezone(timezone: string, source: "phone" | "manual"): Promi
 export function goHomeTimezone(): Promise<TimezoneChange> {
   return api<TimezoneChange>("/me/timezone/home", { method: "POST" });
 }
+/** `GET /config`: what the sign-in page needs, and whether domain panels show beside the chat. */
+export type AppConfig = { bot_username: string; panels_enabled: boolean };
+
 export type Summary = {
   start: string;
   end: string;

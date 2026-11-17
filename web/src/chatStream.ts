@@ -3,6 +3,7 @@
 // EventSource can't POST or send the CSRF header, so this reads the response body by hand.
 
 import { ApiError, csrfHeader, type ChatHistory, type Reply } from "./api";
+import { parsePanelEvent, type PanelEvent } from "./panels/types";
 
 export type ChatStep = { label: string; state: "running" | "done" };
 
@@ -68,10 +69,15 @@ async function refusal(response: Response): Promise<ApiError> {
   return new ApiError(response.status, typeof detail === "string" ? detail : response.statusText);
 }
 
-/** Send `message` and follow the turn. Calls `onStep` as Nexus works and resolves with the replies.
+/** Send `message` and follow the turn. Calls `onStep` as Nexus works and `onPanel` for each valid
+ * `panel.upsert` (malformed ones, unknown kinds and unknown versions are ignored), and resolves with the replies.
  * Rejects with StreamNotStarted (send it the usual way), StreamInterrupted (do not send it again;
  * look in the chat history), or an ApiError (the server refused, or the turn failed: show it). */
-export async function streamChat(message: string, onStep: (step: ChatStep) => void): Promise<Reply[]> {
+export async function streamChat(
+  message: string,
+  onStep: (step: ChatStep) => void,
+  onPanel?: (panel: PanelEvent) => void,
+): Promise<Reply[]> {
   if (typeof ReadableStream === "undefined") throw new StreamNotStarted();
   let response: Response;
   try {
@@ -105,6 +111,16 @@ export async function streamChat(message: string, onStep: (step: ChatStep) => vo
       const { done, value } = await reader.read();
       if (done) break;
       for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+        if (frame.event === "panel.upsert") {
+          // A panel is a side effect of the turn: a bad one, or a handler that throws, must not break the turn.
+          try {
+            const panel = parsePanelEvent(JSON.parse(frame.data));
+            if (panel) onPanel?.(panel);
+          } catch {
+            // ignored
+          }
+          continue;
+        }
         const data: unknown = JSON.parse(frame.data);
         if (frame.event === "step") onStep(data as ChatStep);
         else if (frame.event === "replies") return data as Reply[];

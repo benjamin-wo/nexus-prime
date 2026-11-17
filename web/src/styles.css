@@ -2903,3 +2903,72 @@ a.set-row:focus-visible { outline-offset: -2px; }
 }
 :root[data-theme="dark"] .nexus-mark .nm-K { fill: #2563EB; }
 :root[data-theme="dark"] .nexus-mark .nm-k, :root[data-theme="dark"] .nexus-mark .nm-b { fill: #22D3EE; }
+
+/* ===== Domain panels (docs/adr/0001-prime-opens-domain-panels.md) =====
+   With panels on and a window of 1100px or more, the chat is a fixed column between the rail and the main
+   area (never a drawer), and the main area switches between the page and the panel stage. Below that, or
+   with panels off, none of this applies. Colours are the existing tokens in both schemes. */
+.shell-docked { grid-template-columns: 248px clamp(340px, 28vw, 420px) minmax(0, 1fr); }
+.chat-column { min-width: 0; min-height: 0; display: grid; background: var(--bg-frame); border-right: 1px solid var(--border-subtle); }
+.drawer-docked {
+  position: static; width: auto; height: 100%; min-height: 0; z-index: auto; border: 0; box-shadow: none; animation: none;
+  background: transparent;
+}
+.workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.workspace [hidden] { display: none; }
+.workspace-switch { margin: var(--space-4) var(--space-6) 0; flex: none; }
+.workspace-switch .dept-tab { border: 0; background: transparent; font: inherit; font-weight: 500; cursor: pointer; }
+.workspace-switch .dept-tab.active { background: var(--tab-active-bg); }
+.workspace .main-viewport { flex: 1 1 auto; min-height: 0; padding: var(--space-6) var(--space-6) var(--space-8); }
+
+.panel-stage { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--space-5) var(--space-6) var(--space-8); outline: none; background: var(--bg-shell); }
+.panel-stage-away { flex: 0 0 0; height: 0; padding: 0; overflow: hidden; }
+.panel-stage-content { display: grid; gap: var(--space-4); align-content: start; max-width: 880px; margin: 0 auto; }
+.panel-empty { margin: var(--space-8) 0 0; padding: var(--space-6); text-align: center; color: var(--text-secondary); font-size: 1.0625rem; line-height: 1.5; border: 1px dashed var(--border-card); border-radius: var(--radius); }
+.panel-compact-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--space-4); align-items: start; }
+
+.panel-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: var(--space-5); display: grid; gap: var(--space-4); min-width: 0; }
+.panel-compact { padding: var(--space-4); gap: var(--space-3); border-radius: 16px; }
+.panel-pinned { border-color: var(--accent-border); }
+.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.panel-titles { min-width: 0; flex: 1 1 200px; display: grid; gap: 2px; }
+.panel-head h3 { margin: 0; font-size: 1.125rem; font-weight: 600; line-height: 1.3; color: var(--text-strong); }
+.panel-compact .panel-head h3 { font-size: 1rem; }
+.panel-head p { margin: 0; }
+.panel-why { color: var(--text-secondary); }
+.panel-query { color: var(--text-muted); }
+.panel-actions { display: flex; gap: var(--space-1); flex-wrap: wrap; margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) 0 0; }
+.panel-actions .btn-small { padding: 4px 10px; color: var(--text-secondary); }
+.panel-actions .btn-small[aria-pressed="true"] { color: var(--accent-text); background: var(--accent-soft); }
+.panel-glance { display: flex; align-items: baseline; }
+.panel-figure { display: grid; gap: 2px; }
+.panel-figure .num { font-size: 1.375rem; font-weight: 600; line-height: 1.2; color: var(--text-strong); }
+.panel-body { display: grid; gap: var(--space-4); min-width: 0; }
+.panel-foot, .panel-more { margin: 0; }
+.panel-link { color: var(--accent-text); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.panel-link:hover { color: var(--accent-hover); }
+.panel-summary { margin: 0; color: var(--text-primary); }
+.panel-sub { margin: 0 0 var(--space-2); font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.panel-rows { margin: 0; display: grid; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border-subtle); }
+.panel-rows:last-of-type { border-bottom: 0; padding-bottom: 0; }
+.panel-row { display: flex; justify-content: space-between; gap: var(--space-3); align-items: baseline; }
+.panel-row dt { color: var(--text-secondary); }
+.panel-row dd { margin: 0; white-space: nowrap; }
+.panel-row-strong dt { color: var(--text-strong); font-weight: 600; }
+.panel-row-strong dd { font-size: 1.125rem; color: var(--text-strong); }
+.panel-note { margin: 0; padding: var(--space-3); border-radius: 12px; background: var(--emerald-soft); color: var(--text-primary); }
+.panel-note-warn { background: var(--status-warning-soft); border: 1px solid var(--status-warning-border); }
+.panel-items { list-style: none; margin: 0; padding: 0; display: grid; }
+.panel-items li { display: grid; grid-template-columns: 4.25rem minmax(0, 1fr) auto; gap: var(--space-3); align-items: baseline; padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
+.panel-items li:last-child { border-bottom: 0; }
+.panel-items .num { white-space: nowrap; text-align: right; }
+.panel-cat { display: block; }
+.panel-items .fx { display: block; text-align: right; }
+.panel-refusal { color: var(--text-primary); padding: var(--space-4); border-radius: 12px; background: var(--bg-card-hover); }
+.panel-trip { display: grid; gap: var(--space-4); }
+.panel-trip .bars { margin-top: var(--space-1); }
+
+.panel-history { display: grid; gap: var(--space-2); padding-top: var(--space-2); }
+.panel-history h3 { margin: 0; font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.panel-history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.panel-history li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border-subtle); }

@@ -41,7 +41,7 @@ from nexus.agent.image_look import (
     route,
 )
 from nexus.agent.ops_timing import TurnTimer
-from nexus.agent.progress import StepSink
+from nexus.agent.progress import PanelSink, StepSink
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
 from nexus.agent.tools import UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
@@ -388,11 +388,15 @@ class AgentService:
         return None
 
     async def _run(
-        self, actor: UserId, payload: Any, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        payload: Any,
+        on_step: StepSink | None = None,
+        on_panel: PanelSink | None = None,
     ) -> list[Reply]:
         # A turn is chat unless a voice note, photo or PDF started it.
         with costs.scope("chat", user=actor, keep=True):
-            return await self._run_turn(actor, payload, on_step)
+            return await self._run_turn(actor, payload, on_step, on_panel)
 
     def request_stop(self, actor: UserId) -> None:
         """Ask for the user's running turn to end at its next step. A model call already
@@ -404,7 +408,11 @@ class AgentService:
         self._stops.add(actor)
 
     async def _run_turn(
-        self, actor: UserId, payload: Any, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        payload: Any,
+        on_step: StepSink | None = None,
+        on_panel: PanelSink | None = None,
     ) -> list[Reply]:
         await voice_cases.load(self._uow(), actor)  # in the user's turn, so not before the lock
         config = self._config(actor)
@@ -414,7 +422,7 @@ class AgentService:
         timer = TurnTimer(self._primary_model)
         self._stops.discard(actor)  # a Stop from before this turn started isn't for it
         try:
-            with progress.watching(on_step, lambda: actor in self._stops):
+            with progress.watching(on_step, lambda: actor in self._stops, on_panel):
                 await self._graph.ainvoke(payload, {**config, "callbacks": [timer]})
         except Exception as exc:
             _record_turn(clock.monotonic() - started, [], timer, error=type(exc).__name__)
@@ -536,21 +544,34 @@ class AgentService:
     @in_voice
     @costs.as_feature("chat")
     async def handle_text(
-        self, actor: UserId, text: str, ref: str, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        text: str,
+        ref: str,
+        on_step: StepSink | None = None,
+        on_panel: PanelSink | None = None,
     ) -> list[Reply]:
         """``on_step``, if given, is told as each tool starts and finishes (a short label,
-        see ``progress``); the replies are the same with or without it."""
+        see ``progress``); ``on_panel``, as each tool that answered opens a panel (see
+        ``panels``). The replies are the same with or without them."""
         text, hid = _hidden(text)
         refusal = await self._demo_refusal(actor, Use.MESSAGE)
         replies = (
-            [Reply(refusal)] if refusal else await self._handle_text(actor, text, ref, on_step)
+            [Reply(refusal)]
+            if refusal
+            else await self._handle_text(actor, text, ref, on_step, on_panel)
         )
         replies = _noted(replies, hid)
         await self._keep(actor, text, replies, ref)
         return replies
 
     async def _handle_text(
-        self, actor: UserId, text: str, ref: str, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        text: str,
+        ref: str,
+        on_step: StepSink | None = None,
+        on_panel: PanelSink | None = None,
     ) -> list[Reply]:
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
@@ -562,7 +583,7 @@ class AgentService:
             message = HumanMessage(
                 content=text, additional_kwargs={REF: ref, SENT_AT: self._sent()}
             )
-            replies = await self._run(actor, {"messages": [message]}, on_step)
+            replies = await self._run(actor, {"messages": [message]}, on_step, on_panel)
             await self._remember(actor, ref)
             return replies
 

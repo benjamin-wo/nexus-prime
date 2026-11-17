@@ -11,6 +11,9 @@ import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { NexusMark } from "./NexusMark";
+import { ChatSlotContext } from "./chatSlot";
+import { PanelStage } from "./PanelStage";
+import { useOptionalPanelStage } from "../panels/usePanelStage";
 
 /** True while the page is being scrolled down (past its top, short of its end):
  * the floating buttons step aside then, so they never sit on what's being read,
@@ -122,6 +125,30 @@ function PullIndicator({ status, onRefresh }: { status: PullStatus; onRefresh?: 
   );
 }
 
+/** With the chat docked, the main area shows either the page or the panel stage. A panel Prime opens (or
+ * updates) brings the stage forward; going to another page brings the page back. Starts on the page. */
+function useWorkspaceView(dock: boolean, locationKey: string): ["page" | "stage", (view: "page" | "stage") => void] {
+  const stage = useOptionalPanelStage();
+  const [view, setView] = useState<"page" | "stage">("page");
+  const seen = useRef<Set<string> | null>(null);
+  const panels = stage?.state.panels;
+  useEffect(() => {
+    const now = new Set((panels ?? []).map((p) => `${p.id}:${p.openedAt}:${p.updatedAt}`));
+    const before = seen.current;
+    seen.current = now;
+    if (dock && before && [...now].some((key) => !before.has(key))) setView("stage");
+  }, [panels, dock]);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setView("page");
+  }, [locationKey]);
+  return [view, setView];
+}
+
 /** The brand mark, as the rail and a guest's header show it. */
 function BrandMark() {
   return (
@@ -143,6 +170,7 @@ export function Shell({
   onLogout,
   onRefresh,
   offlineWaiting = 0,
+  docked = false,
   children,
 }: {
   me: Me;
@@ -152,9 +180,15 @@ export function Shell({
   onRefresh?: () => Promise<unknown>;
   /** While the phone is offline: how many expenses saved on it are waiting to sync. A notice shows above the page. */
   offlineWaiting?: number;
+  /** The chat is a fixed column left of the main area, and the panel stage can take that area (needs a PanelStageProvider). */
+  docked?: boolean;
   children: ReactNode;
 }) {
   const { pathname, key } = useLocation();
+  const stageContext = useOptionalPanelStage();
+  const dock = docked && stageContext !== null;
+  const [chatSlot, setChatSlot] = useState<HTMLElement | null>(null);
+  const [view, setView] = useWorkspaceView(dock, key);
   useTelegramBack(pathname, key === "default");
   useTelegramColours(pathname === "/");
   const here = departmentFor(pathname);
@@ -228,61 +262,84 @@ export function Shell({
       {where === "in-rail" && <span>Ask Nexus</span>}
     </button>
   );
+  const main = (
+    <main className="main-viewport" ref={viewport} hidden={dock && view === "stage"}>
+      {pullable && <PullIndicator status={pull.status} onRefresh={pull.refresh} />}
+      <div className="content" ref={content}>
+        {/* One tab is no choice: only show the bar when there are two or more. */}
+        {here && here.tabs.length > 1 && (
+          <nav className="dept-tabs" aria-label={`${here.label} pages`}>
+            {here.tabs.map((tab) => (
+              <NavLink
+                key={tab.to}
+                to={tab.to}
+                end={tab.end}
+                className={({ isActive }) => `dept-tab${isActive ? " active" : ""}`}
+              >
+                {tab.label}
+              </NavLink>
+            ))}
+          </nav>
+        )}
+        {children}
+      </div>
+    </main>
+  );
   return (
-    <div className={`shell${scrolling ? " scrolling-down" : ""}`} ref={shell}>
-      {me.demo && <DemoBanner expiresAt={me.demo.expires_at} onSignIn={onLogout} />}
-      {offlineWaiting > 0 && (
-        <div className="offline-notice" role="status">
-          <p>
-            You're offline. {offlineWaiting} {offlineWaiting === 1 ? "expense" : "expenses"} will sync when you're
-            back.
-          </p>
-        </div>
-      )}
-      <nav className="rail" aria-label="Main">
-        <div className="brand">
-          <BrandMark />
-          <span>Nexus</span>
-        </div>
-        {links(false)}
-        {settings}
-        {nexus("in-rail")}
-        <div className="spacer" />
-        {me.user.role === "owner" && !me.demo && <InviteButton />}
-        <button type="button" className="btn btn-ghost" onClick={onLogout}>
-          Sign out
-        </button>
-      </nav>
-      <main className="main-viewport" ref={viewport}>
-        {pullable && <PullIndicator status={pull.status} onRefresh={pull.refresh} />}
-        <div className="content" ref={content}>
-          {/* One tab is no choice: only show the bar when there are two or more. */}
-          {here && here.tabs.length > 1 && (
-            <nav className="dept-tabs" aria-label={`${here.label} pages`}>
-              {here.tabs.map((tab) => (
-                <NavLink
-                  key={tab.to}
-                  to={tab.to}
-                  end={tab.end}
-                  className={({ isActive }) => `dept-tab${isActive ? " active" : ""}`}
-                >
-                  {tab.label}
-                </NavLink>
-              ))}
-            </nav>
-          )}
-          {children}
-        </div>
-      </main>
-      {/* Home and Money, Nexus in the middle, then Invest and Travel when they are in the menu,
-          each with a short label under its icon. The places are split over two equal halves, so
-          Nexus stays in the middle with three, four or five items. Settings is on Home (top
-          right). */}
-      <nav className="bottom-nav" aria-label="Main (mobile)" ref={bar}>
-        <div className="bar-side">{barLinks.slice(0, Math.ceil(barLinks.length / 2))}</div>
-        {nexus("in-bar")}
-        <div className="bar-side">{barLinks.slice(Math.ceil(barLinks.length / 2))}</div>
-      </nav>
-    </div>
+    <ChatSlotContext.Provider value={dock ? chatSlot : null}>
+      <div className={`shell${dock ? " shell-docked" : ""}${scrolling ? " scrolling-down" : ""}`} ref={shell}>
+        {me.demo && <DemoBanner expiresAt={me.demo.expires_at} onSignIn={onLogout} />}
+        {offlineWaiting > 0 && (
+          <div className="offline-notice" role="status">
+            <p>
+              You're offline. {offlineWaiting} {offlineWaiting === 1 ? "expense" : "expenses"} will sync when you're
+              back.
+            </p>
+          </div>
+        )}
+        <nav className="rail" aria-label="Main">
+          <div className="brand">
+            <BrandMark />
+            <span>Nexus</span>
+          </div>
+          {links(false)}
+          {settings}
+          {nexus("in-rail")}
+          <div className="spacer" />
+          {me.user.role === "owner" && !me.demo && <InviteButton />}
+          <button type="button" className="btn btn-ghost" onClick={onLogout}>
+            Sign out
+          </button>
+        </nav>
+        {dock ? (
+          <>
+            <div className="chat-column" ref={setChatSlot} />
+            <div className="workspace">
+              <div className="dept-tabs workspace-switch" role="group" aria-label="Main area">
+                <button type="button" className={`dept-tab${view === "stage" ? " active" : ""}`} aria-pressed={view === "stage"} onClick={() => setView("stage")}>
+                  Panels
+                </button>
+                <button type="button" className={`dept-tab${view === "page" ? " active" : ""}`} aria-pressed={view === "page"} onClick={() => setView("page")}>
+                  {here?.label ?? "Page"}
+                </button>
+              </div>
+              {main}
+              <PanelStage away={view !== "stage"} />
+            </div>
+          </>
+        ) : (
+          main
+        )}
+        {/* Home and Money, Nexus in the middle, then Invest and Travel when they are in the menu,
+            each with a short label under its icon. The places are split over two equal halves, so
+            Nexus stays in the middle with three, four or five items. Settings is on Home (top
+            right). */}
+        <nav className="bottom-nav" aria-label="Main (mobile)" ref={bar}>
+          <div className="bar-side">{barLinks.slice(0, Math.ceil(barLinks.length / 2))}</div>
+          {nexus("in-bar")}
+          <div className="bar-side">{barLinks.slice(Math.ceil(barLinks.length / 2))}</div>
+        </nav>
+      </div>
+    </ChatSlotContext.Provider>
   );
 }

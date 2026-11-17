@@ -17,9 +17,11 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from nexus.agent import panels as panel_cases
 from nexus.agent import price_text
 from nexus.agent.confirmation import Ask, entry_text
 from nexus.agent.outlook_text import describe_calculation, describe_outlook
+from nexus.agent.panels import PanelRef
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
@@ -177,6 +179,10 @@ class ToolResult:
     buttons: list[list[tuple[str, str]]] | None = None
     # For an expected failure (run_tool): its coarse class, like "NotFound". Never the message.
     error: str | None = None
+    # The panels this answer opens on the web (ADR 0001), from what the tool resolved. Only
+    # a tool that answered sets it, never one that failed; the registry decides which kinds
+    # a tool may open (see ``agent.panels``).
+    panels: list[PanelRef] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,6 +278,14 @@ def parse_id(value: str) -> UUID:
 async def category_map(ctx: ToolContext) -> dict[UUID, Category]:
     cats = await category_cases.list_categories(ctx.uow(), ctx.user.id)
     return {c.id: c for c in cats}
+
+
+async def _category_name(ctx: ToolContext, category_id: UUID | None) -> str | None:
+    """The name of a category the tool already resolved, for a panel's caption."""
+    if category_id is None:
+        return None
+    category = (await category_map(ctx)).get(category_id)
+    return category.name if category else None
 
 
 async def resolve_category(ctx: ToolContext, name: str | None) -> UUID | None:
@@ -625,12 +639,13 @@ class FindArgs(Args):
 async def _find(ctx: ToolContext, a: FindArgs) -> ToolResult:
     start = day_start(ctx, a.start_date) if a.start_date else None
     end = day_start(ctx, a.end_date) + timedelta(days=1) if a.end_date else None
+    category_id = await resolve_category(ctx, a.category)
     page = await tx_cases.list_ledger(
         ctx.uow(),
         ctx.user.id,
         LedgerQuery(
             direction=Direction(a.direction) if a.direction else None,
-            category_id=await resolve_category(ctx, a.category),
+            category_id=category_id,
             search=a.search,
             start=start,
             end=end,
@@ -638,11 +653,22 @@ async def _find(ctx: ToolContext, a: FindArgs) -> ToolResult:
             limit=a.limit,
         ),
     )
+    panel = panel_cases.transactions_panel(
+        today=ctx.today(),
+        start=start.date() if start else None,
+        end=end.date() - timedelta(days=1) if end else None,
+        direction=a.direction,
+        category_id=category_id,
+        category_name=await _category_name(ctx, category_id),
+        search=a.search,
+        include_deleted=a.include_deleted,
+    )
+    shown = [panel] if panel else None
     if not page.items:
-        return ToolResult("No matching transactions.")
+        return ToolResult("No matching transactions.", panels=shown)
     lines = await show_all(ctx, page.items)
     more = f"\n({page.total - len(lines)} more not shown)" if page.total > len(lines) else ""
-    return ToolResult("\n".join(lines) + more)
+    return ToolResult("\n".join(lines) + more, panels=shown)
 
 
 class EditArgs(Args):
@@ -946,7 +972,29 @@ async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
             for g in now.groups:
                 was = earlier.get(g.key.casefold(), zero)
                 lines.append(f"  {g.key}: {was} before, {_change(g.total, was)}")
-    return ToolResult("\n".join(lines))
+    panel = await _ledger_panel(ctx, q)
+    return ToolResult("\n".join(lines), panels=[panel] if panel else None)
+
+
+async def _ledger_panel(ctx: ToolContext, q: question_cases.LedgerQuestion) -> PanelRef | None:
+    """The transactions behind a question, filtered as the question was. None when the ledger
+    page can't show the same rows (a wallet, an amount range or days of the week), since a
+    panel with other rows than the answer is worse than none."""
+    if q.wallet_id or q.from_wallet_id or q.to_wallet_id or q.weekdays:
+        return None
+    if q.min_amount is not None or q.max_amount is not None:
+        return None
+    return panel_cases.transactions_panel(
+        today=ctx.today(),
+        start=q.start.date(),
+        end=q.end.date() - timedelta(days=1),
+        direction=q.direction.value,
+        category_id=q.category_id,
+        category_name=await _category_name(ctx, q.category_id),
+        uncategorized=q.uncategorised,
+        search=q.search,
+        source=q.source.value if q.source else None,
+    )
 
 
 async def _categories(ctx: ToolContext, _: NoArgs) -> ToolResult:
@@ -2129,7 +2177,9 @@ async def _month_outlook(ctx: ToolContext, a: MonthOutlookArgs) -> ToolResult:
         month=a.month,
         adjustments=[(x.amount, x.label) for x in a.adjustments],
     )
-    return ToolResult(describe_outlook(outlook))
+    return ToolResult(
+        describe_outlook(outlook), panels=[panel_cases.month_outlook_panel(outlook.month)]
+    )
 
 
 class CalculateArgs(Args):
@@ -2347,15 +2397,17 @@ async def _set_budget(ctx: ToolContext, a: BudgetArgs) -> ToolResult:
 
 async def _budgets(ctx: ToolContext, _: NoArgs) -> ToolResult:
     statuses = await budget_cases.budget_statuses(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
+    # The month the figures are for: this one, in the user's own days.
+    panel = [panel_cases.budgets_panel(ctx.today())]
     if not statuses:
-        return ToolResult("No budgets set.")
+        return ToolResult("No budgets set.", panels=panel)
     lines = []
     for s in statuses:
         line = f"{s.name}: {s.spent} of {s.budget.limit} this month ({s.percent}%)"
         if s.unconverted:
             line += f"; not counted, no exchange rate: {', '.join(map(str, s.unconverted))}"
         lines.append(line)
-    return ToolResult("\n".join(lines))
+    return ToolResult("\n".join(lines), panels=panel)
 
 
 async def _find_budget(ctx: ToolContext, category: str | None) -> UUID:
@@ -2820,7 +2872,9 @@ async def _trip_status(ctx: ToolContext, a: TripNameArgs) -> ToolResult:
     ]
     if watch:
         lines += ["Worth a look on the itinerary (worked out in code):", *watch]
-    return ToolResult(head + "\n" + "\n".join(lines))
+    # A trip's money is the owner's: a member's answer has none, so it opens no panel.
+    panel = None if found.shared else [panel_cases.trip_budget_panel(trip.id, trip.destination)]
+    return ToolResult(head + "\n" + "\n".join(lines), panels=panel)
 
 
 class TripExpenseArgs(TripNameArgs):
