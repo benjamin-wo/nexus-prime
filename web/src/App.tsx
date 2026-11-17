@@ -15,6 +15,7 @@ import { DemoPage } from "./pages/DemoPage";
 import { Home } from "./pages/Home";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
 import { lazyNamed } from "./lazyPage";
+import { txName } from "./format";
 import { initData, miniApp, tripInviteIn } from "./telegram";
 import { useReportTimeZone } from "./timezone";
 
@@ -151,6 +152,9 @@ function Cockpit({ me }: { me: Me }) {
   const [offer, setOffer] = useState<{ transactionId: string; suggestion: RuleSuggestion } | null>(null);
   // Also a line handed over by the page that sent us here (joining a trip says so).
   const [notice, setNotice] = useRouteNotice();
+  // After deleting from the edit sheet: a line with Undo.
+  const [deleted, setDeleted] = useState<{ tx: Transaction } | null>(null);
+  const closeDeleted = useCallback(() => setDeleted(null), []);
   const closeOffer = useCallback(() => setOffer(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
@@ -231,6 +235,11 @@ function Cockpit({ me }: { me: Me }) {
             setSheet(null);
             setNotice("Saved on this phone. It will sync when you're back online.");
           }}
+          onDeleted={(tx) => {
+            setSheet(null);
+            refresh();
+            setDeleted({ tx });
+          }}
           onSaved={(tx: EditedTransaction) => {
             setSheet(null);
             refresh();
@@ -256,6 +265,25 @@ function Cockpit({ me }: { me: Me }) {
             },
           }}
           onClose={closeOffer}
+        />
+      )}
+      {deleted && (
+        <Toast
+          message={`Deleted ${txName(deleted.tx)}.`}
+          action={{
+            label: "Undo",
+            run: async () => {
+              setDeleted(null);
+              try {
+                await api(`/transactions/${deleted.tx.id}/restore`, { method: "POST" });
+                setNotice("Restored.");
+              } catch (e) {
+                setNotice(e instanceof Error ? e.message : "Couldn't restore");
+              }
+              refresh();
+            },
+          }}
+          onClose={closeDeleted}
         />
       )}
       {notice && <Toast message={notice} onClose={closeNotice} />}

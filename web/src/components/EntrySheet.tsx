@@ -32,6 +32,7 @@ export function EntrySheet({
   onOpen,
   onClose,
   onSaved,
+  onDeleted,
   onQueued,
 }: {
   me: Me;
@@ -40,6 +41,8 @@ export function EntrySheet({
   onOpen?: (tx: Transaction) => void;
   onClose: () => void;
   onSaved: (tx: EditedTransaction) => void;
+  /** The entry being edited was deleted (soft: it can be restored). Without this there is no Delete button. */
+  onDeleted?: (tx: Transaction) => void;
   /** A new entry was kept on this phone because there is no connection (see outbox.ts). Defaults to closing. */
   onQueued?: () => void;
 }) {
@@ -281,6 +284,19 @@ export function EntrySheet({
       onSaved(await api<Transaction>(`/transactions/${editing.id}/move`, { method: "POST", body: { wallet_id: markWallet.id } }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't make it a transfer");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!editing || !onDeleted) return;
+    setSaving(true);
+    setError(null);
+    try {
+      onDeleted(await api<Transaction>(`/transactions/${editing.id}`, { method: "DELETE" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't delete");
     } finally {
       setSaving(false);
     }
@@ -581,6 +597,12 @@ export function EntrySheet({
           </p>
         )}
         <div className="actions">
+          {/* Only an entry that exists and isn't already deleted; the toast the page shows has Undo. */}
+          {editing && !editing.deleted && onDeleted && (
+            <button type="button" className="btn btn-danger" disabled={saving || !online} onClick={() => void remove()}>
+              Delete
+            </button>
+          )}
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>

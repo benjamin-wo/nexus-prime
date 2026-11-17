@@ -588,7 +588,8 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .amount-out { color: var(--text-primary); }
 .amount-in { color: var(--emerald-accent); }
 .amount-move { color: var(--text-secondary); }
-.bulkbar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.bulkbar { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 14px; }
+.bulkbar-count { margin-right: auto; font-weight: 600; color: var(--text-primary); }
 .pager { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-4); }
 .state { margin: 0; padding: var(--space-2) 0 var(--space-4); color: var(--text-secondary); }
 .foldaway { justify-self: start; }
@@ -603,6 +604,8 @@ table.ledger { width: 100%; border-collapse: collapse; }
 }
 .sheet .row { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-3); }
 .sheet .actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+/* Delete, when the sheet edits an existing entry: bottom-left, away from Save. */
+.sheet .actions .btn-danger { margin-right: auto; }
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 30;
   background: var(--bg-frame); border-left: 1px solid var(--border-subtle); box-shadow: var(--shadow-modal);
@@ -2903,3 +2906,28 @@ a.set-row:focus-visible { outline-offset: -2px; }
 }
 :root[data-theme="dark"] .nexus-mark .nm-K { fill: #2563EB; }
 :root[data-theme="dark"] .nexus-mark .nm-k, :root[data-theme="dark"] .nexus-mark .nm-b { fill: #22D3EE; }
+
+/* Ledger selection. A long press on a row starts it; on a touch screen the rows must not raise the
+   browser's own text selection or callout while held. Only rows: the search box and filters stay selectable. */
+@media (pointer: coarse) {
+  .ledger-list tbody tr { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .ledger-list tbody tr input { -webkit-user-select: auto; user-select: auto; }
+}
+@media (max-width: 900px) {
+  /* The selection bar floats above the bottom bar, in thumb reach, instead of sitting at the top of the list.
+     (The bar's height is --bar-h, measured by Shell.) The card leaves room under its last row. */
+  .bulkbar {
+    position: fixed; z-index: 16; left: var(--space-3); right: var(--space-3);
+    bottom: calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + var(--space-2));
+    padding: var(--space-2) var(--space-3); flex-wrap: nowrap; gap: var(--space-2); border-radius: 18px; box-shadow: var(--shadow-bar);
+    animation: rise var(--t-standard);
+  }
+  .bulkbar .btn { min-height: 44px; flex: none; }
+  .fab-clearance.has-bulkbar { margin-bottom: 120px; }
+  /* The add button would sit on the bar. */
+  .fab.fab-under-bar { display: none; }
+  html.keyboard .bulkbar { visibility: hidden; }
+}
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .bulkbar { animation: none; }
+}

@@ -418,7 +418,7 @@ test("log an expense from the entry sheet", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Kopi" })).toBeVisible();
 });
 
-test("bulk delete asks first and can be undone", async ({ page }, info) => {
+test("bulk delete acts at once and can be undone", async ({ page }, info) => {
   await fakeApi(page);
   await page.goto("/accounting/ledger");
   // On a phone the tick boxes wait for "Select".
@@ -427,8 +427,7 @@ test("bulk delete asks first and can be undone", async ({ page }, info) => {
     await page.getByRole("button", { name: "Select", exact: true }).click();
   }
   await page.getByRole("checkbox", { name: /Select Grab/ }).check();
-  await page.getByRole("button", { name: "Delete selected" }).click();
-  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await page.getByRole("region", { name: "Selection" }).getByRole("button", { name: "Delete" }).click();
   // The page also has pull-to-refresh's (empty) status line: find the toast by its words.
   await expect(page.getByRole("status").filter({ hasText: "Deleted" })).toContainText(
     "Deleted 1 transaction.",
