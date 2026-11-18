@@ -602,6 +602,8 @@ table.ledger { width: 100%; border-collapse: collapse; }
   box-shadow: var(--shadow-modal); padding: var(--space-6); display: grid; gap: var(--space-4);
   animation: rise var(--t-standard);
 }
+/* An opened entry focuses the dialog itself (so a phone keeps its keyboard down); that focus needs no ring. */
+.sheet:focus:not(:focus-visible) { outline: none; }
 .sheet .row { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-3); }
 .sheet .actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 /* Delete, when the sheet edits an existing entry: bottom-left, away from Save. */
