@@ -76,10 +76,15 @@ test("the page keeps its place and its pull to refresh after the chat closes", a
   const homeFetches = countHomeFetches(page);
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Money this month" })).toBeVisible();
+  // Let Home finish loading first: a card that arrives above the scroll position makes the
+  // browser move it (scroll anchoring), which isn't the chat's doing.
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("Loading…")).toHaveCount(0);
   const main = page.locator(".main-viewport");
   await main.evaluate((el) => {
     el.scrollTop = 150;
   });
+  await page.waitForTimeout(200);
   const placed = await main.evaluate((el) => el.scrollTop);
   expect(placed).toBeGreaterThan(0);
 

@@ -3344,6 +3344,14 @@ export async function fakeApi(
         });
       return json(route, out);
     }
+    // One entry deleted from its edit sheet, and its Undo (both soft, as the server's are).
+    const oneChange = path.match(/^\/transactions\/(t\d+)(\/restore)?$/);
+    if (oneChange && ((method === "DELETE" && !oneChange[2]) || (method === "POST" && oneChange[2]))) {
+      const tx = state.txs.find((t) => t.id === oneChange[1]);
+      if (!tx) return json(route, { detail: "transaction not found" }, 404);
+      tx.deleted = method === "DELETE";
+      return json(route, tx);
+    }
     const one = path.match(/^\/transactions\/(t\d+)$/);
     if (one && method === "GET") return json(route, state.txs.find((t) => t.id === one[1]));
     if (path === "/transactions" && method === "GET") {

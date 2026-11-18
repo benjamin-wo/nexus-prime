@@ -25,6 +25,8 @@ import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
 import { dayHeading, formatDate, formatMoney, isoDay, moveLabel, relativeDay, txName } from "../format";
 import { outboxUser, useOutbox } from "../outbox";
+import { hapticImpact, hapticSelection } from "../telegram";
+import { useLongPress } from "../useLongPress";
 import { payingWallets, tracksCards, walletLabel } from "../wallets";
 
 const PAGE = 50;
@@ -94,7 +96,6 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   // On a phone the tick boxes wait for "Select"; on a wider screen they're always there.
   const [selecting, setSelecting] = useState(false);
   const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
-  const [confirming, setConfirming] = useState(false);
   // The filter sheet: the type, the dates and (with card tracking) the card.
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -142,12 +143,19 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
     void client.invalidateQueries({ queryKey: ["ious"] });
   }
 
+  /** Selecting is over: the ticks and the bar go, whether by Cancel, Done or a finished delete. */
+  function stopSelecting() {
+    setSelected(new Set());
+    setSelecting(false);
+  }
+
+  // No confirm step: the toast's Undo is the safety net.
   async function bulkDelete() {
     const ids = [...selected];
-    setConfirming(false);
+    if (ids.length === 0) return;
     try {
       const done = await api<{ ids: string[] }>("/transactions/bulk-delete", { method: "POST", body: { ids } });
-      setSelected(new Set());
+      stopSelecting();
       refresh();
       setToast({
         message: `Deleted ${done.ids.length} ${done.ids.length === 1 ? "transaction" : "transactions"}.`,
@@ -202,12 +210,30 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
   }
 
   function toggle(id: string) {
+    hapticSelection();
     setSelected((s) => {
       const next = new Set(s);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }
+
+  // Holding a row starts selecting with that row ticked. From then on a tap on a row ticks or unticks it
+  // instead of opening it (the tick boxes show on a phone while selecting). Off while selecting, so taps
+  // there stay plain taps.
+  const press = useLongPress<string>(
+    (id) => {
+      hapticImpact("medium");
+      setSelecting(true);
+      setSelected((s) => new Set(s).add(id));
+    },
+    { enabled: !selecting },
+  );
+  /** A tap on a row: opens it, or while selecting ticks it. */
+  function tap(tx: Transaction) {
+    if (selecting) toggle(tx.id);
+    else onEdit(tx);
   }
 
   const items = page.data?.items ?? [];
@@ -306,7 +332,25 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         </div>
       </div>
 
-      <section className="card fab-clearance" aria-label="Transactions">
+      {/* While selecting (and on a wide screen, once something is ticked): N selected, Delete and Cancel.
+          On a phone it floats above the bottom bar, in thumb reach; on a wide screen it sits between the
+          header and the list. It lives outside the card: the card's reveal animation would otherwise be what
+          `position: fixed` is measured against. The count is announced as it changes. */}
+      {(selecting || selected.size > 0) && (
+        <div className="bulkbar" role="region" aria-label="Selection">
+          <span className="bulkbar-count" aria-live="polite" aria-atomic="true">
+            {selected.size} selected
+          </span>
+          <button type="button" className="btn btn-danger" disabled={selected.size === 0} onClick={() => void bulkDelete()}>
+            Delete
+          </button>
+          <button type="button" className="btn" onClick={stopSelecting}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      <section className={`card fab-clearance${selecting || selected.size > 0 ? " has-bulkbar" : ""}`} aria-label="Transactions">
         <div className="filters">
           <div className="filter-row">
             <label className="search">
@@ -390,33 +434,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               className="btn btn-small select-toggle"
               aria-pressed={selecting}
               onClick={() => {
-                if (selecting) setSelected(new Set());
-                setSelecting(!selecting);
+                if (selecting) stopSelecting();
+                else setSelecting(true);
               }}
             >
               {selecting ? "Done" : "Select"}
             </button>
-          </div>
-        )}
-
-        {selected.size > 0 && (
-          <div className="bulkbar" role="region" aria-label="Selection">
-            <span>{selected.size} selected</span>
-            {confirming ? (
-              <>
-                <span>Delete {selected.size}? You can undo.</span>
-                <button type="button" className="btn btn-danger" onClick={bulkDelete}>
-                  Delete
-                </button>
-                <button type="button" className="btn" onClick={() => setConfirming(false)}>
-                  Keep
-                </button>
-              </>
-            ) : (
-              <button type="button" className="btn btn-danger" onClick={() => setConfirming(true)}>
-                Delete selected
-              </button>
-            )}
           </div>
         )}
 
@@ -469,7 +492,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                         </th>
                       </tr>
                     )}
-                    <tr aria-selected={selected.has(tx.id)} onClick={() => onEdit(tx)}>
+                    <tr aria-selected={selected.has(tx.id)} onClick={() => tap(tx)} {...press(tx.id)}>
                       <td className="select" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
@@ -485,7 +508,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                           className="btn btn-ghost tx-name"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onEdit(tx);
+                            tap(tx);
                           }}
                         >
                           {txName(tx)}
@@ -650,7 +673,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         </Sheet>
       )}
       {addAway && (
-        <button type="button" className="fab fab-steady" aria-label="Add a transaction" onClick={onAdd}>
+        <button
+          type="button"
+          className={`fab fab-steady${selecting || selected.size > 0 ? " fab-under-bar" : ""}`}
+          aria-label="Add a transaction"
+          onClick={onAdd}
+        >
           <Icon name="plus" size={20} />
           Add
         </button>

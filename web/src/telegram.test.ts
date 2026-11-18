@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { tripInviteIn } from "./telegram";
+import { hapticImpact, hapticSelection, tripInviteIn } from "./telegram";
 
 describe("the trip invite in an address", () => {
   it("is the token of a trip invite link", () => {
@@ -13,5 +13,51 @@ describe("the trip invite in an address", () => {
       expect(tripInviteIn(path)).toBeNull();
     }
     expect(tripInviteIn("/trip-invite/%E0%A4%A")).toBeNull(); // not valid percent-encoding
+  });
+});
+
+describe("haptics", () => {
+  afterEach(() => {
+    delete window.Telegram;
+  });
+
+  it("do nothing outside Telegram", () => {
+    expect(() => {
+      hapticImpact("medium");
+      hapticSelection();
+    }).not.toThrow();
+  });
+
+  it("go through Telegram's haptic engine when it has one", () => {
+    const impactOccurred = vi.fn();
+    const selectionChanged = vi.fn();
+    window.Telegram = { WebApp: { ready() {}, expand() {}, HapticFeedback: { impactOccurred, selectionChanged } } };
+    hapticImpact("medium");
+    hapticSelection();
+    expect(impactOccurred).toHaveBeenCalledWith("medium");
+    expect(selectionChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("do nothing on a Telegram without them, or when they throw", () => {
+    window.Telegram = { WebApp: { ready() {}, expand() {} } };
+    expect(() => hapticImpact()).not.toThrow();
+    window.Telegram = {
+      WebApp: {
+        ready() {},
+        expand() {},
+        HapticFeedback: {
+          impactOccurred() {
+            throw new Error("nope");
+          },
+          selectionChanged() {
+            throw new Error("nope");
+          },
+        },
+      },
+    };
+    expect(() => {
+      hapticImpact();
+      hapticSelection();
+    }).not.toThrow();
   });
 });

@@ -131,6 +131,25 @@ function followTelegramTheme(app: WebApp): void {
   });
 }
 
+/** A tap under the finger from Telegram's haptic engine ("medium" for a long press taking hold). A no-op
+ * outside Telegram, on a client without haptics, or if the call throws. */
+export function hapticImpact(style: "light" | "medium" = "medium"): void {
+  try {
+    window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(style);
+  } catch {
+    // Haptics are a nicety; never let one break a gesture.
+  }
+}
+
+/** The small tick for a selection changing (a row ticked or unticked). Same rules as `hapticImpact`. */
+export function hapticSelection(): void {
+  try {
+    window.Telegram?.WebApp?.HapticFeedback?.selectionChanged();
+  } catch {
+    // See hapticImpact.
+  }
+}
+
 /** Load Telegram's script (for the full-height panel and header colour), then tidy the URL. */
 export function startMiniApp(): void {
   if (!initData) return;

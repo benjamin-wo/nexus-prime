@@ -117,7 +117,7 @@ describe("CategoryBars", () => {
 });
 
 describe("Ledger", () => {
-  it("bulk deletes after confirming and can undo", async () => {
+  it("bulk deletes straight away and can undo", async () => {
     const calls = mockApi({
       "GET /transactions": () => ({ items: [tx("t1", "5", "Kopi"), tx("t2", "9", "Grab")], total: 2 }),
       "GET /categories": () => [],
@@ -127,7 +127,6 @@ describe("Ledger", () => {
     renderWithProviders(<Ledger me={me} onAdd={() => {}} onEdit={() => {}} />);
     const user = userEvent.setup();
     await user.click(await screen.findByRole("checkbox", { name: /Select Kopi/ }));
-    await user.click(screen.getByRole("button", { name: "Delete selected" }));
     await user.click(screen.getByRole("button", { name: "Delete" }));
     expect(await screen.findByText("Deleted 1 transaction.")).toBeInTheDocument();
     expect(calls.find((c) => c.path === "/transactions/bulk-delete")?.body).toEqual({ ids: ["t1"] });
