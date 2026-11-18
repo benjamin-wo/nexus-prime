@@ -36,23 +36,48 @@ export function watchViewport(win: Window = window): () => void {
       remember();
     }
   };
-  const onFocusIn = (e: FocusEvent) => {
-    if (!touch() || !typesText(e.target as Element)) return;
-    win.clearTimeout(closing);
-    root.classList.add("keyboard");
+  // Whether a text field really has the focus. A field that was removed with what held it (a
+  // sheet closing) never sends focusout on iOS, so the focus can't be trusted to say it left.
+  const typing = () => {
+    const el = doc.activeElement;
+    return el !== null && el.isConnected && typesText(el);
   };
-  const onFocusOut = () => {
-    // Moving from one field to the next shouldn't flash the bar in between.
-    win.clearTimeout(closing);
+  const settle = () => {
+    if (!root.classList.contains("keyboard") || typing()) return;
+    root.classList.remove("keyboard");
+    watcher?.disconnect();
+  };
+  // Checked a moment later, never at once: a tap on a button moves the focus first and clicks
+  // after, and the bar coming back in between would move what the finger is on. Moving from one
+  // field to the next shouldn't flash the bar either.
+  // A check already waiting is left to run (a busy page mustn't keep putting it off).
+  const check = () => {
+    if (closing) return;
     closing = win.setTimeout(() => {
-      if (!typesText(doc.activeElement)) root.classList.remove("keyboard");
+      closing = 0;
+      settle();
     }, 150);
+  };
+  // While the class is on, any change to the page, tap or resize checks it is still true, so
+  // the bar can't stay hidden after the field it was hidden for has gone.
+  const watcher = typeof MutationObserver === "undefined" ? null : new MutationObserver(check);
+  const onFocusIn = (e: FocusEvent) => {
+    if (!touch()) return;
+    // Focus moving to a button or the page means the keyboard is going.
+    if (!typesText(e.target as Element)) return check();
+    win.clearTimeout(closing);
+    closing = 0;
+    if (!root.classList.contains("keyboard")) {
+      root.classList.add("keyboard");
+      watcher?.observe(doc.body, { childList: true, subtree: true });
+    }
   };
 
   // The visual viewport is what is left above the keyboard; `innerHeight` and a fixed
   // `bottom: 0` still count the keyboard on iOS.
   const vv = win.visualViewport;
   const follow = () => {
+    if (root.classList.contains("keyboard")) check();
     if (!vv) return;
     root.style.setProperty("--vv-height", `${vv.height}px`);
     root.style.setProperty("--vv-top", `${vv.offsetTop}px`);
@@ -64,7 +89,8 @@ export function watchViewport(win: Window = window): () => void {
   vv?.addEventListener("resize", follow);
   vv?.addEventListener("scroll", follow);
   doc.addEventListener("focusin", onFocusIn);
-  doc.addEventListener("focusout", onFocusOut);
+  doc.addEventListener("focusout", check);
+  doc.addEventListener("pointerdown", check, true);
   return () => {
     win.clearTimeout(closing);
     win.removeEventListener("resize", onResize);
@@ -73,7 +99,9 @@ export function watchViewport(win: Window = window): () => void {
     root.style.removeProperty("--vv-height");
     root.style.removeProperty("--vv-top");
     doc.removeEventListener("focusin", onFocusIn);
-    doc.removeEventListener("focusout", onFocusOut);
+    doc.removeEventListener("focusout", check);
+    doc.removeEventListener("pointerdown", check, true);
+    watcher?.disconnect();
     root.classList.remove("keyboard");
   };
 }

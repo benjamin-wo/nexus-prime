@@ -121,8 +121,13 @@ export function EntrySheet({
   const categoryFormRef = useRef(false);
   categoryFormRef.current = categoryFormOpen;
 
+  const sheet = useRef<HTMLFormElement>(null);
   useEffect(() => {
-    first.current?.focus();
+    // An existing entry is opened to read it, fix one thing or delete it: on a phone, don't raise
+    // the keyboard (and hide the bottom bar) for that. The dialog itself takes the focus instead.
+    const touchScreen = window.matchMedia?.("(pointer: coarse)").matches === true;
+    if (editing && touchScreen) sheet.current?.focus({ preventScroll: true });
+    else first.current?.focus();
     // Escape closes an inline form first, and only then the sheet.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -318,6 +323,8 @@ export function EntrySheet({
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form
+        ref={sheet}
+        tabIndex={-1}
         className="sheet"
         role="dialog"
         aria-modal="true"

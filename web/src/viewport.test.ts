@@ -57,3 +57,89 @@ describe("watchViewport", () => {
     stop();
   });
 });
+
+describe("the keyboard class (bottom bar hidden while typing)", () => {
+  const coarse = (on: boolean) =>
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: (q: string) => ({ matches: on && q.includes("coarse"), media: q, addEventListener() {}, removeEventListener() {} }),
+    });
+  const keyboard = () => root.classList.contains("keyboard");
+  const field = () => {
+    const input = document.createElement("input");
+    document.body.append(input);
+    return input;
+  };
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    root.classList.remove("keyboard");
+  });
+
+  it("comes on when a text field takes the focus on a touch screen", () => {
+    coarse(true);
+    const stop = watchViewport();
+    field().focus();
+    expect(keyboard()).toBe(true);
+    stop();
+  });
+
+  it("goes when a field is removed without a focusout (iOS), as a sheet closing does", async () => {
+    coarse(true);
+    const stop = watchViewport();
+    const input = field();
+    input.focus();
+    expect(keyboard()).toBe(true);
+    // iOS removes a focused field without sending focusout/blur: stop jsdom sending them too.
+    const quiet = (e: Event) => e.stopImmediatePropagation();
+    document.addEventListener("focusout", quiet, true);
+    input.remove();
+    await new Promise((r) => setTimeout(r, 0)); // mutation observers run as a microtask
+    expect(keyboard()).toBe(true); // not at once: a tap may still be landing
+    await new Promise((r) => setTimeout(r, 200));
+    expect(keyboard()).toBe(false);
+    document.removeEventListener("focusout", quiet, true);
+    stop();
+  });
+
+  it("goes when the focus moves to a button, and on a tap once no field has it", async () => {
+    coarse(true);
+    const stop = watchViewport();
+    const input = field();
+    input.focus();
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+    expect(keyboard()).toBe(true);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(keyboard()).toBe(false);
+
+    input.focus();
+    expect(keyboard()).toBe(true);
+    root.classList.add("keyboard");
+    (document.activeElement as HTMLElement).blur();
+    document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(keyboard()).toBe(false);
+    stop();
+  });
+
+  it("stays while a field still has the focus, whatever else changes", async () => {
+    coarse(true);
+    const stop = watchViewport();
+    field().focus();
+    document.body.append(document.createElement("div"));
+    document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(keyboard()).toBe(true);
+    stop();
+  });
+
+  it("never comes on with a mouse", () => {
+    coarse(false);
+    const stop = watchViewport();
+    field().focus();
+    expect(keyboard()).toBe(false);
+    stop();
+  });
+});
