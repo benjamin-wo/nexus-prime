@@ -16,16 +16,17 @@ if [ -z "${KAYA_REMOTE_COPY:-}" ]; then
 fi
 DIR=/opt/kaya
 cd "$DIR/deploy"
-# Read the address the way docker compose does: without surrounding quotes, spaces or a
-# Windows line ending (SITE_ADDRESS="nexus-prime.app" is a valid .env line).
-SITE=$(grep -m1 '^SITE_ADDRESS=' .env | cut -d= -f2- | tr -d "\"' \r")
+# Read the address the way docker compose does: the last SITE_ADDRESS line wins (an old one
+# can be left higher up after moving to a new domain), without surrounding quotes, spaces or
+# a Windows line ending (SITE_ADDRESS="nexus-prime.app" is a valid .env line).
+SITE=$(grep '^SITE_ADDRESS=' .env | tail -n 1 | cut -d= -f2- | tr -d "\"' \r")
 
 health() {
   for _ in $(seq 1 30); do
-    if curl -fsS -m 5 "https://$SITE/healthz" >/dev/null 2>&1; then echo "healthy"; return 0; fi
+    if curl -fsS -m 5 "https://$SITE/healthz" >/dev/null 2>&1; then echo "healthy (https://$SITE)"; return 0; fi
     sleep 4
   done
-  echo "NOT answering after 2 minutes"; return 1
+  echo "NOT answering at https://$SITE/healthz after 2 minutes"; return 1
 }
 
 case "${SSH_ORIGINAL_COMMAND:-}" in
