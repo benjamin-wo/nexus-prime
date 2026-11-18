@@ -9,6 +9,7 @@ import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
+import { EditTransactionProvider } from "./editTransaction";
 import { isWaiting, outboxUser, useOnline, useOutbox, useOutboxSync } from "./outbox";
 import { refetchActive, useRefreshOnReturn } from "./refreshOnReturn";
 import { DemoPage } from "./pages/DemoPage";
@@ -165,6 +166,7 @@ function Cockpit({ me }: { me: Me }) {
     refresh();
     if (me.demo) void client.invalidateQueries({ queryKey: ["me"] });
   }, [client, refresh, me.demo]);
+  const editTx = useCallback((tx: Transaction) => setSheet({ editing: tx }), []);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
   // Pulling a page down: what it shows, fetched again whatever its staleTime.
@@ -184,45 +186,47 @@ function Cockpit({ me }: { me: Me }) {
       offlineWaiting={online ? 0 : waiting}
     >
       <RoutedPage>
-        <Routes>
-          <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
-          <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
-          <Route
-            path="/accounting/ledger"
-            element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
-          />
-          <Route path="/accounting/budgets" element={<BudgetsPage me={me} />} />
-          <Route path="/accounting/cashflow" element={<CashFlowPage />} />
-          <Route path="/investment" element={<InvestmentPage />} />
-          <Route path="/investment/watchlist" element={<WatchlistPage />} />
-          <Route path="/investment/stocks/:symbol" element={<StockPage />} />
-          <Route path="/investment/plans" element={<PlansPage />} />
-          <Route path="/investment/plans/:id" element={<PlanPage />} />
-          <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
-          <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
-          <Route path="/travel/research/:id" element={<ResearchPage />} />
-          {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
-            <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
-          ))}
-          <Route path="/settings" element={<Settings me={me} />} />
-          <Route path="/settings/email" element={<EmailPage me={me} />} />
-          <Route path="/settings/import" element={<ImportPage />} />
-          <Route path="/settings/costs" element={<CostsPage me={me} />} />
-          <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
-          {/* The rest of Settings, a section to a page: /settings/wallets, /settings/time-zone and so on. */}
-          <Route path="/settings/:slug" element={<SettingsSection me={me} />} />
-          {/* Where pages used to live, so old links and bookmarks still work. */}
-          <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
-          <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />
-          <Route path="/accounting/import" element={<Navigate to="/settings/import" replace />} />
-          <Route path="/ledger" element={<Navigate to="/accounting/ledger" replace />} />
-          <Route path="/cashflow" element={<Navigate to="/accounting/cashflow" replace />} />
-          <Route path="/plan" element={<Navigate to="/accounting/budgets" replace />} />
-          <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
-          <Route path="/email" element={<Navigate to="/settings/email" replace />} />
-          <Route path="/import" element={<Navigate to="/settings/import" replace />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <EditTransactionProvider onEdit={editTx}>
+          <Routes>
+            <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
+            <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
+            <Route
+              path="/accounting/ledger"
+              element={<Ledger me={me} onAdd={() => setSheet({})} onEdit={(tx) => setSheet({ editing: tx })} />}
+            />
+            <Route path="/accounting/budgets" element={<BudgetsPage me={me} />} />
+            <Route path="/accounting/cashflow" element={<CashFlowPage />} />
+            <Route path="/investment" element={<InvestmentPage />} />
+            <Route path="/investment/watchlist" element={<WatchlistPage />} />
+            <Route path="/investment/stocks/:symbol" element={<StockPage />} />
+            <Route path="/investment/plans" element={<PlansPage />} />
+            <Route path="/investment/plans/:id" element={<PlanPage />} />
+            <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
+            <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
+            <Route path="/travel/research/:id" element={<ResearchPage />} />
+            {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
+              <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
+            ))}
+            <Route path="/settings" element={<Settings me={me} />} />
+            <Route path="/settings/email" element={<EmailPage me={me} />} />
+            <Route path="/settings/import" element={<ImportPage />} />
+            <Route path="/settings/costs" element={<CostsPage me={me} />} />
+            <Route path="/settings/notifications" element={<NotificationsPage me={me} />} />
+            {/* The rest of Settings, a section to a page: /settings/wallets, /settings/time-zone and so on. */}
+            <Route path="/settings/:slug" element={<SettingsSection me={me} />} />
+            {/* Where pages used to live, so old links and bookmarks still work. */}
+            <Route path="/accounting/plan" element={<Navigate to="/accounting/budgets" replace />} />
+            <Route path="/accounting/email" element={<Navigate to="/settings/email" replace />} />
+            <Route path="/accounting/import" element={<Navigate to="/settings/import" replace />} />
+            <Route path="/ledger" element={<Navigate to="/accounting/ledger" replace />} />
+            <Route path="/cashflow" element={<Navigate to="/accounting/cashflow" replace />} />
+            <Route path="/plan" element={<Navigate to="/accounting/budgets" replace />} />
+            <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
+            <Route path="/email" element={<Navigate to="/settings/email" replace />} />
+            <Route path="/import" element={<Navigate to="/settings/import" replace />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </EditTransactionProvider>
       </RoutedPage>
       {sheet && (
         <EntrySheet

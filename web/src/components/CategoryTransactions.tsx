@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { api, type LedgerFilters, ledgerParams, type Page, type Transaction } from "../api";
+import { useEditTransaction } from "../editTransaction";
 import { formatMoney, formatShortDate, txName } from "../format";
 
 const SHOWN = 8;
@@ -51,6 +52,7 @@ export function CategoryTransactions({
   timezone?: string;
 }) {
   const filters = categoryFilters(pick);
+  const edit = useEditTransaction();
   const page = useQuery({
     queryKey: ["transactions", filters, "peek"],
     queryFn: () => api<Page>(`/transactions?${ledgerParams(filters, { limit: SHOWN })}`),
@@ -64,13 +66,33 @@ export function CategoryTransactions({
       {page.data && items.length === 0 && <p className="caption">No transactions here.</p>}
       {items.length > 0 && (
         <ul className="peek-list" aria-label={`${name} transactions`}>
-          {items.map((tx) => (
-            <li key={tx.id} className="peek-row">
-              <span className="caption peek-day">{formatShortDate(tx.occurred_at, timezone)}</span>
-              <span className="wrap">{txName(tx)}</span>
-              <HomeAmount tx={tx} />
-            </li>
-          ))}
+          {items.map((tx) => {
+            const day = formatShortDate(tx.occurred_at, timezone);
+            const cells = (
+              <>
+                <span className="caption peek-day">{day}</span>
+                <span className="wrap">{txName(tx)}</span>
+                <HomeAmount tx={tx} />
+              </>
+            );
+            // With somewhere to edit it, the whole row is the button, and opens the same sheet as the ledger.
+            return edit ? (
+              <li key={tx.id} className="peek-row peek-row-tap">
+                <button
+                  type="button"
+                  className="peek-row-btn"
+                  aria-label={`Edit ${txName(tx)}, ${formatMoney(tx.amount)}, ${day}`}
+                  onClick={() => edit(tx)}
+                >
+                  {cells}
+                </button>
+              </li>
+            ) : (
+              <li key={tx.id} className="peek-row">
+                {cells}
+              </li>
+            );
+          })}
         </ul>
       )}
       {page.data && total > 0 && (

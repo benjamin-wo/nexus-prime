@@ -1301,6 +1301,18 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
   padding: var(--space-2) 0; border-top: 1px dashed var(--border-card); font-size: 0.875rem;
 }
 .peek-row .num { white-space: nowrap; text-align: right; }
+/* A row that opens the edit sheet: the grid moves onto the button, which is at least a finger tall. */
+.peek-row-tap { display: block; padding: 0; }
+.peek-row-btn {
+  display: grid; grid-template-columns: 4.5em minmax(0, 1fr) auto; align-items: center; gap: var(--space-3);
+  width: calc(100% + 2 * var(--space-2)); min-height: 44px; margin: 0 calc(-1 * var(--space-2)); padding: var(--space-2);
+  border: 0; border-radius: var(--radius-inner); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.peek-row-btn .num { white-space: nowrap; text-align: right; }
+.peek-row-btn:hover { background: var(--bg-card-hover); }
+.peek-row-btn:active { background: var(--bg-card-hover); }
+.peek-row-btn:focus-visible { outline: 2px solid var(--sky-text); outline-offset: -2px; }
+@media (hover: none) { .peek-row-btn:hover { background: transparent; } .peek-row-btn:active { background: var(--bg-card-hover); } }
 .peek-more { justify-self: start; }
 .budget .peek { padding-left: 0; }
 @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
