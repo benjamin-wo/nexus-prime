@@ -3,6 +3,7 @@ import { type CSSProperties, type FormEvent, Fragment, type ReactNode, type RefO
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
+import { ConfirmBox } from "../components/ConfirmBox";
 import { Icon, type IconName } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { base64 } from "../files";
@@ -925,8 +926,11 @@ function WaysSheet({ trip, onChange, onClose }: { trip: Trip; onChange: () => vo
 
 /** A trip's menu: its cover photo, changing it and deleting it, and (where the trip has maps
  * and routes) how it gets around. */
-function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: () => void; onDelete: () => void; onChange: () => void }) {
+function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: () => void; onDelete: () => void | Promise<void>; onChange: () => void }) {
   const [open, setOpen] = useState(false);
+  // Deleting asks inside the menu (never the browser's dialog), and says so if it fails.
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   // Only a trip with places and routes has anything to pick; the page already holds that.
   const detail = useQueryClient().getQueryData<TripDetail>(["trip", trip.id]);
   const ways = Boolean(detail?.routes && detail.places);
@@ -956,10 +960,32 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
   );
   return (
     <div className="trip-menu">
-      <button type="button" className="trip-chip trip-chip-icon" aria-label="Trip options" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="trip-chip trip-chip-icon" aria-label="Trip options" aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(!open); setConfirming(false); }}>
         ⋯
       </button>
-      {open && (
+      {open && confirming && (
+        <div className="trip-menu-list">
+          <ConfirmBox
+            label={`Delete the trip to ${trip.destination}`}
+            question={`Delete the trip to ${trip.destination}? Its expenses stay in the ledger.`}
+            confirm="Delete trip"
+            busy={deleting}
+            onConfirm={async () => {
+              setDeleting(true);
+              setNote(null);
+              try {
+                await onDelete();
+              } catch (e) {
+                setNote(e instanceof Error ? e.message : "Couldn't delete the trip");
+                setConfirming(false);
+                setDeleting(false);
+              }
+            }}
+            onKeep={() => setConfirming(false)}
+          />
+        </div>
+      )}
+      {open && !confirming && (
         <div className="trip-menu-list" role="menu" aria-label="Trip options">
           {item("Edit trip", () => {
             setOpen(false);
@@ -972,14 +998,8 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
             })}
           {trip.photo_off ? item("Show a photo", () => void photo("on")) : item("Another photo", () => void photo("next"))}
           {!trip.photo_off && item("No photo", () => void photo("off"))}
-          {item(
-            "Delete trip",
-            () => {
-              setOpen(false);
-              onDelete();
-            },
-            true,
-          )}
+          <hr className="trip-menu-sep" />
+          {item("Delete trip", () => setConfirming(true), true)}
           {note && (
             <p className="caption" role="status">
               {note}
@@ -1036,7 +1056,7 @@ function TripActions({ trip, member, editing, add, onShare, onEdit, onDelete, on
   add: { label: string; run: () => void } | null;
   onShare: () => void;
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete: () => void | Promise<void>;
   onChange: () => void;
 }) {
   return (
@@ -1211,7 +1231,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   }
 
   async function remove() {
-    if (!data || !window.confirm(`Delete the trip to ${data.trip.destination}? Its expenses stay in the ledger.`)) return;
+    if (!data) return;
     await api(`/travel/trips/${id}`, { method: "DELETE" });
     void client.invalidateQueries({ queryKey: ["trips"] });
     navigate("/travel");
@@ -1242,7 +1262,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       add={canAdd ? add : null}
       onShare={() => setSharing(true)}
       onEdit={() => setEditing(true)}
-      onDelete={() => void remove()}
+      onDelete={remove}
       onChange={refresh}
     />
   ) : null;

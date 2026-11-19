@@ -151,6 +151,7 @@ function ConnectionRow({
   onConfirm,
   onCancel,
   onDisconnect,
+  error,
 }: {
   connection: EmailConnection;
   me: Me;
@@ -158,6 +159,7 @@ function ConnectionRow({
   onConfirm: () => void;
   onCancel: () => void;
   onDisconnect: () => void;
+  error?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   const forward = c.provider === "forward";
@@ -212,6 +214,11 @@ function ConnectionRow({
           </button>
         )}
       </div>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
     </li>
   );
 }
@@ -221,6 +228,8 @@ export function EmailPage({ me }: { me: Me }) {
   const client = useQueryClient();
   const overview = useQuery({ queryKey: ["email"], queryFn: () => api<EmailOverview>("/email") });
   const [confirming, setConfirming] = useState<string | null>(null);
+  // Which mailbox could not be disconnected, and why.
+  const [failed, setFailed] = useState<{ id: string; message: string } | null>(null);
 
   function refresh() {
     for (const key of ["email", "transactions", "summary", "budgets"]) void client.invalidateQueries({ queryKey: [key] });
@@ -228,8 +237,13 @@ export function EmailPage({ me }: { me: Me }) {
 
   async function disconnect(id: string) {
     setConfirming(null);
-    await api(`/email/connections/${id}`, { method: "DELETE" });
-    refresh();
+    setFailed(null);
+    try {
+      await api(`/email/connections/${id}`, { method: "DELETE" });
+      refresh();
+    } catch (e) {
+      setFailed({ id, message: e instanceof Error ? e.message : "Couldn't disconnect. Try again." });
+    }
   }
 
   const data = overview.data;
@@ -269,6 +283,7 @@ export function EmailPage({ me }: { me: Me }) {
                   onConfirm={() => setConfirming(c.id)}
                   onCancel={() => setConfirming(null)}
                   onDisconnect={() => disconnect(c.id)}
+                  error={failed?.id === c.id ? failed.message : null}
                 />
               ))}
             </ul>

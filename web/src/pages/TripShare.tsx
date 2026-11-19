@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
 import { api, type Trip, type TripShare } from "../api";
+import { ConfirmBox } from "../components/ConfirmBox";
 import { Sheet } from "../components/Sheet";
 import { PeopleSection } from "./TripPeople";
 
@@ -29,6 +30,8 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
   // Before there is a link the switch only picks what the new link will start with.
   const [draft, setDraft] = useState(true);
   const [saved, setSaved] = useState(false);
+  // Replacing the link or stopping it is asked in the sheet, not by the browser.
+  const [asking, setAsking] = useState<"renew" | "stop" | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const token = share.data?.token ?? null;
   const showBookings = token ? (share.data?.show_bookings ?? true) : draft;
@@ -53,7 +56,7 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
 
   const create = () => change(() => api<TripShare>(`/travel/trips/${trip.id}/share`, { method: "POST", body: { show_bookings: draft } }));
   const renew = () => {
-    if (!window.confirm("Make a new link? The old one stops working, so anyone using it needs the new one.")) return;
+    setAsking(null);
     void change(() => api<TripShare>(`/travel/trips/${trip.id}/share`, { method: "POST", body: { renew: true } }));
   };
   async function toggleBookings(on: boolean) {
@@ -65,7 +68,7 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
     setSaved(ok);
   }
   const stop = () => {
-    if (!window.confirm("Stop sharing? The link stops working for everyone who has it.")) return;
+    setAsking(null);
     void change(() => api<undefined>(`/travel/trips/${trip.id}/share`, { method: "DELETE" }));
   };
 
@@ -120,14 +123,38 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
               {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <div className="share-actions">
-            <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={renew}>
-              Make a new link
-            </button>
-            <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={stop}>
-              Stop sharing
-            </button>
-          </div>
+          {asking === "renew" && (
+            <ConfirmBox
+              label="Make a new link"
+              question="Make a new link? The old one stops working, so anyone using it needs the new one."
+              confirm="Make a new link"
+              keep="Keep the old one"
+              busy={busy}
+              onConfirm={renew}
+              onKeep={() => setAsking(null)}
+            />
+          )}
+          {asking === "stop" && (
+            <ConfirmBox
+              label="Stop sharing"
+              question="Stop sharing? The link stops working for everyone who has it."
+              confirm="Stop sharing"
+              keep="Keep sharing"
+              busy={busy}
+              onConfirm={stop}
+              onKeep={() => setAsking(null)}
+            />
+          )}
+          {!asking && (
+            <div className="share-actions">
+              <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setAsking("renew")}>
+                Make a new link
+              </button>
+              <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => setAsking("stop")}>
+                Stop sharing
+              </button>
+            </div>
+          )}
         </>
       )}
       {error && (

@@ -1,14 +1,16 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ChangeEvent, type FormEvent, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Dividends, type Holding, type HoldingsDraft, type Portfolio, type PortfolioTotals, type PriceKind, type TradeRecord } from "../api";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
 import { livePolling } from "../prices";
 import { base64 } from "../files";
+import { ConfirmBox } from "../components/ConfirmBox";
 import { Foldaway } from "../components/Foldaway";
 import { PriceWhen } from "../components/PriceWhen";
 import { TodayCard } from "../components/TodayCard";
+import { Toast } from "../components/Toast";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -126,7 +128,7 @@ function Totals({ totals }: { totals: PortfolioTotals }) {
 }
 
 /** Trades the user recorded, with what each sale locked in, and a form to record one. */
-function Trades({ onChanged }: { onChanged: () => void }) {
+function Trades({ onChanged }: { onChanged: (message: string) => void }) {
   const client = useQueryClient();
   const trades = useQuery({ queryKey: ["trades"], queryFn: () => api<TradeRecord[]>("/investments/trades") });
   const [form, setForm] = useState({ side: "buy", symbol: "", quantity: "", price: "", day: "" });
@@ -143,7 +145,7 @@ function Trades({ onChanged }: { onChanged: () => void }) {
       });
       setForm({ side: "buy", symbol: "", quantity: "", price: "", day: "" });
       void client.invalidateQueries({ queryKey: ["trades"] });
-      onChanged();
+      onChanged(`Recorded: ${form.side === "buy" ? "bought" : "sold"} ${form.quantity.trim()} ${form.symbol.trim().toUpperCase()}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't record that");
     }
@@ -288,8 +290,10 @@ function DividendsCard() {
 }
 
 /** `kind` is the kind of the card's own label: a row whose price is of another kind says so. */
-export function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: PriceKind; onChanged: () => void }) {
+export function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: PriceKind; onChanged: (message?: string) => void }) {
   const [editing, setEditing] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [quantity, setQuantity] = useState(position.quantity);
   const [cost, setCost] = useState(position.average_cost.amount);
   const [error, setError] = useState<string | null>(null);
@@ -303,18 +307,28 @@ export function HoldingRow({ position, kind, onChanged }: { position: Holding; k
         body: { quantity, average_cost: cost, currency: position.average_cost.currency },
       });
       setEditing(false);
-      onChanged();
+      onChanged(`Updated ${position.symbol}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save that");
     }
   }
 
+  // Removing a holding can't be undone from here, so it asks first, in the page.
   async function remove() {
-    await api(`/investments/holdings/${position.symbol}`, { method: "DELETE" });
-    onChanged();
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/investments/holdings/${position.symbol}`, { method: "DELETE" });
+      onChanged(`Removed ${position.symbol}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove that");
+      setConfirming(false);
+      setBusy(false);
+    }
   }
 
   return (
+    <>
     <tr>
       <th scope="row">
         <Link to={`/investment/stocks/${position.symbol}`}>{position.symbol}</Link>
@@ -362,18 +376,40 @@ export function HoldingRow({ position, kind, onChanged }: { position: Holding; k
         </>
       )}
       <td className="quick">
-        {!editing && (
+        {!editing && !confirming && (
           <>
             <button type="button" className="btn btn-small" onClick={() => setEditing(true)} aria-label={`Edit ${position.symbol}`}>
               Edit
             </button>
-            <button type="button" className="btn btn-small" onClick={() => void remove()} aria-label={`Remove ${position.symbol}`}>
+            <button type="button" className="btn btn-ghost btn-danger btn-small holding-remove" onClick={() => setConfirming(true)} aria-label={`Remove ${position.symbol}`}>
               Remove
             </button>
           </>
         )}
       </td>
     </tr>
+    {confirming && (
+      <tr>
+        <td colSpan={7}>
+          <ConfirmBox
+            label={`Remove ${position.symbol}`}
+            question={`Remove ${position.symbol} from your holdings? Your trades stay in the list.`}
+            confirm="Remove"
+            busy={busy}
+            onConfirm={() => void remove()}
+            onKeep={() => setConfirming(false)}
+          />
+        </td>
+      </tr>
+    )}
+    {!editing && error && (
+      <tr>
+        <td colSpan={7}>
+          <span className="error-text" role="alert">{error}</span>
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 
@@ -404,9 +440,16 @@ export function InvestmentPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState({ symbol: "", quantity: "", cost: "" });
+  // A line at the bottom for what was just added, recorded or removed.
+  const [done, setDone] = useState<string | null>(null);
+  const closeDone = useCallback(() => setDone(null), []);
   const refresh = () => {
     // Holdings, trades and dividends move together.
     for (const key of ["investments", "trades", "dividends"]) void client.invalidateQueries({ queryKey: [key] });
+  };
+  const changed = (message?: string) => {
+    refresh();
+    if (message) setDone(message);
   };
 
   async function upload(event: ChangeEvent<HTMLInputElement>) {
@@ -433,12 +476,13 @@ export function InvestmentPage() {
     event.preventDefault();
     setError(null);
     try {
-      await api(`/investments/holdings/${adding.symbol.trim().toUpperCase()}`, {
+      const symbol = adding.symbol.trim().toUpperCase();
+      await api(`/investments/holdings/${symbol}`, {
         method: "PUT",
         body: { quantity: adding.quantity, average_cost: adding.cost, currency: "USD" },
       });
       setAdding({ symbol: "", quantity: "", cost: "" });
-      refresh();
+      changed(`Added ${symbol}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't add that");
     }
@@ -501,7 +545,7 @@ export function InvestmentPage() {
               </thead>
               <tbody>
                 {holdings.map((p) => (
-                  <HoldingRow key={`${p.symbol}:${p.updated_at}`} position={p} kind={portfolio.data?.totals.price_kind ?? "close"} onChanged={refresh} />
+                  <HoldingRow key={`${p.symbol}:${p.updated_at}`} position={p} kind={portfolio.data?.totals.price_kind ?? "close"} onChanged={changed} />
                 ))}
               </tbody>
             </table>
@@ -526,7 +570,8 @@ export function InvestmentPage() {
         </Foldaway>
       </section>
       <DividendsCard />
-      <Trades onChanged={refresh} />
+      <Trades onChanged={changed} />
+      {done && <Toast message={done} onClose={closeDone} />}
     </>
   );
 }

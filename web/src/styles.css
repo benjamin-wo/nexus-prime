@@ -2945,3 +2945,20 @@ a.set-row:focus-visible { outline-offset: -2px; }
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
   .bulkbar { animation: none; }
 }
+
+/* Saves confirm with Undo; removals confirm in the page */
+.toast-two { flex-wrap: wrap; }
+.toast-two > span { flex: 1 1 100%; min-width: 0; }
+.toast-two > .btn:not(.btn-ghost) { flex: 0 0 auto; }
+.toast-two > .btn-ghost { margin-left: auto; }
+.holdings td.quick .holding-remove { margin-left: auto; }
+@media (min-width: 901px) { .holdings td.quick .holding-remove { margin-left: var(--space-4); } }
+.memory-row { flex-wrap: wrap; }
+.memory-row > .confirm-box, .memory-row > .error-text { flex: 1 1 100%; margin-top: 0; }
+.trip-menu-sep { width: 100%; height: 0; margin: var(--space-1) 0; border: 0; border-top: 1px solid var(--border-subtle); }
+.trip-menu-list > .confirm-box { margin: 0; width: min(280px, calc(100vw - 48px)); }
+.toast .btn { flex: 0 0 auto; white-space: nowrap; }
+.toast > span { min-width: 0; }
+.trip-menu-list .confirm-box .btn { justify-content: center; background: var(--bg-raised); }
+.trip-menu-list .confirm-box .btn-danger { border-color: rgba(var(--danger-rgb), 0.45); background: transparent; }
+.trip-menu-list .confirm-box .btn-ghost { background: transparent; }

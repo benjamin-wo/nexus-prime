@@ -5,10 +5,17 @@ import { api, type Category, type CategoryRule } from "../api";
 
 function RuleRow({ rule, onChanged }: { rule: CategoryRule; onChanged: () => void }) {
   const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function remove() {
-    await api(`/category-rules/${rule.id}`, { method: "DELETE" });
-    onChanged();
+    setError(null);
+    try {
+      await api(`/category-rules/${rule.id}`, { method: "DELETE" });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't remove that rule");
+      setConfirming(false);
+    }
   }
 
   return (
@@ -35,6 +42,11 @@ function RuleRow({ rule, onChanged }: { rule: CategoryRule; onChanged: () => voi
           </button>
         )}
       </div>
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
     </li>
   );
 }

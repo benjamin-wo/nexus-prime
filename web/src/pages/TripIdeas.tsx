@@ -6,6 +6,7 @@ import { formatMoney } from "../format";
 import type { Point } from "../geo";
 import { DayPickerSheet, DropZone, PLACES, ideaHint, nearbyOf, useArrange, useDragEntry } from "./TripArrange";
 import { OpenLink, onlyNamesDay, repeatsTitle, sortKey, useHome } from "./TripBits";
+import { ConfirmBox } from "../components/ConfirmBox";
 import { EntryEditor } from "./TripEntry";
 import { IdeasMap } from "./TripIdeasMap";
 import { dayNumber } from "./TripMap";
@@ -65,6 +66,7 @@ export function PlaceRow({ booking, color, dragging = true, hint = null, onEdit,
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const openId = useId();
   const address = booking.address && !repeatsTitle(booking.address, booking.title) ? booking.address : null;
   // Where it is, which list and how it fits the plan, each said once.
@@ -73,14 +75,15 @@ export function PlaceRow({ booking, color, dragging = true, hint = null, onEdit,
 
   // The same call, and the same question, as the editor's Remove.
   async function remove() {
-    if (!window.confirm(`Take ${booking.title} off the trip?`)) return;
     setError(null);
     setBusy(true);
     try {
       await api(`/travel/bookings/${booking.id}`, { method: "DELETE" });
       onRemoved?.();
+      setConfirming(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't remove that");
+      setConfirming(false);
       setBusy(false);
     }
   }
@@ -112,16 +115,27 @@ export function PlaceRow({ booking, color, dragging = true, hint = null, onEdit,
               {error}
             </p>
           )}
-          <div className="place-open-actions">
-            <button type="button" className="btn btn-ghost btn-small" onClick={onEdit} aria-label={`Change ${booking.title}`}>
-              <Icon name="edit" size={16} />
-              Change
-            </button>
-            <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => void remove()} aria-label={`Remove ${booking.title}`}>
-              <Icon name="trash" size={16} />
-              Remove
-            </button>
-          </div>
+          {confirming ? (
+            <ConfirmBox
+              label={`Remove ${booking.title}`}
+              question={`Take ${booking.title} off the trip?`}
+              confirm="Remove"
+              busy={busy}
+              onConfirm={() => void remove()}
+              onKeep={() => setConfirming(false)}
+            />
+          ) : (
+            <div className="place-open-actions">
+              <button type="button" className="btn btn-ghost btn-small" onClick={onEdit} aria-label={`Change ${booking.title}`}>
+                <Icon name="edit" size={16} />
+                Change
+              </button>
+              <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => setConfirming(true)} aria-label={`Remove ${booking.title}`}>
+                <Icon name="trash" size={16} />
+                Remove
+              </button>
+            </div>
+          )}
         </div>
       )}
     </li>
