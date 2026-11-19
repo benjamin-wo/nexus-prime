@@ -1048,8 +1048,8 @@ a.btn { text-decoration: none; }
 .trip-pair > .card { margin: 0; }
 .ready-top { display: flex; align-items: center; gap: var(--space-3); font-weight: 600; }
 .ring {
-  --ring: 0%; width: 56px; height: 56px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  background: conic-gradient(var(--accent) 0 var(--ring), var(--bg-raised) var(--ring) 100%);
+  --ring-pct: 0%; width: 56px; height: 56px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--accent) 0 var(--ring-pct), var(--bg-raised) var(--ring-pct) 100%);
 }
 .ring-inner { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-card); font-size: 0.8125rem; font-weight: 600; }
 .trip-money-figure { margin: 0 0 var(--space-2); font-size: 1.5rem; font-weight: 600; }
@@ -1395,9 +1395,9 @@ a.ask-chip { display: inline-flex; align-items: center; text-decoration: none; }
 [data-reveal="in"] .split-bar span { transform-origin: left center; animation: fill-x 700ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 100ms) both; }
 @keyframes fill-x { from { transform: scaleX(0); } }
 @keyframes fill-y { from { transform: scaleY(0); } }
-@property --ring { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
+@property --ring-pct { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
 [data-reveal="in"] .ring { animation: ring-fill 1.2s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 200ms) both; }
-@keyframes ring-fill { from { --ring: 0%; } }
+@keyframes ring-fill { from { --ring-pct: 0%; } }
 
 /* A button that answers the press, like the cards it sits on. */
 .btn { transition: transform var(--t-micro), background var(--t-micro), border-color var(--t-micro); }
@@ -2991,3 +2991,52 @@ button.set-row:disabled { cursor: default; opacity: 0.6; }
 .trip-menu-list .confirm-box .btn { justify-content: center; background: var(--bg-raised); }
 .trip-menu-list .confirm-box .btn-danger { border-color: rgba(var(--danger-rgb), 0.45); background: transparent; }
 .trip-menu-list .confirm-box .btn-ghost { background: transparent; }
+/* --- Touch targets: a finger needs 44 px --- */
+/* On a touch screen a control's hit area is at least 44 x 44 px. Buttons, tabs and chips are made that
+   big; small text links and handles keep their look and get a larger invisible hit box (::after) instead.
+   A fine pointer (a mouse) keeps the compact sizes above. Last in the file so these win over the
+   smaller sizes set earlier. e2e/tap-targets.spec.ts measures it. */
+@media (pointer: coarse) {
+  .btn, .btn-small, .tab, .filters .tab, .filter-sheet .tab, .dept-tab, .ask-chip, .day-pill, .trip-chip, .trip-tab, .seg-btn { min-height: 44px; }
+  /* Icon-only buttons: the month arrows, the chat's close, the trip's Back and the round ones. */
+  .btn, .month-step, .trip-chip, .trip-icon-button { min-width: 44px; }
+  .trip-icon-button { width: 44px; height: 44px; }
+  /* The trip's tab bar is a fixed height; its tabs are 4 px taller now. */
+  .trip-page.trip-v2 { --trip-tabbar-h: 60px; }
+  /* Smaller ones set later or more specifically: the new-entry suggestions, a budget's footer buttons, the
+     merchant in a ledger row (a text-only button), the labels of tick boxes, the rows of the trip's plan. */
+  .merchant-chips .ask-chip, .budget-foot .btn-ghost, .ledger .btn-ghost, .reservation-chip, .place-links .entry-link,
+  .toggle, .import-actions .check, .entry-row { min-height: 44px; }
+  .import-actions .check { display: inline-flex; align-items: center; gap: var(--space-2); }
+  .ledger .btn-ghost { align-self: center; }
+  /* A receipt link sits in the line under the merchant: its own 44 px, so that it does not share the merchant's. */
+  .tx-meta .receipt-link { padding-block: 13px; }
+  /* A ledger row had 12 px above and below its merchant; the merchant's 44 px now includes them. */
+  .ledger tbody tr { padding-block: 0 var(--space-1); }
+  /* Text links, handles and the like keep their size and look: an invisible box (::after) is the hit area,
+     44 px wide and tall at least, centred on the control. */
+  .link-btn, .overview-set, .muted > a, .caption > a, a.caption, .quiet-row-text a, .drag-handle, .research-back { position: relative; }
+  .link-btn::after, .overview-set::after, .muted > a::after, .caption > a::after, a.caption::after, .quiet-row-text a::after, .drag-handle::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px); transform: translate(-50%, -50%);
+  }
+  /* A news headline links on from the first line of its item: the hit box runs 6 px above and under it into
+     the item's caption, and the items sit a little further apart so that two boxes never overlap. */
+  .feed.news { gap: var(--space-4); }
+  .news a { position: relative; }
+  .news a::after { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 44px; }
+  /* A tick box in a table has no label to tap, so the box itself is 44 px with its drawn square, 20 px, in
+     the middle; the negative margin leaves the layout as it was. */
+  .ledger td.select input[type="checkbox"], .ledger th input[type="checkbox"],
+  .import-table td.select input[type="checkbox"], .import-table th input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none; flex: none; box-sizing: border-box; width: 44px; height: 44px; margin: -12px; padding: 0;
+    border: 12px solid transparent; border-radius: 18px; background: transparent; background-clip: padding-box; cursor: pointer;
+    box-shadow: inset 0 0 0 2px var(--text-muted); transition: background var(--t-micro), box-shadow var(--t-micro);
+  }
+  .ledger td.select input[type="checkbox"]:checked, .ledger th input[type="checkbox"]:checked,
+  .import-table td.select input[type="checkbox"]:checked, .import-table th input[type="checkbox"]:checked {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4L18 8'/%3E%3C/svg%3E") center / 16px no-repeat;
+    background-clip: padding-box;
+  }
+  .ledger td.select input[type="checkbox"]:disabled, .import-table td.select input[type="checkbox"]:disabled { opacity: 0.5; cursor: default; }
+}
