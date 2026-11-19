@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Me } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
@@ -28,13 +28,13 @@ function Where() {
 }
 
 /** Settings and its pages, routed as the app routes them. Returns the client, to look at the cache. */
-function renderSettings(who: Me, at = "/settings") {
+function renderSettings(who: Me, at = "/settings", onLogout: () => void = () => undefined) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[at]}>
         <Routes>
-          <Route path="/settings" element={<Settings me={who} />} />
+          <Route path="/settings" element={<Settings me={who} onLogout={onLogout} />} />
           <Route path="/settings/:slug" element={<SettingsSection me={who} />} />
         </Routes>
         <Where />
@@ -57,6 +57,7 @@ describe("Settings", () => {
       "Notifications",
       "Connections",
       "Your data",
+      "Account",
     ]);
     expect(rowNames()).toEqual([
       "Telegram updates",
@@ -376,5 +377,82 @@ describe("Time zone", () => {
     await userEvent.click(within(card).getByRole("button", { name: "Save" }));
     expect(await within(card).findByRole("alert")).toHaveTextContent("unknown time zone");
     expect(within(card).getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+});
+
+describe("Settings: Account", () => {
+  const invite = { url: "https://nexus.example/invite/abc123", expires_at: "2026-11-20T08:00:00Z" };
+  const account = () => within(screen.getByRole("region", { name: "Account" }));
+
+  it("is the last group, with Invite someone for the owner and Sign out", () => {
+    mockApi({});
+    renderSettings(me());
+    const groups = [...document.querySelectorAll("section.set-group")];
+    expect(groups.at(-1)).toBe(screen.getByRole("region", { name: "Account" }));
+    expect(account().getAllByRole("button").map((b) => b.querySelector(".set-row-title")?.textContent)).toEqual([
+      "Invite someone",
+      "Sign out",
+    ]);
+  });
+
+  it("leaves Invite someone out for a member", () => {
+    mockApi({});
+    renderSettings(me({ role: "member" }));
+    expect(account().queryByRole("button", { name: /Invite someone/ })).toBeNull();
+    expect(account().getByRole("button", { name: /Sign out/ })).toBeInTheDocument();
+  });
+
+  it("leaves Invite someone out for a demo account, and says Sign out ends the demo", () => {
+    mockApi({});
+    renderSettings({ ...demoMe(), user: { ...demoMe().user, role: "owner" } });
+    expect(account().queryByRole("button", { name: /Invite someone/ })).toBeNull();
+    expect(account().getByRole("button", { name: /^Sign out/ })).toHaveTextContent("Ends the demo");
+  });
+
+  it("calls the same sign-out the rail uses", async () => {
+    mockApi({});
+    const logout = vi.fn();
+    renderSettings(me({ role: "member" }), "/settings", logout);
+    await userEvent.click(account().getByRole("button", { name: /Sign out/ }));
+    expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes a link and shows it with how long it works; Copy puts it on the clipboard and says so", async () => {
+    const calls = mockApi({ "POST /invites": () => invite });
+    const user = userEvent.setup();
+    renderSettings(me());
+    await user.click(account().getByRole("button", { name: /Invite someone/ }));
+    expect(await screen.findByLabelText("Invite link")).toHaveValue(invite.url);
+    expect(account().getByText(/Single-use link, valid for 24 hours/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/invites"]);
+
+    expect(account().getByRole("status")).toBeEmptyDOMElement();
+    await user.click(account().getByRole("button", { name: "Copy" }));
+    expect(await account().findByText("Copied")).toBeInTheDocument();
+    expect(account().getByRole("status")).toHaveTextContent("Copied");
+    expect(await navigator.clipboard.readText()).toBe(invite.url);
+  });
+
+  it("says so when the clipboard is refused, and keeps the link to copy by hand", async () => {
+    mockApi({ "POST /invites": () => invite });
+    const user = userEvent.setup();
+    renderSettings(me());
+    await user.click(account().getByRole("button", { name: /Invite someone/ }));
+    await screen.findByLabelText("Invite link");
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+    await user.click(account().getByRole("button", { name: "Copy" }));
+    expect(await account().findByText(/Couldn't copy/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Invite link")).toHaveValue(invite.url);
+  });
+
+  it("shows the reason when an invite can't be made", async () => {
+    mockApi({
+      "POST /invites": () =>
+        new Response(JSON.stringify({ detail: "Inviting people is off in the demo" }), { status: 403, headers: { "Content-Type": "application/json" } }),
+    });
+    renderSettings(me());
+    await userEvent.click(account().getByRole("button", { name: /Invite someone/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Inviting people is off in the demo");
+    expect(screen.queryByLabelText("Invite link")).toBeNull();
   });
 });

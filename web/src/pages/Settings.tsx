@@ -5,6 +5,7 @@ import { Link, Navigate, useParams } from "react-router-dom";
 import { api, type EmailOverview, goHomeTimezone, type Me, setTimezone, type TripAlerts, type Updates, type Wallet } from "../api";
 import { BackLink } from "../components/BackLink";
 import { Icon } from "../components/Icon";
+import { InviteButton } from "../components/InviteButton";
 import { describeZone, filterZones, friendlyZone, sourceNote, zoneChoices } from "../timezone";
 import { CategoriesSection } from "./Categories";
 import { MemorySection } from "./Memory";
@@ -325,9 +326,38 @@ function PreferenceSwitch({ me, field, title, hint }: { me: Me; field: Preferenc
   );
 }
 
+/** The last group: Invite someone (the owner's, never the demo's) and Sign out. The desktop rail has both
+ * too; on a phone there is no rail, so this is where they are. */
+function AccountGroup({ me, onLogout }: { me: Me; onLogout: () => void }) {
+  const canInvite = me.user.role === "owner" && !me.demo;
+  return (
+    <section className="set-group" aria-labelledby="set-account">
+      <h2 className="section-title" id="set-account">
+        Account
+      </h2>
+      <ul className="set-list">
+        {canInvite && (
+          <li>
+            <InviteButton variant="row" />
+          </li>
+        )}
+        <li>
+          <button type="button" className="set-row" onClick={onLogout}>
+            <span className="set-text">
+              <span className="set-row-title">Sign out</span>
+              {me.demo && <span className="caption">Ends the demo. Sign in with Telegram to use your own.</span>}
+            </span>
+          </button>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
 /** Settings: a short list. A switch for how logging works, then a row for each place to go, grouped
- * as Notifications, Connections and Your data. Each row opens its own page at /settings/<slug>. */
-export function Settings({ me }: { me: Me }) {
+ * as Notifications, Connections and Your data, and last the Account (invite, sign out). Each row opens
+ * its own page at /settings/<slug>. */
+export function Settings({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const summaries = useSummaries(me);
   const sections = sectionsFor(me);
   return (
@@ -376,6 +406,7 @@ export function Settings({ me }: { me: Me }) {
           </section>
         );
       })}
+      <AccountGroup me={me} onLogout={onLogout} />
     </div>
   );
 }

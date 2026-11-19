@@ -418,6 +418,10 @@ export async function fakeApi(
     voicePuts: Record<string, unknown>[];
     /** The bodies of PUT /settings/preferences, in order. */
     preferencePuts: Record<string, unknown>[];
+    /** The bodies of PUT /notifications (Telegram updates), in order. */
+    notificationPuts: Record<string, unknown>[];
+    /** App invites made with POST /invites (the Account group in Settings and the desktop rail). */
+    appInvites: number;
     inviteCount: number;
     /** Expenses split evenly from the trip page, by transaction id. */
     splitDone: string[];
@@ -519,6 +523,8 @@ export async function fakeApi(
     voice: { preset: "default", emoji: "some", length: "normal", humour: "light", note: null, presets: VOICE_PRESETS },
     voicePuts: [],
     preferencePuts: [],
+    notificationPuts: [],
+    appInvites: 0,
     inviteCount: 0,
     splitDone: [],
     justMine: {},
@@ -2919,8 +2925,14 @@ export async function fakeApi(
       if (method === "PUT") state.tripAlerts = Boolean(body.enabled);
       return json(route, { enabled: state.tripAlerts });
     }
+    if (path === "/invites" && method === "POST") {
+      // The app's own invite (the owner's): a single-use link for 24 hours, as the server answers.
+      state.appInvites += 1;
+      return json(route, { url: `http://localhost:4173/invite/fakeAppInvite${state.appInvites}`, expires_at: "2026-11-20T08:00:00Z" });
+    }
     if (path === "/notifications") {
       if (method === "PUT") {
+        state.notificationPuts.push(body);
         if (body.frequency) state.frequency = body.frequency;
         if (body.daily_at) dailyAt = body.daily_at;
         if (body.quiet_start) marketAlerts.quiet_start = body.quiet_start;

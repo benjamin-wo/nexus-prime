@@ -69,14 +69,14 @@ describe("Model costs", () => {
 describe("Settings and Model costs", () => {
   it("links the owner to the page", async () => {
     mockApi({});
-    renderWithProviders(<Settings me={me("owner")} />);
+    renderWithProviders(<Settings me={me("owner")} onLogout={() => undefined} />);
     expect(screen.getByRole("link", { name: "Model costs" })).toHaveAttribute("href", "/settings/costs");
     await waitFor(() => expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeInTheDocument());
   });
 
   it("shows no link to anyone else", () => {
     mockApi({});
-    renderWithProviders(<Settings me={me("member")} />);
+    renderWithProviders(<Settings me={me("member")} onLogout={() => undefined} />);
     expect(screen.queryByRole("link", { name: /costs/i })).toBeNull();
   });
 });
