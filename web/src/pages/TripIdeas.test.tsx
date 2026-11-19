@@ -115,7 +115,7 @@ describe("the ideas list", () => {
 
   it("opens a row to show its note, Google Maps, Change and Remove, and takes it off the trip", async () => {
     screenIs(false);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const dialog = vi.spyOn(window, "confirm");
     const calls = renderIdeas(withIdeas, { "DELETE /travel/bookings/b1": () => ({}) });
     const user = userEvent.setup();
     const fish = (await screen.findAllByRole("listitem"))[0];
@@ -127,6 +127,14 @@ describe("the ideas list", () => {
     expect(within(fish).getByRole("link", { name: /Open in Google Maps/ })).toHaveAttribute("href", expect.stringContaining("google.com/maps/search"));
     expect(within(fish).getByRole("button", { name: "Change Fish market" })).toBeInTheDocument();
     await user.click(within(fish).getByRole("button", { name: "Remove Fish market" }));
+    // It asks in the row, and Keep takes nothing off the trip.
+    const ask = within(fish).getByRole("group", { name: "Remove Fish market" });
+    expect(ask).toHaveTextContent("Take Fish market off the trip?");
+    await user.click(within(ask).getByRole("button", { name: "Keep" }));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await user.click(within(fish).getByRole("button", { name: "Remove Fish market" }));
+    await user.click(within(within(fish).getByRole("group", { name: "Remove Fish market" })).getByRole("button", { name: "Remove" }));
+    expect(dialog).not.toHaveBeenCalled();
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/travel/bookings/b1")).toBe(true));
     // Change opens the editor in place of the row.
     await user.click(within(fish).getByRole("button", { name: "Change Fish market" }));

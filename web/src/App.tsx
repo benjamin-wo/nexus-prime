@@ -16,7 +16,7 @@ import { DemoPage } from "./pages/DemoPage";
 import { Home } from "./pages/Home";
 import { forgetTripNote, LoginPage } from "./pages/LoginPage";
 import { lazyNamed } from "./lazyPage";
-import { txName } from "./format";
+import { formatMoney, txName } from "./format";
 import { initData, miniApp, tripInviteIn } from "./telegram";
 import { useReportTimeZone } from "./timezone";
 
@@ -149,14 +149,15 @@ function Cockpit({ me }: { me: Me }) {
   // The chat drawer, opened empty or with a question asked on Home.
   const [chat, setChat] = useState<{ ask?: string } | null>(null);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
-  // After a category correction: offer a rule, and change nothing unless accepted.
-  const [offer, setOffer] = useState<{ transactionId: string; suggestion: RuleSuggestion } | null>(null);
+  // After a save: say so ("Logged SGD 5.50 · Kopi Stall", with Undo for a new entry), and after a
+  // category correction offer a rule in the same line, changing nothing unless accepted.
+  const [saved, setSaved] = useState<{ tx: EditedTransaction; fresh: boolean } | null>(null);
   // Also a line handed over by the page that sent us here (joining a trip says so).
   const [notice, setNotice] = useRouteNotice();
   // After deleting from the edit sheet: a line with Undo.
   const [deleted, setDeleted] = useState<{ tx: Transaction } | null>(null);
   const closeDeleted = useCallback(() => setDeleted(null), []);
-  const closeOffer = useCallback(() => setOffer(null), []);
+  const closeSaved = useCallback(() => setSaved(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
     for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan", "wallets"]) void client.invalidateQueries({ queryKey: [key] });
@@ -176,6 +177,21 @@ function Cockpit({ me }: { me: Me }) {
   useOutboxSync(outboxOwner, client);
   const online = useOnline();
   const waiting = useOutbox(outboxOwner).filter(isWaiting).length;
+
+  // Undo for an entry just logged: delete it (the server keeps it, so it can be restored), then refresh.
+  const undoLogged = (tx: EditedTransaction) => ({
+    label: "Undo",
+    run: async () => {
+      setSaved(null);
+      try {
+        await api(`/transactions/${tx.id}`, { method: "DELETE" });
+        setNotice(txName(tx) === "No merchant" ? "Removed the entry." : `Removed ${txName(tx)}.`);
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "Couldn't undo that");
+      }
+      refresh();
+    },
+  });
 
   return (
     <Shell
@@ -245,30 +261,41 @@ function Cockpit({ me }: { me: Me }) {
             setDeleted({ tx });
           }}
           onSaved={(tx: EditedTransaction) => {
+            const fresh = !sheet.editing;
             setSheet(null);
             refresh();
-            if (tx.rule_suggestion) setOffer({ transactionId: tx.id, suggestion: tx.rule_suggestion });
+            setNotice(null);
+            setDeleted(null);
+            setSaved({ tx, fresh });
           }}
         />
       )}
       {chat && <ChatDrawer ask={chat.ask} demo={me.demo} onClose={closeChat} onChanged={changed} />}
-      {offer && (
+      {saved && (
         <Toast
-          message={offer.suggestion.question}
-          action={{
-            label: offer.suggestion.replaces_category_id ? "Change rule" : "Save rule",
-            run: async () => {
-              setOffer(null);
-              try {
-                await api("/category-rules/accept", { method: "POST", body: { transaction_id: offer.transactionId } });
-                setNotice(`Saved. New expenses from “${offer.suggestion.pattern}” will be filed the same way.`);
-                void client.invalidateQueries({ queryKey: ["category-rules"] });
-              } catch (e) {
-                setNotice(e instanceof Error ? e.message : "Couldn't save the rule");
-              }
-            },
-          }}
-          onClose={closeOffer}
+          message={savedMessage(saved.tx, saved.fresh)}
+          action={
+            saved.tx.rule_suggestion
+              ? {
+                  label: saved.tx.rule_suggestion.replaces_category_id ? "Change rule" : "Save rule",
+                  run: async () => {
+                    const suggestion = saved.tx.rule_suggestion as RuleSuggestion;
+                    setSaved(null);
+                    try {
+                      await api("/category-rules/accept", { method: "POST", body: { transaction_id: saved.tx.id } });
+                      setNotice(`Saved. New expenses from “${suggestion.pattern}” will be filed the same way.`);
+                      void client.invalidateQueries({ queryKey: ["category-rules"] });
+                    } catch (e) {
+                      setNotice(e instanceof Error ? e.message : "Couldn't save the rule");
+                    }
+                  },
+                }
+              : saved.fresh
+                ? undoLogged(saved.tx)
+                : undefined
+          }
+          also={saved.tx.rule_suggestion && saved.fresh ? undoLogged(saved.tx) : undefined}
+          onClose={closeSaved}
         />
       )}
       {deleted && (
@@ -293,6 +320,14 @@ function Cockpit({ me }: { me: Me }) {
       {notice && <Toast message={notice} onClose={closeNotice} />}
     </Shell>
   );
+}
+
+/** What the toast says after a save: "Logged SGD 5.50 · Kopi Stall" for a new entry, "Saved." for a
+ * change, with a rule offer's question after it when there is one. */
+export function savedMessage(tx: EditedTransaction, fresh: boolean): string {
+  const name = txName(tx);
+  const what = fresh ? `Logged ${[formatMoney(tx.amount), name === "No merchant" ? null : name].filter(Boolean).join(" · ")}` : "Saved";
+  return `${what}.${tx.rule_suggestion ? ` ${tx.rule_suggestion.question}` : ""}`;
 }
 
 /** Where someone lands after signing in: a guest has Travel and nothing else, and a sign-in that

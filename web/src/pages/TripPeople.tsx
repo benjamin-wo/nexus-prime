@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
 import { ApiError, api, type IssuedTripInvite, type Trip, type TripInvite, type TripMember, tripInvitesPath, tripMembersPath } from "../api";
+import { ConfirmBox } from "../components/ConfirmBox";
 import { formatShortDate } from "../format";
 import { Companions } from "./TripBits";
 
@@ -45,6 +46,8 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Who the owner is about to remove, or a member about to leave: asked in the sheet, not by the browser.
+  const [asking, setAsking] = useState<TripMember | "leave" | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const people = ownerFirst(members.data ?? []);
   const me = people.find((m) => m.you);
@@ -77,7 +80,7 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
     }, "Couldn't cancel the link. Try again.");
 
   const remove = (member: TripMember) => {
-    if (!window.confirm(`Remove ${member.name} from this trip? They'll lose access straight away.`)) return;
+    setAsking(null);
     void attempt(async () => {
       await api<undefined>(tripMembersPath(trip.id, member.id), { method: "DELETE" });
       await client.invalidateQueries({ queryKey: ["trip-members", trip.id] });
@@ -87,7 +90,8 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
   };
 
   const leave = () => {
-    if (!me || !window.confirm("Leave this trip? You'll lose access straight away.")) return;
+    if (!me) return;
+    setAsking(null);
     void attempt(async () => {
       await api<undefined>(tripMembersPath(trip.id, me.id), { method: "DELETE" });
       client.removeQueries({ queryKey: ["trip", trip.id] });
@@ -130,13 +134,24 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
                 <span className="caption">{[m.you ? "You" : null, m.role === "owner" ? "Owner" : "Member"].filter(Boolean).join(" · ")}</span>
               </span>
               {owner && m.role !== "owner" && (
-                <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => remove(m)} aria-label={`Remove ${m.name}`}>
+                <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => setAsking(m)} aria-label={`Remove ${m.name}`}>
                   Remove
                 </button>
               )}
             </li>
           ))}
         </ul>
+      )}
+
+      {asking && asking !== "leave" && (
+        <ConfirmBox
+          label={`Remove ${asking.name}`}
+          question={`Remove ${asking.name} from this trip? They'll lose access straight away.`}
+          confirm="Remove"
+          busy={busy}
+          onConfirm={() => remove(asking)}
+          onKeep={() => setAsking(null)}
+        />
       )}
 
       {owner && (
@@ -181,9 +196,19 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
         </>
       )}
 
-      {!owner && me && (
+      {!owner && me && asking === "leave" && (
+        <ConfirmBox
+          label="Leave this trip"
+          question="Leave this trip? You'll lose access straight away."
+          confirm="Leave trip"
+          busy={busy}
+          onConfirm={leave}
+          onKeep={() => setAsking(null)}
+        />
+      )}
+      {!owner && me && asking !== "leave" && (
         <div className="share-actions">
-          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={leave}>
+          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => setAsking("leave")}>
             Leave trip
           </button>
         </div>

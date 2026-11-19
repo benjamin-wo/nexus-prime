@@ -90,14 +90,20 @@ describe("the share sheet for the owner", () => {
       },
       "GET /travel/trips/t1/share": () => ({ token: null, show_bookings: true }),
     });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const dialog = vi.spyOn(window, "confirm");
     renderWithProviders(<ShareSheet trip={trip()} onClose={() => {}} />);
     const user = userEvent.setup();
     const remove = await screen.findByRole("button", { name: "Remove Alex T." });
     await user.click(remove);
-    expect(confirm).toHaveBeenLastCalledWith("Remove Alex T. from this trip? They'll lose access straight away.");
+    // The question is asked in the sheet, never by the browser; Keep removes no one.
+    const ask = screen.getByRole("group", { name: "Remove Alex T." });
+    expect(ask).toHaveTextContent("Remove Alex T. from this trip? They'll lose access straight away.");
+    await user.click(within(ask).getByRole("button", { name: "Keep" }));
+    expect(screen.queryByRole("group", { name: "Remove Alex T." })).toBeNull();
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     await user.click(screen.getByRole("button", { name: "Remove Alex T." }));
+    await user.click(within(screen.getByRole("group", { name: "Remove Alex T." })).getByRole("button", { name: "Remove" }));
+    expect(dialog).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole("button", { name: "Remove Alex T." })).toBeNull());
     expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1);
   });
@@ -130,14 +136,18 @@ describe("the share sheet for a member", () => {
       "GET /travel/trips/t1/members": () => [lead, mine],
       "DELETE /travel/trips/t1/members/u3": () => undefined,
     });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const dialog = vi.spyOn(window, "confirm");
     renderWithProviders(<ShareSheet trip={member()} onClose={() => {}} onLeft={() => (left += 1)} />);
     const user = userEvent.setup();
     const leave = await screen.findByRole("button", { name: "Leave trip" });
     await user.click(leave);
-    expect(confirm).toHaveBeenCalledTimes(1);
+    const ask = screen.getByRole("group", { name: "Leave this trip" });
+    expect(ask).toHaveTextContent("You'll lose access straight away.");
+    await user.click(within(ask).getByRole("button", { name: "Keep" }));
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     await user.click(screen.getByRole("button", { name: "Leave trip" }));
+    await user.click(within(screen.getByRole("group", { name: "Leave this trip" })).getByRole("button", { name: "Leave trip" }));
+    expect(dialog).not.toHaveBeenCalled();
     await waitFor(() => expect(left).toBe(1));
     expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/travel/trips/t1/members/u3"]);
   });

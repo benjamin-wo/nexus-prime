@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 
 import { api, type Booking, type Trip } from "../api";
+import { ConfirmBox } from "../components/ConfirmBox";
 
 /** What the editor adds: a booking kind, a ticket (a booked plan), or an idea (a plan
  * without a day, "place" here and in the API's own words). */
@@ -146,6 +147,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
   const [more, setMore] = useState(() => (entry ? hasExtras(formOf(entry)) : false));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const set = (key: keyof EntryForm) => (e: { target: { value: string } }) => {
     const next = { ...f, [key]: e.target.value };
     // A check-in moved past the check-out takes the check-out along.
@@ -171,7 +173,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
   }
 
   async function remove() {
-    if (!entry || !window.confirm(`Take ${entry.title} off the trip?`)) return;
+    if (!entry) return;
     setError(null);
     setBusy(true);
     try {
@@ -179,6 +181,7 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
       onDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't remove that");
+      setConfirming(false);
     } finally {
       setBusy(false);
     }
@@ -369,6 +372,17 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
           {error}
         </p>
       )}
+      {entry && confirming && (
+        <ConfirmBox
+          label={`Remove ${entry.title}`}
+          question={`Take ${entry.title} off the trip?`}
+          confirm="Remove"
+          busy={busy}
+          onConfirm={() => void remove()}
+          onKeep={() => setConfirming(false)}
+        />
+      )}
+      {!confirming && (
       <div className="actions">
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {entry ? "Save" : "Add"}
@@ -382,11 +396,12 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
           </button>
         )}
         {entry && (
-          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => void remove()}>
+          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => setConfirming(true)}>
             Remove
           </button>
         )}
       </div>
+      )}
     </form>
   );
 }
