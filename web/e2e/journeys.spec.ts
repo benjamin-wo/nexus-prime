@@ -823,6 +823,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
   await expect(choice).toHaveValue("daily");
   await expect(card.getByText("You get a summary of your transactions once a day at 9pm.")).toBeVisible();
   await card.getByLabel("Daily summary at").fill("23:59");
+  await card.getByLabel("Daily summary at").press("Enter");
   await expect(card.getByText("You get a summary of your transactions once a day at 11:59pm.")).toBeVisible();
   await choice.selectOption("instant");
   await expect(card.getByLabel("Daily summary at")).toBeHidden();
@@ -938,7 +939,7 @@ test("the cog opens Settings, which is grouped, and Budgets keeps only budgeting
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data"]);
+  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data", "Account"]);
   for (const name of ["Telegram updates", "Shared trips", "Receipts by email", "Import a statement", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
     await expect(page.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
   // Each one opens on its own page.
@@ -1441,8 +1442,10 @@ test("big move alerts, quiet hours and the morning summary are saved one field a
   await expect(card.getByText("At 8am after each US trading day.")).toBeVisible();
 
   await card.getByLabel("From", { exact: true }).fill("22:30");
+  await card.getByLabel("From", { exact: true }).press("Enter");
   await expect.poll(() => puts).toEqual([{ quiet_start: "22:30" }]);
   await card.getByLabel("To", { exact: true }).fill("07:15");
+  await card.getByLabel("To", { exact: true }).press("Enter");
   await expect.poll(() => puts).toEqual([{ quiet_start: "22:30" }, { quiet_end: "07:15" }]);
 
   const move = card.getByLabel("Big move alerts (%)");

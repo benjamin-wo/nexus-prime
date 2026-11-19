@@ -47,7 +47,7 @@ test("Money has four tabs, and Investment's plans are Trade plans", async ({ pag
 test("Settings leads to Receipts by email and back, with Settings still marked", async ({ page, isMobile }) => {
   await fakeApi(page, { emailConnected: true });
   await page.goto("/settings");
-  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data"]);
+  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data", "Account"]);
   await page.getByRole("link", { name: /^Receipts by email/ }).click();
   await expect(page).toHaveURL(/\/settings\/email$/);
   await expect(page.getByRole("region", { name: "Checked emails" })).toBeVisible();

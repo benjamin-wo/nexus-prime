@@ -1,9 +1,116 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { api, type Frequency, type Updates } from "../api";
 
 const ORDER: Frequency[] = ["instant", "hourly", "thrice_daily", "daily", "off"];
+
+/** A time field (a daily summary, a quiet hour) that saves what was typed.
+ *
+ * Typing in a time input changes its value on every keystroke ("07" is already 07:00), so what is typed
+ * is kept as a draft and sent when the field is left or Enter is pressed (or, where a picker changes the
+ * value without the field being focused, at once). Each save has a number: only the latest one's answer
+ * is applied, so a slow earlier answer never puts an old time back, and the field shows the draft, not
+ * the saved time, for as long as the field is focused or a newer value is waiting. "Saved" is announced
+ * when it lands; a refusal shows next to the field and the typed time stays. */
+export function TimeField({
+  label,
+  value,
+  send,
+  onSaved,
+}: {
+  label: string;
+  /** The saved time, HH:MM. */
+  value: string;
+  send: (time: string) => Promise<Updates>;
+  /** The answer to the latest save (never an older one). */
+  onSaved: (saved: Updates) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [draft, setDraftState] = useState<string | null>(null);
+  const draftRef = useRef<string | null>(null);
+  const latest = useRef(0);
+  const inflight = useRef(0);
+  const sent = useRef<string | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  function setDraft(next: string | null) {
+    draftRef.current = next;
+    setDraftState(next);
+  }
+
+  async function commit() {
+    const time = draftRef.current;
+    if (time === null) return;
+    if (time === "") {
+      // Left half-typed or cleared: back to the saved time.
+      setDraft(null);
+      return;
+    }
+    const waiting = inflight.current > 0;
+    if (waiting ? time === sent.current : time === value) {
+      if (!waiting) setDraft(null);
+      return;
+    }
+    const mine = ++latest.current;
+    inflight.current += 1;
+    sent.current = time;
+    window.clearTimeout(timer.current);
+    setSaved(false);
+    setError(null);
+    try {
+      const answer = await send(time);
+      inflight.current -= 1;
+      if (mine !== latest.current) return;
+      onSaved(answer);
+      if (draftRef.current === time || document.activeElement !== input.current) setDraft(null);
+      setSaved(true);
+      timer.current = window.setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      inflight.current -= 1;
+      if (mine !== latest.current) return;
+      setError(e instanceof Error ? e.message : "Couldn't save");
+    }
+  }
+
+  return (
+    <div className="time-field">
+      <label className="field">
+        {label}
+        <input
+          ref={input}
+          className="input"
+          type="time"
+          step={60}
+          value={draft ?? value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+            if (e.target.value && document.activeElement !== e.currentTarget) void commit();
+          }}
+          onBlur={() => void commit()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void commit();
+          }}
+        />
+      </label>
+      <span className="time-status caption" role="status">
+        {saved ? "Saved" : ""}
+      </span>
+      {error && (
+        <p className="error-text" id={errorId} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** How often Nexus messages the user on Telegram about their transactions. */
 export function UpdatesSection() {
@@ -17,7 +124,7 @@ export function UpdatesSection() {
 
   /** Sends only what changed. The screen follows at once, and goes back for just those fields if
    * the save fails; a slower answer to an earlier save never undoes a later change. */
-  async function save(patch: Partial<Pick<Updates, "quiet_start" | "quiet_end" | "market_summary" | "daily_cap">> & { move_alert_percent?: number }) {
+  async function save(patch: Partial<Pick<Updates, "market_summary" | "daily_cap">> & { move_alert_percent?: number }) {
     setError(null);
     const keys = Object.keys(patch) as (keyof Updates)[];
     const apply = (from: Updates) => (old: Updates | undefined) =>
@@ -33,11 +140,18 @@ export function UpdatesSection() {
     }
   }
 
-  async function choose(frequency: Frequency, dailyAt?: string) {
+  /** The time fields' answer, applied to just the fields it changed (so it never undoes another field). */
+  function applyTime(saved: Updates, keys: (keyof Updates)[]) {
+    client.setQueryData<Updates>(["notifications"], (old) =>
+      old ? ({ ...old, ...Object.fromEntries(keys.map((k) => [k, saved[k]])) } as Updates) : saved,
+    );
+  }
+  const putTime = (body: Partial<Updates>) => api<Updates>("/notifications", { method: "PUT", body });
+
+  async function choose(frequency: Frequency) {
     setError(null);
     try {
-      const body = dailyAt ? { frequency, daily_at: dailyAt } : { frequency };
-      const saved = await api<Updates>("/notifications", { method: "PUT", body });
+      const saved = await api<Updates>("/notifications", { method: "PUT", body: { frequency } });
       client.setQueryData(["notifications"], saved);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save");
@@ -94,18 +208,12 @@ export function UpdatesSection() {
             </select>
           </label>
           {data.frequency === "daily" && (
-            <label className="field">
-              Daily summary at
-              <input
-                className="input"
-                type="time"
-                step={60}
-                value={data.daily_at}
-                onChange={(e) => {
-                  if (e.target.value) void choose("daily", e.target.value);
-                }}
-              />
-            </label>
+            <TimeField
+              label="Daily summary at"
+              value={data.daily_at}
+              send={(time) => putTime({ frequency: "daily", daily_at: time })}
+              onSaved={(saved) => applyTime(saved, ["daily_at", "description", "options"])}
+            />
           )}
           <p className="caption">
             {data.description}{" "}
@@ -117,30 +225,18 @@ export function UpdatesSection() {
             <fieldset className="field-group setting">
               <legend>Quiet hours</legend>
               <div className="quiet-times">
-                <label className="field">
-                  From
-                  <input
-                    className="input"
-                    type="time"
-                    step={60}
-                    value={data.quiet_start}
-                    onChange={(e) => {
-                      if (e.target.value) void save({ quiet_start: e.target.value });
-                    }}
-                  />
-                </label>
-                <label className="field">
-                  To
-                  <input
-                    className="input"
-                    type="time"
-                    step={60}
-                    value={data.quiet_end}
-                    onChange={(e) => {
-                      if (e.target.value) void save({ quiet_end: e.target.value });
-                    }}
-                  />
-                </label>
+                <TimeField
+                  label="From"
+                  value={data.quiet_start}
+                  send={(time) => putTime({ quiet_start: time })}
+                  onSaved={(saved) => applyTime(saved, ["quiet_start"])}
+                />
+                <TimeField
+                  label="To"
+                  value={data.quiet_end}
+                  send={(time) => putTime({ quiet_end: time })}
+                  onSaved={(saved) => applyTime(saved, ["quiet_end"])}
+                />
               </div>
               <p className="caption">
                 Nexus holds its messages in these hours. A broken stop on a stock you hold still comes through.

@@ -207,7 +207,7 @@ function Cockpit({ me }: { me: Me }) {
             {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
               <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
             ))}
-            <Route path="/settings" element={<Settings me={me} />} />
+            <Route path="/settings" element={<Settings me={me} onLogout={logout} />} />
             <Route path="/settings/email" element={<EmailPage me={me} />} />
             <Route path="/settings/import" element={<ImportPage />} />
             <Route path="/settings/costs" element={<CostsPage me={me} />} />

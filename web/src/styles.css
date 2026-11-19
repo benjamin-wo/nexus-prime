@@ -2945,3 +2945,23 @@ a.set-row:focus-visible { outline-offset: -2px; }
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
   .bulkbar { animation: none; }
 }
+
+/* Settings: a time field that saves when left (the status sits on the label's line, so nothing moves). */
+.time-field { position: relative; display: grid; gap: var(--space-1); min-width: 0; }
+.time-field .error-text { margin: 0; }
+.time-status { position: absolute; top: 0; right: 0; }
+.quiet-times .time-field { flex: 1 1 140px; }
+
+/* Settings: the Account group (a button as a row) and the invite link card, here and in the desktop rail. */
+button.set-row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+button.set-row:hover { background: var(--bg-card-hover); }
+button.set-row:active { background: var(--bg-raised); }
+button.set-row:focus-visible { outline-offset: -2px; }
+button.set-row:disabled { cursor: default; opacity: 0.6; }
+.invite-card { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); border-top: 1px solid var(--border-card); background: var(--bg-raised); }
+.rail .invite-card { padding: var(--space-3) 0 0; border-top: 0; background: none; }
+.invite-note { margin: 0; font-size: 0.875rem; }
+.invite-actions { display: flex; align-items: center; gap: var(--space-3); }
+.invite-actions p { margin: 0; }
+.invite-card .btn { width: auto; }
+.invite-row .error-text { margin: 0; padding: 0 var(--space-4) var(--space-3); }
