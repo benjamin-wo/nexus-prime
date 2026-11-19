@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 
 import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
 import { Icon, type IconName } from "../components/Icon";
+import { LoadError } from "../components/LoadError";
 import { Sheet } from "../components/Sheet";
 import { base64 } from "../files";
 import { formatMoney } from "../format";
@@ -288,6 +289,8 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
   const role = useAppRole();
   const guest = role === undefined || role === "guest";
   const everything = trips.data ?? [];
+  // With the list failed, the page below would read as if there were no trips: it waits for the list.
+  const failed = trips.isError && !trips.data;
   const all = everything.filter((t) => !isMember(t));
   const shared = everything.filter(isMember);
   const onNow = all.filter((t) => t.status === "ongoing");
@@ -328,7 +331,7 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
         </section>
       )}
       {trips.isLoading && <p className="state">Loading…</p>}
-      {trips.isError && <p className="error-text">Couldn't load your trips.</p>}
+      {failed && <LoadError message="Couldn't load your trips." query={trips} variant="page" />}
       {/* Someone with trips of their own and none yet is led by "Where to next?" below, which already
           offers to add one or have Nexus research it; only a guest, who has no such card, is told. */}
       {trips.data && everything.length === 0 && !adding && guest && (
@@ -339,11 +342,11 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       {onNow.length > 0 && tripGroup("On now", onNow)}
       {comingUp.length > 0 && tripGroup("Coming up", comingUp)}
       {shared.length > 0 && tripGroup("Shared with you", shared)}
-      {!adding && !guest && <WhereNext onAsk={onAsk} onAdd={() => setAdding(true)} />}
-      {!guest && <LooseBookings trips={all} />}
-      {!guest && <ResearchList />}
+      {!failed && !adding && !guest && <WhereNext onAsk={onAsk} onAdd={() => setAdding(true)} />}
+      {!failed && !guest && <LooseBookings trips={all} />}
+      {!failed && !guest && <ResearchList />}
       {past.length > 0 && <PastTrips list={past} />}
-      {!guest && <p className="caption trips-foot">Nexus never books anything.</p>}
+      {!failed && !guest && <p className="caption trips-foot">Nexus never books anything.</p>}
     </>
   );
 }
@@ -1300,8 +1303,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       {detail.isLoading && <p className="state">Loading…</p>}
       {gone && (
         <section className="card trip-gone" aria-labelledby="trip-gone">
-          <h2 id="trip-gone">You're no longer on this trip.</h2>
-          <p className="caption">The owner may have taken you off it, or deleted it.</p>
+          <h2 id="trip-gone">This trip isn't here any more.</h2>
+          <p className="caption">It may have been deleted, or you were taken off it.</p>
           <div className="actions">
             <Link className="btn btn-soft" to="/travel">
               Go to your trips

@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import type { Me, Spending, Summary } from "../api";
@@ -188,5 +189,37 @@ describe("the Saved tile", () => {
     serveWallets([spendingWallet, cash, { id: "w3", name: "Savings", kind: "savings", match_words: [] }]);
     renderOverview();
     expect(await screen.findByLabelText("Saved")).toHaveTextContent("800.00");
+  });
+});
+
+describe("when a load fails", () => {
+  const failing = () => new Response(JSON.stringify({ detail: "boom" }), { status: 500 });
+
+  it("does not say no spending was recorded when the totals could not be loaded, and Retry loads them", async () => {
+    let up = false;
+    mockApi({
+      "GET /summary": () => (up ? summary : failing()),
+      "GET /spending/months": () => failing(),
+      "GET /budgets": () => [],
+      "GET /transactions": () => failing(),
+      "GET /ious": () => [],
+      "GET /wallets": () => [],
+    });
+    renderOverview();
+    const where = await screen.findByRole("region", { name: "Where it went" });
+    expect(await within(where).findByRole("alert")).toHaveTextContent("Couldn't load where this month's money went.");
+    expect(screen.queryByText(/No spending recorded/)).toBeNull();
+    // The other cards say so too, not "Loading…" for good.
+    expect(await within(screen.getByRole("region", { name: "Spending by month" })).findByRole("alert")).toHaveTextContent(
+      "Couldn't load spending by month.",
+    );
+    expect(await within(screen.getByRole("region", { name: "Latest" })).findByRole("alert")).toHaveTextContent(
+      "Couldn't load your latest entries.",
+    );
+    expect(screen.queryByText("Loading…")).toBeNull();
+    up = true;
+    await userEvent.setup().click(within(where).getByRole("button", { name: "Retry" }));
+    expect(await within(where).findByText("Dining Out")).toBeInTheDocument();
+    expect(within(where).queryByRole("alert")).toBeNull();
   });
 });

@@ -131,7 +131,7 @@ test("a member sees the people, can leave, and is told they're no longer on the 
 
   // Opening the trip again, from an old link: the server says there is no such trip.
   await page.goto("/travel/trips/shared1");
-  await expect(page.getByText("You're no longer on this trip.")).toBeVisible();
+  await expect(page.getByText("This trip isn't here any more.")).toBeVisible();
   await page.getByRole("link", { name: "Go to your trips" }).click();
   await expect(page).toHaveURL(/\/travel$/);
 });

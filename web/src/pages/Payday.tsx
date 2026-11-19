@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, type Me, type Salary } from "../api";
+import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
 
 const RULES = [
@@ -97,7 +98,7 @@ export function PaydaySection({ me }: { me: Me }) {
         <span className="caption">A check-in on payday; weekends move to Friday</span>
       </div>
       {pay.isLoading && <p className="state">Loading…</p>}
-      {pay.isError && <p className="state error-text">Couldn't load your pay schedule.</p>}
+      {pay.isError && <LoadError message="Couldn't load your pay schedule." query={pay} />}
 
       {current && !editing && (
         <div className="budget solo">

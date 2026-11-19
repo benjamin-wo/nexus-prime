@@ -15,6 +15,7 @@ import {
   type Wallet,
 } from "../api";
 import { Icon } from "../components/Icon";
+import { LoadError } from "../components/LoadError";
 import { NexusMark } from "../components/NexusMark";
 import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
@@ -446,7 +447,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
         <PendingEntries user={owner} entries={pendingHere} />
 
         {page.isLoading && <p className="state">Loading…</p>}
-        {page.isError && <p className="state error-text">Couldn't load transactions.</p>}
+        {page.isError && <LoadError message="Couldn't load transactions." query={page} />}
         {page.data && items.length === 0 && (
           filtered ? (
             <p className="state">Nothing matches these filters.</p>

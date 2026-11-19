@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, type CashDay, type CashFlow, type Money } from "../api";
+import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
 import { monthLabel, shiftMonth } from "../months";
 import { AccentTitle } from "../motion";
@@ -202,7 +203,7 @@ export function CashFlowPage() {
           </span>
         </div>
         {flow.isLoading && <p className="state">Loading…</p>}
-        {flow.isError && <p className="state error-text">Couldn't load cash flow.</p>}
+        {flow.isError && <LoadError message="Couldn't load cash flow." query={flow} />}
         {data && (
           <>
             <div className="flow-totals">

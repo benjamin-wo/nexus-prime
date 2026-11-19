@@ -2945,3 +2945,13 @@ a.set-row:focus-visible { outline-offset: -2px; }
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
   .bulkbar { animation: none; }
 }
+
+/* A failed load, with its Retry (LoadError). Inside a card it is a row; the page variant is a card. */
+.load-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) 0 var(--space-4); }
+.load-error-text { flex: 1 1 12rem; min-width: 0; margin: 0; font-size: 0.9375rem; }
+.load-error-page { padding: var(--space-4); background: var(--bg-glass); border: 1px solid var(--border-card); border-radius: var(--radius); }
+/* On the Home hero (a dark panel in both themes) it is white, with a button to match. */
+.hero .load-error { padding: 0; margin-top: var(--space-1); }
+.hero .load-error-text { color: #fff; }
+.hero .load-error .btn { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.45); color: #fff; }
+.hero .load-error .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.26); }

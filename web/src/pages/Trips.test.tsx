@@ -81,6 +81,23 @@ describe("the trips list", () => {
     expect(screen.getByRole("heading", { level: 1 }).closest(".page-head")?.nextElementSibling?.getAttribute("aria-labelledby")).toBe("where-next");
   });
 
+  it("says the list could not be loaded, with a Retry, instead of reading as if there were no trips", async () => {
+    let up = false;
+    mockApi({
+      "GET /me": () => me("owner"),
+      "GET /travel/trips": () => (up ? [mine] : new Response(JSON.stringify({ detail: "boom" }), { status: 500 })),
+      "GET /travel/bookings": () => [],
+      "GET /runs": () => [],
+    });
+    renderWithProviders(<TripsPage onAsk={() => {}} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load your trips.");
+    expect(screen.queryByRole("heading", { name: "Where to next?" })).toBeNull();
+    up = true;
+    await userEvent.setup().click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("link", { name: "Tokyo" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("keeps past trips behind a button, shut at first, and opens them as rows linking to each trip", async () => {
     const old = trip({ id: "p1", destination: "Paris", status: "finished", start: "2026-01-02", end: "2026-01-05", days_until: -200 });
     const older = trip({ id: "p2", destination: "Rome", status: "finished", start: "2025-01-02", end: "2025-01-05", days_until: -500 });
@@ -265,11 +282,11 @@ describe("a trip you were added to", () => {
     expect(calls.find((c) => c.method === "PUT")?.body).toMatchObject({ cost: null, currency: null });
   });
 
-  it("says you're no longer on the trip when it has gone, with a way back", async () => {
+  it("says the trip isn't there any more when it has gone, to its owner or a member, with a way back", async () => {
     // The mock answers 404 for anything it has no handler for, as the server does for a trip you aren't on.
     const calls = mockApi({ "GET /me": () => me("member") });
     renderTrip("/travel/trips/t2");
-    expect(await screen.findByText("You're no longer on this trip.")).toBeInTheDocument();
+    expect(await screen.findByText("This trip isn't here any more.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to your trips" })).toHaveAttribute("href", "/travel");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(calls.some((c) => c.path === "/travel/trips/t2")).toBe(true);

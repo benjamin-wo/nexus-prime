@@ -21,6 +21,7 @@ import { brief, notableMove, pace, standing, suggestions } from "../brief";
 import { Block } from "../components/Block";
 import { GetStarted } from "../components/GetStarted";
 import { Icon, departmentIcon } from "../components/Icon";
+import { LoadError } from "../components/LoadError";
 import { Toast } from "../components/Toast";
 import { DEPARTMENTS } from "../departments";
 import { formatMoney } from "../format";
@@ -106,6 +107,7 @@ function Hero({
   date,
   greeting: hello,
   spent,
+  spentQuery,
   stands,
   parts,
   onLog,
@@ -113,6 +115,8 @@ function Hero({
   date: string;
   greeting: string;
   spent?: Money;
+  /** The query behind `spent`: when it failed, the figure says so, with a Retry. */
+  spentQuery: { isError: boolean; isFetching: boolean; refetch: () => unknown };
   stands: ReturnType<typeof standing>;
   parts: ReturnType<typeof brief>;
   onLog: () => void;
@@ -141,14 +145,18 @@ function Hero({
       </div>
       <div className="hero-figure">
         <span className="hero-value">
-          <CountUp value={spent ? formatMoney(spent) : "…"} />
+          <CountUp value={spent ? formatMoney(spent) : spentQuery.isError ? "–" : "…"} />
           {stands && (
             <span className="hero-arrow" aria-hidden="true">
               <Icon name={stands.good ? "down" : "up"} size={28} />
             </span>
           )}
         </span>
-        <span className="hero-label">spent this month</span>
+        {spentQuery.isError && !spent ? (
+          <LoadError message="Couldn't load this month's spending." query={spentQuery} />
+        ) : (
+          <span className="hero-label">spent this month</span>
+        )}
       </div>
       {stands && <p className="hero-note">{stands.text}.</p>}
       <p className="hero-brief">
@@ -260,7 +268,7 @@ function NeedsYou({
   feed,
   onSettled,
 }: {
-  feed: { data?: FeedItem[]; isLoading: boolean; isError: boolean };
+  feed: { data?: FeedItem[]; isLoading: boolean; isError: boolean; isFetching: boolean; refetch: () => unknown };
   onSettled: (message?: string) => void;
 }) {
   const [all, setAll] = useState(false);
@@ -269,9 +277,7 @@ function NeedsYou({
   return (
     <Block id="needs-you" title="Needs you">
       {feed.isLoading && <p className="state">Loading…</p>}
-      {feed.isError && (
-        <p className="error-text">Couldn't load what needs you.</p>
-      )}
+      {feed.isError && <LoadError message="Couldn't load what needs you." query={feed} />}
       {feed.data?.length === 0 && (
         <p className="state">Nothing needs you right now.</p>
       )}
@@ -320,28 +326,32 @@ export function Home({
     refetchInterval: (query) =>
       query.state.data?.some((r) => RUNNING.has(r.status)) ? 5000 : false,
   });
-  const summary = useQuery({
+  const summaryQuery = useQuery({
     queryKey: ["summary"],
     queryFn: () => api<Summary>("/summary"),
-  }).data;
-  const spending = useQuery({
+  });
+  const summary = summaryQuery.data;
+  const spendingQuery = useQuery({
     queryKey: ["spending-months"],
     queryFn: () => api<Spending>("/spending/months"),
-  }).data;
-  const budgets = useQuery({
+  });
+  const spending = spendingQuery.data;
+  const budgetsQuery = useQuery({
     queryKey: ["budgets"],
     queryFn: () => api<Budget[]>("/budgets"),
-  }).data;
+  });
+  const budgets = budgetsQuery.data;
   const plan = useQuery({
     queryKey: ["budgets", "month"],
     queryFn: () => api<BudgetMonth>("/budgets/month"),
   }).data;
-  const portfolio = useQuery({
+  const portfolioQuery = useQuery({
     queryKey: ["investments"],
     queryFn: () => api<Portfolio>("/investments"),
     // Every minute while the portfolio's prices are live and the page is in view.
     refetchInterval: (query) => livePolling(query.state.data?.totals.price_kind),
-  }).data;
+  });
+  const portfolio = portfolioQuery.data;
   // The latest session's movers, for the brief's one line about the market.
   const session = useQuery({
     queryKey: ["investments", "today"],
@@ -356,7 +366,7 @@ export function Home({
   const overall = budgets?.find((b) => b.category_id === null);
   const spent = summary?.totals.find((t) => t.direction === "out")?.total;
   // The big figure and how it stands lead the hero; the brief adds the rest.
-  const parts = brief({ trip: trip.data, needs: feed.data, overall, plan, move: notableMove(session) });
+  const parts = brief({ trip: trip.data, needs: feed.data, needsFailed: feed.isError, overall, plan, move: notableMove(session) });
   const held = [...(portfolio?.holdings ?? [])]
     .sort(
       (a, b) =>
@@ -391,6 +401,7 @@ export function Home({
         date={today(me.user.timezone)}
         greeting={greeting(me.user.timezone)}
         spent={spent}
+        spentQuery={summaryQuery}
         stands={standing({ spent, overall, lastMonthToDate: spending?.last_month_to_date })}
         parts={parts}
         onLog={onLog}
@@ -416,11 +427,14 @@ export function Home({
         <div className="stack">
           <MoneyGlance
             spent={spent}
+            query={summaryQuery}
+            // Without the budget or last month's figure there is nothing to compare with: not "set a budget".
+            partial={budgetsQuery.isError || spendingQuery.isError}
             overall={overall}
             pace={pace({ overall, lastMonthToDate: spending?.last_month_to_date, timezone: me.user.timezone })}
           />
-          <PortfolioGlance portfolio={portfolio} />
-          {!tripOn && <TripGlance detail={trip.isLoading ? undefined : (detail ?? null)} />}
+          <PortfolioGlance portfolio={portfolio} query={portfolioQuery} />
+          {!tripOn && <TripGlance detail={trip.isLoading ? undefined : (detail ?? null)} query={trip} />}
         </div>
       </div>
       {notice && <Toast message={notice} onClose={() => setNotice(null)} />}
