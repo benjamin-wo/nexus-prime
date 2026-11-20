@@ -568,7 +568,7 @@ async def test_the_november_seed_matches_the_money_math_figures(engine: AsyncEng
 
 def test_the_money_math_cases_are_wired_to_the_figures_and_the_clock() -> None:
     cases = [c for c in CASES if c.area == "money-math"]
-    assert 8 <= len(cases) <= 15
+    assert 8 <= len(cases) <= 17
     assert {c.id for c in cases} >= {
         "money-math-forgot-payday",
         "money-math-sum",
@@ -578,6 +578,8 @@ def test_the_money_math_cases_are_wired_to_the_figures_and_the_clock() -> None:
         "money-math-budget-explain",
         "money-math-budget-left",
         "money-math-budget-non-spending",
+        "money-math-budget-room",
+        "money-math-budget-afford-dinner",
     }
     for case in cases:
         assert case.november or not case.budget, case.id  # the budget variant is a November one
@@ -680,6 +682,15 @@ async def test_the_budget_seed_matches_the_budget_figures(engine: AsyncEngine) -
         seed.BUDGET_INSURANCE
     ) - Decimal(seed.BUDGET_CARD_BILL)
     assert o.tighter == "budget"
+    # How much can I spend: the budget left after what's due, not the month-end net (which has
+    # payday in it). A 50.00 dinner comes off it; money expected in doesn't add to it.
+    assert o.budget_room == o.budget_left_after_due
+    assert o.pay_not_yet_in.amount == Decimal(seed.NOV_PAYDAY)
+    dinner = await month_outlook(uow, FixedRates(), user, now=now, adjustments=[("-50", "dinner")])
+    assert dinner.budget_room is not None
+    assert dinner.budget_room.amount == Decimal(seed.BUDGET_AFTER_DINNER)
+    assert dinner.budget_room.amount == Decimal(seed.BUDGET_AFTER_DUE) - 50
+    assert dinner.projected_net.amount == Decimal(seed.BUDGET_PROJECTED)  # not what answers it
     # The card bill is in what goes out but not in what counts against the budget, so the
     # two wrong answers the case forbids are what you get by subtracting it.
     card = Decimal(seed.BUDGET_CARD_BILL)
@@ -715,6 +726,17 @@ async def test_the_budget_cases_are_graded_on_the_after_due_figure(engine: Async
             say("It doesn't help: over by 305.78 after bills, and 605.78 with the card bill."),
             *nothing,
         ),
+        # Right: the budget room, and the room less the dinner.
+        "money-math-budget-room": lambda: scripted(
+            call("month_outlook"),
+            say("None: the budget is over by 305.78 once what's due is paid."),
+            *nothing,
+        ),
+        "money-math-budget-afford-dinner": lambda: scripted(
+            call("month_outlook", adjustments=[{"amount": "-50", "label": "dinner"}]),
+            say("Not really: the budget would be over by 355.78 with it."),
+            *nothing,
+        ),
     }
     results = {
         r.case.id: r
@@ -729,6 +751,26 @@ async def test_the_budget_cases_are_graded_on_the_after_due_figure(engine: Async
     ]
     assert results["money-math-budget-non-spending"].failures == [
         "reply states -605.78, which is wrong"
+    ]
+    for good in ("money-math-budget-room", "money-math-budget-afford-dinner"):
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+
+
+async def test_answering_from_the_month_end_net_fails_the_budget_room_case(
+    engine: AsyncEngine,
+) -> None:
+    nothing = (say("Nothing to remember."),) * 2
+    script = scripted(
+        call("month_outlook"),
+        say("You have 2,442.22 to spend: payday on the 25th covers it."),  # the bug
+        *nothing,
+    )
+    [result] = await run_cases(
+        engine, lambda case: script, _only("money-math-budget-room"), concurrency=1
+    )
+    assert result.failures == [
+        f"reply lacks the figure {seed.BUDGET_AFTER_DUE}",
+        f"reply states {seed.BUDGET_PROJECTED}, which is wrong",
     ]
 
 

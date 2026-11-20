@@ -523,7 +523,11 @@ class AgentGraph:
             "or a past one, with its month), call month_outlook, passing every amount the user "
             "mentions (carried over, expected, or a purchase they ask about) as adjustments (not "
             "payday, bills or subscriptions: it already counts those, so never add them "
-            "again). Only a question asks that: an amount with what it was for and no question "
+            "again). With a budget, how much can I spend / afford / left to spend / budget left "
+            "is answered by the budget room line it opens with, never the month-end net; pay "
+            "not yet received is never money to spend (mention payday only as context), and "
+            "when the budget is tight or over, say so plainly even if the month-end net is "
+            "positive. Only a question asks that: an amount with what it was for and no question "
             '("1.8k for a new laptop", "laptop 1800") is spending to log with log_expense, '
             'never an affordability check. When the user corrects you or adds an amount ("you '
             'forgot the 4000 coming in"), run the tool again with it, or check that its '
