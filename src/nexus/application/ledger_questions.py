@@ -119,6 +119,37 @@ class Answer:
     previous: Figures | None  # the period before, when asked for
 
 
+@dataclass(frozen=True, slots=True)
+class LedgerSpan:
+    """The local days of the user's oldest and newest transaction."""
+
+    first: date
+    last: date
+
+
+async def ledger_span(uow: UnitOfWork, user: User) -> LedgerSpan | None:
+    """How far the user's ledger reaches: the days of its first and last transaction, or
+    None when it is empty. Counts what questions count (confirmed, not deleted), of any
+    kind, and only the user's own."""
+    tz = ZoneInfo(user.timezone)
+    async with uow:
+        ends: list[date] = []
+        for descending in (False, True):
+            page = await uow.ledger.list_transactions(
+                user.id,
+                LedgerQuery(
+                    status=TransactionStatus.CONFIRMED,
+                    sort=SortField.OCCURRED_AT,
+                    descending=descending,
+                    limit=1,
+                ),
+            )
+            if not page.items:
+                return None
+            ends.append(page.items[0].occurred_at.astimezone(tz).date())
+    return LedgerSpan(*ends)
+
+
 def previous_period(start: datetime, end: datetime, tz: ZoneInfo) -> tuple[datetime, datetime]:
     """The period just before: the same number of whole months when the question
     covers whole months, otherwise the same length of time."""

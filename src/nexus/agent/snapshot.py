@@ -8,13 +8,14 @@ capped in size.
 
 import logging
 from collections import defaultdict
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from nexus.agent.tools import ToolContext, _rates
 from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import email as email_cases
+from nexus.application import ledger_questions as question_cases
 from nexus.application import month_outlook as outlook_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -35,21 +36,36 @@ RECENT = 5
 AHEAD_DAYS = 7
 # The month-end line names at most this many items (payday first); the cap never cuts it.
 MONTH_END_ITEMS = 5
+# The history line gives the net of at most this many full months before this one.
+HISTORY_MONTHS = 3
 
 
 async def money_snapshot(ctx: ToolContext) -> str:
     """The snapshot as plain lines, or "" if nothing could be read."""
     parts: list[tuple[str, bool]] = []
     # In this order. The month-end line is kept whole when the cap cuts: without it the model
-    # can't see a payday more than a week away, and works out "left this month" without it.
-    for build in (_cards, _emails, _month, _month_end, _wallets, _budgets, _ahead, _ious, _recent):
+    # can't see a payday more than a week away, and works out "left this month" without it. So
+    # is the history line: without it the model takes the month above for all the user's data
+    # and says there is no history.
+    for build in (
+        _cards,
+        _emails,
+        _month,
+        _history,
+        _month_end,
+        _wallets,
+        _budgets,
+        _ahead,
+        _ious,
+        _recent,
+    ):
         try:
             text = await build(ctx)
         except Exception:
             log.exception("snapshot part failed: %s", build.__name__)
             continue
         if text:
-            parts.append((text, build is _month_end))
+            parts.append((text, build in _KEPT))
     return _fit(parts)
 
 
@@ -94,6 +110,42 @@ async def _month(ctx: ToolContext) -> str:
     return line
 
 
+async def _history(ctx: ToolContext) -> str:
+    """How far the ledger goes back, and the net (money in less money out) of the last few
+    full months, from the same totals as the month line, so "how much do I save per month"
+    is not answered from this month alone. Months before the first transaction are left out."""
+    span = await question_cases.ledger_span(ctx.uow(), ctx.user)
+    if span is None:
+        return ""
+    this_month = ctx.today().replace(day=1)
+    first_month = span.first.replace(day=1)
+    months: list[date] = []
+    month = this_month
+    while len(months) < HISTORY_MONTHS:
+        month = (month - timedelta(days=1)).replace(day=1)
+        if month < first_month:
+            break
+        months.append(month)
+    line = f"History: from {span.first:%-d %b %Y}"
+    if not months:
+        return line + " (nothing before this month)."
+    nets, unconverted = [], False
+    for month in reversed(months):
+        start = datetime.combine(month, time(), tzinfo=ctx.tz)
+        end = datetime.combine(next_month_start(month), time(), tzinfo=ctx.tz)
+        summary = await tx_cases.summarize_in_home(ctx.uow(), _rates(ctx), ctx.user, start, end)
+        net = summary.income.total - summary.out.total
+        shown = "0.00" if not net.amount else outlook_cases.plain(net, signed=True)
+        nets.append(f"{month:%b} {shown}")
+        unconverted = unconverted or bool(summary.out.unconverted or summary.income.unconverted)
+    line += f". Net by month (in minus out, {ctx.user.home_currency}): {', '.join(nets)}."
+    if months[-1] > first_month:
+        line += " Earlier months: query_ledger by month."
+    if unconverted:
+        line += " Amounts with no rate are left out."
+    return line
+
+
 async def _month_end(ctx: ToolContext) -> str:
     """What is still expected from today to month end, so a payday a fortnight away is seen
     (the 7-day line below only shows the next week). Payday first, then by date."""
@@ -124,6 +176,10 @@ async def _month_end(ctx: ToolContext) -> str:
         f"not everyday spending): in {outlook_cases.plain(sums.money_in)}, "
         f"out {outlook_cases.plain(sums.money_out)} ({', '.join(named)})."
     )
+
+
+# Never cut by the size cap (see money_snapshot).
+_KEPT = frozenset({_month_end, _history})
 
 
 async def _cards(ctx: ToolContext) -> str:

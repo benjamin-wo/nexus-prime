@@ -533,6 +533,9 @@ class AgentGraph:
             'forgot the 4000 coming in"), run the tool again with it, or check that its '
             "figures already include it, and give the answer again with its figure, even when "
             "it doesn't change, not just an acknowledgement.\n"
+            "- Never say how far back the user's data goes, or that there is no history, without "
+            "checking: the snapshot's History line, or a query with start_date. A tool's default "
+            "period (this month) is not all of their data.\n"
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to, and neither is a "

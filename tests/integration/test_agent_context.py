@@ -2,11 +2,13 @@
 money, and a rolling summary once a conversation outgrows its window."""
 
 import asyncio
+from datetime import datetime
 
 import pytest
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
+from nexus.agent import snapshot as snapshot_module
 from nexus.agent.graph import HISTORY_LIMIT, KEEP, thread_id
 from nexus.agent.service import AgentService
 from nexus.agent.snapshot import money_snapshot
@@ -43,6 +45,82 @@ async def test_an_empty_ledger_gives_a_short_snapshot(uow: UowFactory, alice: ob
     assert "spent 0.00 SGD" in text
     assert "Next 7 days: no bills, subscriptions or payday due." in text
     assert "Owed to the user" not in text and "Latest transactions" not in text
+
+
+def _history_line(text: str) -> str:
+    [line] = [ln for ln in text.splitlines() if ln.startswith("History:")]
+    return line
+
+
+async def test_the_snapshot_says_how_far_history_goes_and_gives_past_months(
+    uow: UowFactory,
+) -> None:
+    user = (await seed.seed_user(uow, 5160, november=True)).user
+    text = await money_snapshot(ToolContext(user, uow, seed.NOV_NOW, FixedRates()))
+    # The month figures Home and month_outlook use: August 4,753.22, September 4,539.97, nothing
+    # in October. Next to the month line, so this month is never taken for all there is.
+    assert _history_line(text) == (
+        "History: from 3 Aug 2026. Net by month (in minus out, SGD): "
+        "Aug +4,753.22, Sep +4,539.97, Oct 0.00."
+    )
+    lines = text.splitlines()
+    month = next(i for i, ln in enumerate(lines) if ln.startswith("This month so far"))
+    assert lines[month + 1] == _history_line(text)
+    assert seed.AUG_NET == "4753.22" and seed.SEP_NET == "4539.97"
+
+
+async def test_the_history_line_leaves_out_months_before_the_ledger_starts(
+    uow: UowFactory,
+) -> None:
+    user = (await seed.seed_user(uow, 5161)).user  # August and September, on 28 September
+    text = await money_snapshot(ToolContext(user, uow, seed.NOW, FixedRates()))
+    assert _history_line(text) == (
+        "History: from 3 Aug 2026. Net by month (in minus out, SGD): Aug +4,753.22."
+    )
+
+
+async def test_the_history_line_gives_at_most_three_months_and_points_to_the_rest(
+    uow: UowFactory,
+) -> None:
+    user = (await seed.seed_user(uow, 5162, november=True)).user
+    await log_transaction(
+        uow(),
+        user.id,
+        NewTransaction(Direction.OUT, Money.of("10", "SGD"), datetime(2026, 5, 2, tzinfo=seed.TZ)),
+    )
+    text = await money_snapshot(ToolContext(user, uow, seed.NOV_NOW, FixedRates()))
+    assert _history_line(text) == (
+        "History: from 2 May 2026. Net by month (in minus out, SGD): "
+        "Aug +4,753.22, Sep +4,539.97, Oct 0.00. Earlier months: query_ledger by month."
+    )
+
+
+async def test_a_ledger_that_began_this_month_says_there_is_nothing_before(
+    uow: UowFactory, alice: UserId
+) -> None:
+    from nexus.application.users import get_user
+
+    user = await get_user(uow(), alice)
+    assert "History:" not in await money_snapshot(ToolContext(user, uow, seed.NOW))  # empty
+    await log_transaction(
+        uow(),
+        alice,
+        NewTransaction(Direction.OUT, Money.of("12", "SGD"), seed.NOW, counterparty="Grab"),
+    )
+    text = await money_snapshot(ToolContext(user, uow, seed.NOW))
+    assert _history_line(text) == "History: from 28 Sep 2026 (nothing before this month)."
+
+
+async def test_the_history_line_survives_the_character_cap(
+    uow: UowFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = (await seed.seed_user(uow, 5163, november=True)).user
+    monkeypatch.setattr(snapshot_module, "MAX_CHARS", 600)
+    text = await money_snapshot(ToolContext(user, uow, seed.NOV_NOW, FixedRates()))
+    assert len(text) <= 600
+    assert "Net by month (in minus out, SGD): Aug +4,753.22" in text  # cut from the end instead
+    assert "Expected by month end" in text
+    assert "Latest transactions" not in text
 
 
 def _system(seen: list[BaseMessage]) -> str:

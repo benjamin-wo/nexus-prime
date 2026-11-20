@@ -44,8 +44,11 @@ pytestmark = pytest.mark.integration
 # Then the same rule was told what answers "how much can I spend" with a budget (the budget room
 # line, never the month-end net or pay not yet received): a8571d1e... (14691) became the text
 # below, that sentence (322 characters) being the only difference.
-DEFAULT_PREFIX_SHA256 = "27ffdb10b51d24da9925768551b2eb3868cc0d4cca1c5c0666cb291630a00877"
-DEFAULT_PREFIX_LENGTH = 15013
+# Then a rule after it: never say how far back the user's data goes, or that there is no
+# history, without checking (the snapshot's History line or a query with start_date): 27ffdb10...
+# (15013) became the text below, that rule (214 characters) being the only difference.
+DEFAULT_PREFIX_SHA256 = "9ed4f8c5b56230aab8eb8c1bf537e144f9602d8d3cb260aa0a850461be9e58b6"
+DEFAULT_PREFIX_LENGTH = 15227
 
 
 def prefix_of(prompt: str) -> str:
