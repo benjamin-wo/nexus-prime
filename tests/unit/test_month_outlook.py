@@ -758,7 +758,8 @@ def test_the_words_give_the_room_per_day_both_ways_the_pace_and_the_comparison()
     assert "This counts pay not yet received (payday 4,798.00 on 25 Nov)" in text
     # No scheduled payment found: the pace is everything spent over the 13 days.
     assert "Pace so far, everyday spending: 147.91 a day (1,922.78 over 13 days)." in text
-    assert "Room per day against that pace: 112% of it, above your pace so far." in text
+    # Without a budget the room counts pay not yet in, so it is never set against the pace.
+    assert "Room per day against that pace" not in text
     assert text.index("Headroom (the leeway)") < text.index("Per day, 13 Nov")
 
 
@@ -769,7 +770,7 @@ def test_the_pace_names_the_scheduled_payments_it_leaves_out() -> None:
         "scheduled payments: Rent, Netflix. Counting those too it is 147.91 a day, but that is "
         "not the figure to compare with)."
     ) in text
-    assert "Room per day against that pace: more than double your pace so far." in text
+    assert "Room per day against that pace" not in text  # no budget: see above
 
 
 def test_a_budget_room_below_the_pace_is_said_to_be_tight() -> None:

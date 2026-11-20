@@ -164,7 +164,14 @@ def per_day_lines(o: MonthOutlook) -> list[str]:
             )
     if pace:
         out.append("- " + pace)
-    if day.is_positive and o.room_vs_pace is not None and o.room_vs_pace_percent is not None:
+    # Only against a budget: without one the room is the month-end cash movement, which counts pay
+    # not yet received, so "double your pace" would read as room to spend that isn't there yet.
+    if (
+        budget
+        and day.is_positive
+        and o.room_vs_pace is not None
+        and o.room_vs_pace_percent is not None
+    ):
         share = "" if o.room_vs_pace == "far_above" else f"{o.room_vs_pace_percent}% of it, "
         out.append(f"- Room per day against that pace: {share}{COMPARISONS[o.room_vs_pace]}.")
     return out

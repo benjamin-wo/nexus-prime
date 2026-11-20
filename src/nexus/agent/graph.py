@@ -539,6 +539,9 @@ class AgentGraph:
             "it doesn't change, not just an acknowledgement. For how much I save, my savings "
             "by month, or how much I could or should save, call money_history and ground any "
             "suggestion in its figures (a benchmark like 20% of salary only beside their own).\n"
+            "- Never say how far back the user's data goes, or that there is no history, without "
+            "checking: the snapshot's History line, or a query with start_date. A tool's default "
+            "period (this month) is not all of their data.\n"
             '- When the user says where they are now ("I\'m in Madrid", "we landed in '
             "Tokyo\") or that they're back home, call set_timezone so their days and "
             "reminders follow them; asking the time isn't a reason to, and neither is a "

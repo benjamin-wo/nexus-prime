@@ -1,7 +1,7 @@
 """Questions about the ledger, answered from structured arguments: filters, groups,
 measures and a comparison, in the home currency. Figures are the eval seed's."""
 
-from datetime import datetime, time
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
@@ -11,13 +11,17 @@ from nexus.agent.tools import ToolContext, build_tools, run_tool
 from nexus.application.ledger_questions import (
     GroupBy,
     LedgerQuestion,
+    LedgerSpan,
     Measure,
     ask_ledger,
+    ledger_span,
     previous_period,
 )
-from nexus.application.users import get_user
+from nexus.application.transactions import NewTransaction, delete_transaction, log_transaction
+from nexus.application.users import RegisterUser, get_user, register_user
 from nexus.domain.errors import InvalidInput
-from nexus.domain.ledger import User
+from nexus.domain.ledger import Direction, Transaction, TransactionStatus, User
+from nexus.domain.money import Money
 from nexus.evals import seed
 from nexus.evals.runner import FixedRates
 from tests.integration.conftest import UowFactory, make_user
@@ -145,3 +149,114 @@ async def test_time_groups_compare_only_the_totals(uow: UowFactory, user: User) 
     text = await ask(uow, user, {"group_by": "week", "compare_previous": True})
     assert "Period before, 2026-08-04 to 2026-08-31" in text  # the same 28 days before
     assert "SGD before," not in text  # no week of August matches a week of September
+
+
+# --- how far the ledger goes back, and what a default period says about it ----------------------
+
+
+async def fresh(uow: UowFactory, telegram_id: int) -> User:
+    """A user in the seed's timezone with an empty ledger."""
+    registration = await register_user(
+        uow(),
+        RegisterUser(
+            telegram_user_id=telegram_id,
+            telegram_chat_id=telegram_id,
+            home_currency="SGD",
+            timezone="Asia/Singapore",
+        ),
+    )
+    return registration.user
+
+
+async def log(
+    uow: UowFactory, user: User, day: date, *, status: TransactionStatus | None = None
+) -> Transaction:
+    return await log_transaction(
+        uow(),
+        user.id,
+        NewTransaction(
+            Direction.OUT,
+            Money.of("10", "SGD"),
+            datetime.combine(day, time(12), seed.TZ),
+            status=status or TransactionStatus.CONFIRMED,
+        ),
+    )
+
+
+async def test_the_span_is_the_first_and_last_transaction(uow: UowFactory, user: User) -> None:
+    assert await ledger_span(uow(), user) == LedgerSpan(date(2026, 8, 3), date(2026, 9, 28))
+
+
+async def test_the_span_counts_the_users_own_confirmed_live_transactions_only(
+    uow: UowFactory,
+) -> None:
+    empty = await fresh(uow, 7110)
+    assert await ledger_span(uow(), empty) is None
+    await seed.seed_user(uow, 7111)  # someone else's history: August and September
+    assert await ledger_span(uow(), empty) is None
+
+    gone = await log(uow, empty, date(2026, 5, 1))
+    await log(uow, empty, date(2026, 6, 1), status=TransactionStatus.PENDING)
+    await delete_transaction(uow(), empty.id, gone.id)
+    assert await ledger_span(uow(), empty) is None  # one deleted, one not confirmed
+
+    await log(uow, empty, date(2026, 7, 4))
+    await log(uow, empty, date(2026, 7, 20))
+    assert await ledger_span(uow(), empty) == LedgerSpan(date(2026, 7, 4), date(2026, 7, 20))
+
+
+async def test_the_span_is_in_the_users_own_days(uow: UowFactory) -> None:
+    user = await fresh(uow, 7112)
+    late = datetime(2026, 7, 31, 23, 30, tzinfo=seed.TZ)  # 31 July in Singapore, 15:30 UTC
+    await log_transaction(uow(), user.id, NewTransaction(Direction.OUT, Money.of("5", "SGD"), late))
+    span = await ledger_span(uow(), user)
+    assert span is not None and span.first == date(2026, 7, 31)
+
+
+async def test_a_default_period_says_so_and_where_the_ledger_goes_back_to(
+    uow: UowFactory, user: User
+) -> None:
+    text = await ask(uow, user, {})  # on 28 September, with August before it
+    assert "Period defaulted to this month." in text
+    assert "The ledger goes back to 3 Aug 2026: pass start_date for earlier." in text
+    assert f"{seed.SEPT_SPENT} SGD" in text  # still this month's figures
+    by_cat = await ask(uow, user, {"group_by": "category", "compare_previous": True})
+    assert "The ledger goes back to 3 Aug 2026" in by_cat
+
+
+async def test_a_start_date_is_not_a_default(uow: UowFactory, user: User) -> None:
+    text = await ask(uow, user, {"start_date": "2026-09-01"})
+    assert "defaulted" not in text and "goes back" not in text
+
+
+async def test_months_default_to_the_whole_ledger_not_this_month(
+    uow: UowFactory, user: User
+) -> None:
+    text = await ask(uow, user, {"group_by": "month"})
+    assert "Period defaulted to the whole ledger." in text
+    assert "The ledger begins 3 Aug 2026, so that is all of it." in text
+    assert "2026-08-01 to 2026-09-28" in text
+    assert f"2026-08: {seed.AUG_SPENT} SGD" in text and f"2026-09: {seed.SEPT_SPENT} SGD" in text
+    explicit = await ask(uow, user, {"group_by": "month", "start_date": "2026-09-01"})
+    assert "2026-08:" not in explicit and "defaulted" not in explicit
+
+
+async def test_months_default_to_at_most_the_last_twelve(uow: UowFactory, user: User) -> None:
+    await log(uow, user, date(2025, 3, 14))  # before the window
+    await log(uow, user, date(2025, 10, 2))  # its first month: 12 months with September
+    text = await ask(uow, user, {"group_by": "month"})
+    assert "Period defaulted to the last 12 months." in text
+    assert "The ledger goes back to 14 Mar 2025: pass start_date for earlier." in text
+    assert "2025-10-01 to 2026-09-28" in text
+    assert "2025-10: 10.00 SGD" in text and "2025-03" not in text
+    assert f"2026-09: {seed.SEPT_SPENT} SGD" in text  # the newest month is never the one cut
+    assert "more not shown" not in text
+
+
+async def test_a_ledger_that_begins_this_month_says_that_is_all_of_it(uow: UowFactory) -> None:
+    user = await fresh(uow, 7113)
+    assert "The ledger is empty." in await ask(uow, user, {})
+    await log(uow, user, date(2026, 9, 9))
+    text = await ask(uow, user, {})
+    assert "The ledger begins 9 Sep 2026, so that is all of it." in text
+    assert "goes back" not in text

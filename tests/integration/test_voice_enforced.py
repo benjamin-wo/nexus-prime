@@ -50,8 +50,8 @@ pytestmark = pytest.mark.integration
 # or should save (money_history, its figures the ground for any suggestion; 194 characters); and
 # never to say how far back the data goes without checking: 27ffdb10... (15013) became the text
 # below, those three sentences being the only difference.
-DEFAULT_PREFIX_SHA256 = "PENDING"
-DEFAULT_PREFIX_LENGTH = 0
+DEFAULT_PREFIX_SHA256 = "6df52a0b02d8698bb6912e81e6f551eb8193ee50bf22308e97876b35e845a9bc"
+DEFAULT_PREFIX_LENGTH = 15567
 
 
 def prefix_of(prompt: str) -> str:
