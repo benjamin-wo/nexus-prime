@@ -2,10 +2,11 @@
 are what the cases expect, and grading works end to end (with a scripted model;
 real models are scored on demand with ``python -m nexus.evals``)."""
 
+import itertools
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime, time, timedelta
-from decimal import Decimal
+from datetime import UTC, date, datetime, time, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 import pytest
 from langchain_core.language_models import BaseChatModel
@@ -806,3 +807,272 @@ async def test_never_calling_the_tool_fails_the_correction_case(engine: AsyncEng
     assert "never called month_outlook" in result.failures
     assert "said 'no leeway'" in result.failures
     assert f"reply lacks the figure {seed.NOV_OVERALL}" in result.failures
+
+
+async def test_the_money_sense_seed_matches_the_figures_the_cases_expect(
+    engine: AsyncEngine,
+) -> None:
+    """The months a user asks about, and the per-day figures, worked out again from the ledger
+    by the same code the tool uses, not copied from the seed's constants."""
+    from nexus.application.month_outlook import month_outlook
+
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(engine)
+
+    user = (await seed.seed_user(uow, 800, november=True, budget=True)).user
+    now = seed.NOV_NOW
+    # Past months: net is received less spent. August and September are full, October is empty.
+    months = {
+        m: await month_outlook(uow, FixedRates(), user, now=now, month=m)
+        for m in ("2026-08", "2026-09", "2026-10")
+    }
+    assert months["2026-08"].net_so_far.amount == Decimal(seed.AUG_NET)
+    assert months["2026-09"].received.amount == Decimal("5000.00")
+    assert months["2026-09"].spent.amount == Decimal(seed.SEPT_SPENT)
+    assert months["2026-09"].net_so_far.amount == Decimal(seed.SEP_NET)
+    assert Decimal(seed.SEP_NET) == Decimal("5000.00") - Decimal(seed.SEPT_SPENT)
+    assert months["2026-10"].received.amount == 0 and months["2026-10"].spent.amount == 0
+
+    # The days left on 13 November: the 13th to the 30th, or the 14th to the 30th.
+    month_end = date(2026, 11, 30)
+    assert (month_end - now.date()).days + 1 == seed.NOV_DAYS_LEFT
+    assert (month_end - now.date()).days == seed.NOV_DAYS_FROM_TOMORROW
+
+    def per_day(total: str, days: int) -> str:
+        return str((Decimal(total) / days).quantize(Decimal("0.01"), ROUND_HALF_UP))
+
+    assert per_day(seed.NOV_PROJECTED, seed.NOV_DAYS_LEFT) == seed.NOV_PER_DAY
+    assert (
+        per_day(seed.NOV_PROJECTED, seed.NOV_DAYS_FROM_TOMORROW) == seed.NOV_PER_DAY_FROM_TOMORROW
+    )
+    assert per_day(seed.BUDGET_PROJECTED, seed.NOV_DAYS_LEFT) == seed.BUDGET_PROJECTED_PER_DAY
+    assert (
+        per_day(seed.BUDGET_PROJECTED, seed.NOV_DAYS_FROM_TOMORROW)
+        == seed.BUDGET_PROJECTED_PER_DAY_FROM_TOMORROW
+    )
+    # With the budget: the room is over, the month-end net is what the case forbids dividing.
+    budgeted = await month_outlook(uow, FixedRates(), user, now=now)
+    assert budgeted.budget_room is not None
+    assert budgeted.budget_room.amount == Decimal(seed.BUDGET_AFTER_DUE) < 0
+    assert budgeted.projected_net.amount == Decimal(seed.BUDGET_PROJECTED)
+    # Without it: the month-end net counts the payday still to come.
+    plain = (await seed.seed_user(uow, 801, november=True)).user
+    p = await month_outlook(uow, FixedRates(), plain, now=now)
+    assert p.projected_net.amount == Decimal(seed.NOV_PROJECTED)
+    assert p.pay_not_yet_in.amount == Decimal(seed.NOV_PAYDAY)
+    assert p.budget_limit is None
+
+
+MONEY_SENSE = (
+    "money-sense-save-per-month",
+    "money-sense-savings-previous-months",
+    "money-sense-per-day-over-budget",
+    "money-sense-per-day-pace",
+    "money-sense-how-much-should-i-save",
+)
+
+
+def test_the_money_sense_cases_are_wired_to_the_figures_and_the_clock() -> None:
+    cases = [c for c in CASES if c.area == "money-sense"]
+    assert [c.id for c in cases] == list(MONEY_SENSE)
+    for case in cases:
+        # All questions: no data changes, all on the 13 November clock with the Aug-Nov ledger,
+        # and graded on the reply, not on a tool.
+        assert case.november and case.unchanged, case.id
+        assert not case.calls and not case.used and not case.checks, case.id
+        assert case.amounts or case.never_amounts, case.id
+        assert clock_of(case, None) == seed.NOV_NOW
+    by_id = {c.id: c for c in cases}
+    # Only the over-budget case has the budget, and two turns; so does the pace case.
+    assert [c.id for c in cases if c.budget] == ["money-sense-per-day-over-budget"]
+    assert len(by_id["money-sense-per-day-over-budget"].turns) == 2
+    assert len(by_id["money-sense-per-day-pace"].turns) == 2
+    assert all(len(by_id[i].turns) == 1 for i in MONEY_SENSE[:2] + MONEY_SENSE[4:])
+    # Per month: a month's net or the two months' average. Previous months: both months' net.
+    assert by_id["money-sense-save-per-month"].amounts == (
+        (seed.AUG_NET, seed.SEP_NET, *seed.SAVE_AVERAGE),
+    )
+    assert by_id["money-sense-savings-previous-months"].amounts == (seed.AUG_NET, seed.SEP_NET)
+    for case_id in MONEY_SENSE[:2]:
+        assert "only goes back" in by_id[case_id].never_say
+    assert by_id["money-sense-per-day-over-budget"].never_amounts == (
+        seed.BUDGET_PROJECTED_PER_DAY,
+        seed.BUDGET_PROJECTED_PER_DAY_FROM_TOMORROW,
+    )
+    assert by_id["money-sense-per-day-pace"].amounts == (
+        (seed.NOV_PER_DAY, seed.NOV_PER_DAY_FROM_TOMORROW),
+    )
+    # Every figure a case grades is a seed constant, not a literal in the case.
+    for case in cases:
+        figures = {a for a in case.amounts for a in ((a,) if isinstance(a, str) else a)}
+        figures |= set(case.never_amounts)
+        assert all(re.fullmatch(r"-?\d+\.\d{2}", f) for f in figures), case.id
+
+
+_TELEGRAM_IDS = itertools.count(8100)  # each run in a test is its own user
+
+
+async def _grade_money_sense(engine: AsyncEngine, case_id: str, *replies: str) -> list[str]:
+    """Run one case with a scripted model that answers each turn with the next reply (and
+    calls no tool): the failures the grading finds."""
+    nothing = (say("Nothing to remember."),) * 2
+    script = scripted(*(m for reply in replies for m in (say(reply), *nothing)))
+    [result] = await run_cases(
+        engine, lambda case: script, _only(case_id), concurrency=1,
+        first_telegram_id=next(_TELEGRAM_IDS),
+    )  # fmt: skip
+    assert result.error is None, result.error
+    return result.failures
+
+
+async def test_the_money_sense_cases_pass_a_reply_that_uses_the_data(engine: AsyncEngine) -> None:
+    months = (
+        "Net is what came in less what went out: +4,753.22 in August and +4,539.97 in "
+        "September. October had nothing logged."
+    )
+    good = {
+        "money-sense-save-per-month": (months,),
+        "money-sense-savings-previous-months": (months,),
+        # Over budget: nothing to spend, so nothing per day.
+        "money-sense-per-day-over-budget": (
+            "None: the budget is over by 305.78 once what's due is paid.",
+            "Nothing a day: you're already over budget by 305.78, so ease off.",
+        ),
+        # No budget: the month-end net counts the payday still to come.
+        "money-sense-per-day-pace": (
+            "2,992.22 by month end, if the 4,798.00 payday on the 25th lands.",
+            "That's about 166.23 a day over the 18 days left, 176.01 from tomorrow, but "
+            "only once payday is in.",
+        ),
+        "money-sense-how-much-should-i-save": (
+            "A common aim is 20% of pay, 959.60 on your 4,798.00 salary. You netted 4,539.97 "
+            "in September, so that's well within reach.",
+        ),
+    }
+    assert set(good) == set(MONEY_SENSE)
+    for case_id, replies in good.items():
+        assert await _grade_money_sense(engine, case_id, *replies) == [], case_id
+
+
+async def test_the_money_sense_months_cases_fail_the_real_production_reply(
+    engine: AsyncEngine,
+) -> None:
+    # What the bot said on 20 November: the ledger "only goes back to 1 Nov".
+    production = (
+        "honestly, I can't give you a real number — your ledger only goes back to 1 Nov, so "
+        "there's no history to average. Want me to track it from now on?"
+    )
+    wrong_figures = [
+        f"reply lacks the figure {seed.AUG_NET}",
+        f"reply lacks the figure {seed.SEP_NET}",
+    ]
+    no_month = [
+        "reply lacks the figure " + " or ".join((seed.AUG_NET, seed.SEP_NET, *seed.SAVE_AVERAGE))
+    ]
+    for case_id, missing in zip(MONEY_SENSE[:2], (no_month, wrong_figures), strict=True):
+        assert await _grade_money_sense(engine, case_id, production) == [
+            *missing,
+            "said 'only goes back'",
+            "said 'goes back to 1 nov'",
+            "said 'no history'",
+            "said 'history to average'",
+            "said 'real number'",
+        ], case_id
+    # Only November's month so far, as if that were all the data: no August or September.
+    assert (
+        await _grade_money_sense(
+            engine, "money-sense-savings-previous-months", "This month you're at -1,672.78 so far."
+        )
+        == wrong_figures
+    )
+    # A curly apostrophe and other casing are caught too.
+    assert "said 'have history'" in await _grade_money_sense(
+        engine,
+        "money-sense-save-per-month",
+        "I don\u2019t HAVE HISTORY to go on, but August was +4,753.22 and September +4,539.97.",
+    )
+    # Per month, the average of the full months is a fair answer; previous months wants both.
+    assert (
+        await _grade_money_sense(
+            engine, "money-sense-save-per-month", "About 4,646.60 a month (Aug and Sep)."
+        )
+        == []
+    )
+    assert await _grade_money_sense(
+        engine, "money-sense-savings-previous-months", "August: +4,753.22."
+    ) == [f"reply lacks the figure {seed.SEP_NET}"]
+
+
+async def test_the_money_sense_per_day_cases_fail_the_real_production_reply(
+    engine: AsyncEngine,
+) -> None:
+    over = "money-sense-per-day-over-budget"
+    # The bot's reply: a per-day figure from the month-end net, called comfy against a pace it
+    # never worked out.
+    assert await _grade_money_sense(
+        engine,
+        over,
+        "You can spend 2,442.22 for the rest of the month.",
+        "About 135.68 a day (or 143.66 from tomorrow). Either way, comfy: that's well above "
+        "your usual daily burn \U0001f44d",
+    ) == [
+        f"reply lacks {_only(over)[0].reply[0]!r}",
+        f"reply states {seed.BUDGET_PROJECTED_PER_DAY}, which is wrong",
+        f"reply states {seed.BUDGET_PROJECTED_PER_DAY_FROM_TOMORROW}, which is wrong",
+        "said 'comfy'",
+        "said 'well above'",
+    ]
+    # A positive figure alone fails; so does calling it comfortable with no figure.
+    assert await _grade_money_sense(
+        engine, over, "Over budget by 305.78.", "Over budget, but 143.66 a day would work."
+    ) == [f"reply states {seed.BUDGET_PROJECTED_PER_DAY_FROM_TOMORROW}, which is wrong"]
+    assert await _grade_money_sense(
+        engine, over, "Over budget by 305.78.", "Over budget by 305.78, but there's plenty of room."
+    ) == ["said 'plenty'"]
+    assert (
+        await _grade_money_sense(
+            engine, over, "None.", "You\u2019re over for the month, so nothing per day."
+        )
+        == []
+    )
+    # Saying nothing about being over fails the reply check.
+    [lacks] = await _grade_money_sense(engine, over, "Not much.", "Around 20 a day.")
+    assert lacks == f"reply lacks {_only(over)[0].reply[0]!r}"
+
+    pace = "money-sense-per-day-pace"
+    # About 94 a day: not their figure; and nothing about the payday still to come.
+    assert await _grade_money_sense(engine, pace, "2,992.22 left.", "About 94 a day, comfy!") == [
+        f"reply lacks {_only(pace)[0].reply[0]!r}",
+        f"reply lacks the figure {seed.NOV_PER_DAY} or {seed.NOV_PER_DAY_FROM_TOMORROW}",
+    ]
+    # The right figure with no word on the payday it depends on; and the payday with a
+    # rounded figure.
+    assert await _grade_money_sense(engine, pace, "2,992.22 left.", "That's 166.23 a day.") == [
+        f"reply lacks {_only(pace)[0].reply[0]!r}"
+    ]
+    assert await _grade_money_sense(
+        engine, pace, "2,992.22 left.", "About 166 a day, once payday is in."
+    ) == [f"reply lacks the figure {seed.NOV_PER_DAY} or {seed.NOV_PER_DAY_FROM_TOMORROW}"]
+
+
+async def test_the_money_sense_saving_case_fails_a_benchmark_with_a_made_up_claim(
+    engine: AsyncEngine,
+) -> None:
+    case_id = "money-sense-how-much-should-i-save"
+    # The bot's reply: 20% of salary and "you could comfortably do more" on a part-month.
+    production = (
+        "A common benchmark is 20% of salary, 959.60 a month • your spending this month "
+        "(1,922.78 so far) suggests you could comfortably do more than that."
+    )
+    assert await _grade_money_sense(engine, case_id, production) == [
+        f"reply lacks the figure {seed.AUG_NET} or {seed.SEP_NET} or {seed.NOV_PAYDAY}",
+        "said 'comfortably'",
+    ]
+    # A benchmark with no figure of theirs fails on that alone.
+    assert await _grade_money_sense(engine, case_id, "Aim for about 20% of your pay.") == [
+        f"reply lacks the figure {seed.AUG_NET} or {seed.SEP_NET} or {seed.NOV_PAYDAY}"
+    ]
+    # A reply with one of their figures passes the figure check; the claim still fails it.
+    assert await _grade_money_sense(
+        engine, case_id, "You net about 4,539.97 a month, so you could comfortably save more."
+    ) == ["said 'comfortably'"]

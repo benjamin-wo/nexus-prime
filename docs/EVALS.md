@@ -85,6 +85,32 @@ For the explain case the model says the payment is "already in both figures" and
 
 Two non-web cases failed only in the final full run, `ask-which-grab` and `photo-total-not-cash`; both passed 3/3 on the branch and on main when rerun. The web cases moved both ways, as they do between any two runs. One earlier full run on the branch stalled after 309 of 331 cases (an empty model reply and its retry) and was run again.
 
+## Money sense (20 November 2026)
+
+The `money-sense` area (`--area money-sense`, 5 cases) comes from three real replies of the production bot (DeepSeek v4.1 Flash) on 20 November 2026, to a user with August to November in the ledger and an overall budget. It is graded on **outcomes** only: the figures and claims in the last reply, and that no data changed. No case requires a tool, so the same cases run against main and against a branch.
+
+1. "How much do I save per month" got "I can't give you a real number, your ledger only goes back to 1 Nov, so there's no history to average". The ledger had August, September and October; a minute later "What are my savings for previous months" listed them (net in minus out). The money snapshot in each turn only covers the current month, and the model took it for all the data.
+2. "How much can I spend for the rest of the month" got 1,033.79 (the budget room, right). "How much is that per day" got "about 94 a day ... either way, comfy, that's well above your usual daily burn". They had spent 3,475 in 19 days (about 183 a day), so 94 a day was half their pace: tight, not comfy. The comparison was invented without a figure.
+3. "How much should I be saving per month" got "a common benchmark is 20% of salary ... your spending this month (3,475 so far) suggests you could comfortably do more". At that pace they would spend about 5,500 of 6,774, so the data does not say that.
+
+All five cases use `november=True` (13 November 2026, 2pm; see the money math section). The seed holds August and September in full, nothing in October and the first twelve days of November, so the figures are new constants in `seed.py`, each with its arithmetic: net is received less spent (the seed has no moves to a savings wallet), **August 4,753.22** (`AUG_NET`), **September 4,539.97** (`SEP_NET`: 5,000.00 less 460.03), October 0.00. On the 13th the month has 18 days left counting today and 17 from tomorrow. `test_the_money_sense_seed_matches_the_figures_the_cases_expect` recomputes them from the ledger. Every case is `unchanged=True`.
+
+| Case | Asks | Wants |
+|---|---|---|
+| `money-sense-save-per-month` | how much do i save per month? | a month's net (4,753.22 or 4,539.97) or their average (4,646.60); never says the history is missing or starts in November ("only goes back", "no history", "history to average", "real number", "goes back to 1 nov"...) |
+| `money-sense-savings-previous-months` | what are my savings for previous months? | the same two figures and the same phrases never said |
+| `money-sense-per-day-over-budget` (with `budget=True`) | how much can i spend for the rest of the month? then how much is that per day? | the budget is over once what's due is paid (-305.78), so the last reply says it is over or there is nothing to spend; never a per-day figure from the 2,442.22 month-end net (135.68 over 18 days, 143.66 over 17); never "comfy", "comfortable", "comfortably", "well above" or "plenty" |
+| `money-sense-per-day-pace` | the same two questions, no budget | the room is the month-end net, 2,992.22, which counts the 4,798.00 payday on the 25th that is not in yet: a per-day figure of 166.23 (18 days) or 176.01 (17), and the reply mentions the payday (payday, salary, "your pay", the 25th...) |
+| `money-sense-how-much-should-i-save` | how much should i be saving per month? | at least one of their own figures (August's 4,753.22, September's 4,539.97 or the 4,798.00 salary), not a benchmark alone; never "comfortably" |
+
+Figures are matched exactly (to the cent, any formatting), so a rounded "about 166 a day" does not count; `never_say` phrases are matched in lower case anywhere in any reply. The tests grade scripted good answers (all five pass) and scripted bad ones, the production replies among them, and check which checks each one fails.
+
+```
+python -m nexus.evals --model deepseek/deepseek-v4.1-flash --area money-sense --repeat 3
+```
+
+Run it on main first: it is the baseline the cases are meant to fail.
+
 ## Web search in evals
 
 The `web_search` tool works in evals. By default it is **canned**: offline, free and the same every time. Every question gets one short made-up answer that cites a single made-up page (`news.example.com`, dated the eval clock's day) with `[1]`, and `CannedLookup` (`src/nexus/evals/web.py`) remembers each question asked. The `web` area (`--area web`) has 20 cases that need a search (weather, news, exchange rate, prices, MRT status, opening hours, F1, COE, gold, events, visa rules, Changi T5, savings rates, console prices, sunset, PSI, a phone launch, SORA, the Causeway) and 3 that must not search (a percentage, a capital city, compound interest). Each searching case wants a `web_search` call with a key word in the question, at most 2 searches (3 for `web-savings-rates`, which compares rates across banks), and no change to the user's data or trips. The two that ask what a product costs (`web-console-price`, `web-phone-price`) want a `product_prices` call with a key word in its `query` instead (at most 2), since that tool answers shop prices; they still check for source link buttons. The cases that cite a source (`cites=True` in `cases.py`) check two things. The reply text names where it came from, loosely: any of "source", "per ", "according to", "http" or, for the canned page, "example" ("per HardwareZone, 11 May" passes). And the last reply carries at least one source link button (`Case.source_buttons`): a web answer's links come as `src:` reply buttons, not as addresses in the text, so a model that skipped the tool or whose search cited nothing fails here whatever it wrote. The runner keeps each turn's last reply's button data (`TurnLog.buttons`, `TurnLog.source_links`) for this.
