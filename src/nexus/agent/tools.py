@@ -19,7 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nexus.agent import price_text
 from nexus.agent.confirmation import Ask, entry_text
-from nexus.agent.outlook_text import describe_calculation, describe_outlook
+from nexus.agent.outlook_text import (
+    describe_calculation,
+    describe_money_history,
+    describe_outlook,
+)
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
@@ -32,6 +36,7 @@ from nexus.application import email as email_cases
 from nexus.application import income as income_cases
 from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
+from nexus.application import money_history as history_cases
 from nexus.application import month_outlook as outlook_cases
 from nexus.application import moves as move_cases
 from nexus.application import notifications as notify_cases
@@ -2130,6 +2135,21 @@ async def _month_outlook(ctx: ToolContext, a: MonthOutlookArgs) -> ToolResult:
         adjustments=[(x.amount, x.label) for x in a.adjustments],
     )
     return ToolResult(describe_outlook(outlook))
+
+
+class MoneyHistoryArgs(Args):
+    months: int = Field(
+        history_cases.DEFAULT_MONTHS,
+        description="How many full months back to show (default 6, at most 12). The current "
+        "month so far is always added, marked as not over.",
+    )
+
+
+async def _money_history(ctx: ToolContext, a: MoneyHistoryArgs) -> ToolResult:
+    history = await history_cases.money_history(
+        ctx.uow, _rates(ctx), ctx.user, now=ctx.now, months=a.months
+    )
+    return ToolResult(describe_money_history(history))
 
 
 class CalculateArgs(Args):
@@ -4239,7 +4259,7 @@ READ_ONLY = frozenset(
         "find_ideas", "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
         "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
-        "list_split_habits", "month_outlook", "show_voice",
+        "list_split_habits", "money_history", "month_outlook", "show_voice",
         "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
@@ -4647,6 +4667,20 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "to spend). Say plainly when the budget is tight or over. Not an account balance.",
             MonthOutlookArgs,
             _month_outlook,
+        ),
+        ToolSpec(
+            "money_history",
+            "What the user saves, month by month, worked out exactly in code: for each of the "
+            "last full months (6 by default) received, spent, net (received less spent, which "
+            "is what saved means), what moved to their own savings or investment wallets and "
+            "the saving rate, plus this month so far; then the average net and saving rate, "
+            "the best and worst month, and the figures to ground a suggestion in (average "
+            "spent, usual salary, 20% of it, their average net as a share of it). Use it for "
+            "how much do I save (per month), savings for previous months, savings rate, how "
+            "much should or could I save, am I saving more than before. Not an account "
+            "balance.",
+            MoneyHistoryArgs,
+            _money_history,
         ),
         ToolSpec(
             "calculate",

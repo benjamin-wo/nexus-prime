@@ -833,6 +833,24 @@ async def test_the_money_sense_seed_matches_the_figures_the_cases_expect(
     assert Decimal(seed.SEP_NET) == Decimal("5000.00") - Decimal(seed.SEPT_SPENT)
     assert months["2026-10"].received.amount == 0 and months["2026-10"].spent.amount == 0
 
+    # money_history gives the same months, and the average of the full ones with entries.
+    from nexus.application.money_history import money_history
+
+    history = await money_history(uow, FixedRates(), user, now=now)
+    by_month = {f"{m.month:%Y-%m}": m for m in history.months}
+    assert list(by_month) == ["2026-08", "2026-09", "2026-10", "2026-11"]
+    assert by_month["2026-08"].net.amount == Decimal(seed.AUG_NET)
+    assert by_month["2026-09"].net.amount == Decimal(seed.SEP_NET)
+    assert by_month["2026-10"].net.amount == 0 and not by_month["2026-10"].logged
+    for key, outlook in months.items():
+        assert by_month[key].net == outlook.net_so_far, key
+    assert by_month["2026-11"].partial
+    assert history.summary is not None
+    assert history.summary.average_net.amount in {Decimal(a) for a in seed.SAVE_AVERAGE}
+    assert history.guide is not None
+    assert history.guide.usual_salary is not None
+    assert history.guide.usual_salary.amount == Decimal(seed.NOV_PAYDAY)
+
     # The days left on 13 November: the 13th to the 30th, or the 14th to the 30th.
     month_end = date(2026, 11, 30)
     assert (month_end - now.date()).days + 1 == seed.NOV_DAYS_LEFT
@@ -907,6 +925,35 @@ def test_the_money_sense_cases_are_wired_to_the_figures_and_the_clock() -> None:
         figures = {a for a in case.amounts for a in ((a,) if isinstance(a, str) else a)}
         figures |= set(case.never_amounts)
         assert all(re.fullmatch(r"-?\d+\.\d{2}", f) for f in figures), case.id
+
+
+async def test_money_history_states_every_figure_the_saving_cases_grade(
+    engine: AsyncEngine,
+) -> None:
+    """The three saving questions can be answered from the one tool: its text for the cases'
+    ledger has each figure they grade (the cases don't require the tool)."""
+    from nexus.agent.outlook_text import describe_money_history
+    from nexus.application.money_history import money_history
+    from nexus.evals.checks import mentions_amount
+
+    def uow() -> SqlUnitOfWork:
+        return SqlUnitOfWork(engine)
+
+    user = (await seed.seed_user(uow, 802, november=True)).user
+    text = describe_money_history(await money_history(uow, FixedRates(), user, now=seed.NOV_NOW))
+    asked = {c.id: c for c in CASES if c.area == "money-sense"}
+    for case_id in (
+        "money-sense-save-per-month",
+        "money-sense-savings-previous-months",
+        "money-sense-how-much-should-i-save",
+    ):
+        case = asked[case_id]
+        # Each entry of ``amounts`` is a figure, or alternatives of which one must be stated.
+        for wanted in case.amounts:
+            options = (wanted,) if isinstance(wanted, str) else wanted
+            assert any(mentions_amount(text, o) for o in options), (case_id, wanted)
+        # The cases are graded on the reply: they don't ask for any tool.
+        assert not case.calls and not case.used, case_id
 
 
 _TELEGRAM_IDS = itertools.count(8100)  # each run in a test is its own user
