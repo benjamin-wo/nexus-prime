@@ -1,9 +1,10 @@
-"""The words for ``month_outlook`` and ``calculate``: every figure comes from code, and the
-text says which, so the model quotes them and does no sums of its own."""
+"""The words for ``month_outlook``, ``money_history`` and ``calculate``: every figure comes from
+code, and the text says which, so the model quotes them and does no sums of its own."""
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from nexus.application.cashflow import ExpectedKind
+from nexus.application.money_history import BENCHMARK_RATE, MoneyHistory, MonthSaving
 from nexus.application.month_outlook import MonthOutlook, OutlookItem, plain
 from nexus.domain.calc import Calculation
 from nexus.domain.ledger import Direction
@@ -326,6 +327,109 @@ def describe_outlook(o: MonthOutlook) -> str:
         )
     else:
         out += per_day_lines(o)
+    return "\n".join(out)
+
+
+GUIDE_LEAD = (
+    "For how much could I save, ground any suggestion in these figures only (name no target "
+    "that is not one of them): "
+)
+
+
+def percent(share: Decimal) -> str:
+    """ "94.9%" from 0.949 (to one decimal place, half up)."""
+    return f"{(share * 100).quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)}%"
+
+
+def saving_line(m: MonthSaving) -> str:
+    """One month of the history: received, spent, net and the saving rate."""
+    name = f"{m.month:%b %Y}"
+    if m.partial:
+        name += " so far (this month is not over: left out of the averages)"
+    if not m.logged:
+        return f"- {name}: nothing logged" + (
+            "" if m.partial else " (a gap in the ledger, not counted in the averages)"
+        )
+    line = (
+        f"- {name}: received {plain(m.received)}, spent {plain(m.spent)}, "
+        f"net {plain(m.net, signed=True)} (received less spent)"
+    )
+    if not m.partial:  # a rate on a part-month (pay not in yet) would mislead
+        if m.savings_rate is not None:
+            line += f", saving rate {percent(m.savings_rate)}"
+        else:
+            line += ", no income, so no saving rate"
+    if not m.moved.is_zero:
+        line += f"; of that, {plain(m.moved)} moved to your own wallets (savings or investments)"
+    if m.unconverted:
+        line += "; left out, no exchange rate: " + ", ".join(str(u) for u in m.unconverted)
+    return line
+
+
+def describe_money_history(h: MoneyHistory) -> str:
+    """The months' figures, the summary over the full ones and the guide for "how much could I
+    save": no advice, only figures and what each one is."""
+    out = [
+        f"Savings history as of {h.today:%a %-d %b %Y}. All amounts in {h.currency}, worked out "
+        "exactly in code from the same month figures Home shows: quote them, don't redo the "
+        'sums. "Saved" means net: received less spent (not an account balance).'
+    ]
+    if h.first_day is None:
+        out.append("Nothing is logged yet, so there is no history to report.")
+        return "\n".join(out)
+    out.append(f"The ledger starts on {h.first_day:%-d %b %Y}; earlier months are not listed.")
+    out.append("Months, oldest first:")
+    out += [saving_line(m) for m in h.months]
+
+    s, g = h.summary, h.guide
+    if s is None or g is None:
+        out.append(
+            "No full month with entries yet, so there is no average or pattern to report: say "
+            "so, and don't treat a part-month as one."
+        )
+        return "\n".join(out)
+
+    used = [m for m in h.months if not m.partial and m.logged]
+    span = f"{used[0].month:%b %Y}"
+    if len(used) > 1:
+        span += f" to {used[-1].month:%b %Y}"
+    rate = (
+        f"; saving rate {percent(s.average_savings_rate)} (their total net over total received)"
+        if s.average_savings_rate is not None
+        else "; no income in them, so no saving rate"
+    )
+    if s.months < 2:
+        out.append(
+            f"Only 1 full month ({span}), so there is no average or pattern: say it is one "
+            f"month's figures, net {plain(s.average_net, signed=True)}{rate}."
+        )
+    else:
+        out.append(
+            f"Over the {s.months} full months with entries ({span}): average net "
+            f"{plain(s.average_net, signed=True)} a month (received {plain(s.average_received)}, "
+            f"spent {plain(s.average_spent)} on average){rate}. Best month "
+            f"{s.best.month:%b %Y}, net {plain(s.best.net, signed=True)}; worst month "
+            f"{s.worst.month:%b %Y}, net {plain(s.worst.net, signed=True)}."
+        )
+
+    parts = [f"average spent {plain(g.average_spent)} a month"]
+    if g.usual_salary is not None and g.benchmark is not None:
+        parts.append(f"usual salary {plain(g.usual_salary)}")
+        parts.append(
+            f"{percent(BENCHMARK_RATE)} of it {plain(g.benchmark)} "
+            "(a common rule of thumb, to set beside their own figures)"
+        )
+        if g.average_net_share_of_salary is not None:
+            parts.append(
+                f"their average net is {percent(g.average_net_share_of_salary)} of the usual salary"
+            )
+        out.append(GUIDE_LEAD + "; ".join(parts) + ".")
+    else:
+        out.append(
+            GUIDE_LEAD
+            + parts[0]
+            + "; no usual salary is set, so there is no salary-based figure (don't guess one)."
+        )
     return "\n".join(out)
 
 

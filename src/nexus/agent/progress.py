@@ -54,6 +54,7 @@ LABELS: dict[str, str] = {
     "spending_summary": "Adding up your spending",
     "query_ledger": "Checking your ledger",
     "cash_flow": "Working out your cash flow",
+    "money_history": "Working out your savings by month",
     "transaction_updates": "Checking what changed",
     "what_moved_today": "Checking what moved today",
     # Categories and wallets

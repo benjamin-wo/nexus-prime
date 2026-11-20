@@ -45,10 +45,13 @@ pytestmark = pytest.mark.integration
 # line, never the month-end net or pay not yet received): a8571d1e... (14691) became the text
 # below, that sentence (322 characters) being the only difference.
 # Then the same rule was told that per day, pace and "compared to my usual" questions are
-# month_outlook's too, and never to call spending usual, comfy or tight without its pace figure:
-# 27ffdb10... (15013) became the text below, those 146 characters being the only difference.
-DEFAULT_PREFIX_SHA256 = "06114a7323eab61b47cc013ffa3b5c978214c165140e91d39984393083757bdb"
-DEFAULT_PREFIX_LENGTH = 15159
+# month_outlook's too, and never to call spending usual, comfy or tight without its pace figure
+# (146 characters); which tool answers how much I save, my savings by month and how much I could
+# or should save (money_history, its figures the ground for any suggestion; 194 characters); and
+# never to say how far back the data goes without checking: 27ffdb10... (15013) became the text
+# below, those three sentences being the only difference.
+DEFAULT_PREFIX_SHA256 = "PENDING"
+DEFAULT_PREFIX_LENGTH = 0
 
 
 def prefix_of(prompt: str) -> str:
