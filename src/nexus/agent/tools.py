@@ -4641,7 +4641,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "everyday spending keeps it at zero or above. Use it for can I afford, how much "
             "is left to spend, leeway, will I end the month positive, net by month end, "
             "budget left. Pass amounts the user mentions (a carry-over, money they expect, a "
-            "purchase they are considering) as adjustments. Not an account balance.",
+            "purchase they are considering) as adjustments. With a budget, it opens with the "
+            "budget room line: that is the answer to how much can I spend / afford / left to "
+            "spend, never the month-end net, which counts pay not yet received (never money "
+            "to spend). Say plainly when the budget is tight or over. Not an account balance.",
             MonthOutlookArgs,
             _month_outlook,
         ),

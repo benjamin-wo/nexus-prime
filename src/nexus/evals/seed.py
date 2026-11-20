@@ -132,6 +132,7 @@ BUDGET_CARD_BILL = "300.00"
 BUDGET_LEFT = "77.22"  # 2,000.00 less NOV_SPENT
 BUDGET_DUE = "383.00"  # 45.00 + 88.00 + 250.00
 BUDGET_AFTER_DUE = "-305.78"  # 77.22 less 383.00: over by 305.78
+BUDGET_AFTER_DINNER = "-355.78"  # BUDGET_AFTER_DUE less a 50.00 dinner: over by 355.78
 BUDGET_PROJECTED = "2442.22"  # NOV_PROJECTED less the insurance and the card bill
 BUDGET_CARD_SUBTRACTED = "-605.78"  # BUDGET_AFTER_DUE less the card bill: the card bill counted
 BUDGET_ONLY_CARD = "-222.78"  # BUDGET_LEFT less just the card bill

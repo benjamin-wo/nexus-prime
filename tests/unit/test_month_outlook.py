@@ -429,3 +429,140 @@ def test_a_month_that_is_over_has_the_budget_figures_and_nothing_due() -> None:
     text = describe_outlook(with_budget([], month=date(2026, 10, 1)))
     assert "Overall budget: 4,500.00; spent against it 4,126.56; budget left 373.44." in text
     assert "Still due" not in text and "Tighter" not in text
+
+
+# --- how much can I spend: the budget room, never the projection ----------------------------------
+
+
+def payday(amount: str = "4798.00", day: int = 25) -> OutlookItem:
+    return item(day, "Salary", amount, ExpectedKind.SALARY, Direction.IN, spending=False)
+
+
+def budget_month(
+    items: list[OutlookItem], adjustments: list[Adjustment] | None = None, **kw: str
+) -> MonthOutlook:
+    """The bug's case with payday ahead: 4,500 budget, 4,126.56 spent, 5,000 received."""
+    return build_outlook(
+        month=date(2026, 11, 1), today=TODAY, currency="SGD",
+        received=sgd("5000"), spent=sgd("4126.56"), moved=sgd("0"), items=items,
+        adjustments=adjustments or [],
+        budget_limit=sgd(kw.get("limit", "4500")), budget_spent=sgd("4126.56"),
+    )  # fmt: skip
+
+
+def test_the_budget_room_is_the_budget_left_once_what_is_due_is_paid() -> None:
+    o = budget_month([bill("Electricity", "515.95"), payday()])
+    assert o.budget_room == o.budget_left_after_due == sgd("-142.51")
+    assert o.budget_adjustments == sgd("0")
+    # The projection has payday in it; the room does not.
+    assert o.projected_net == sgd("5155.49")
+    assert o.budget_room != o.projected_net
+
+
+def test_a_purchase_comes_off_the_budget_room() -> None:
+    o = budget_month([payday()], [parse_adjustment("-50", "dinner", "SGD")])
+    assert o.budget_left_after_due == sgd("373.44")
+    assert o.budget_adjustments == sgd("-50")
+    assert o.budget_room == sgd("323.44")
+
+
+def test_money_expected_in_never_adds_to_the_budget_room() -> None:
+    o = budget_month(
+        [payday()],
+        [
+            parse_adjustment("+2308.42", "carried over", "SGD"),
+            parse_adjustment("150", "cousin paying back", "SGD"),
+        ],
+    )
+    assert o.adjustments_total == sgd("2458.42")
+    assert (o.budget_adjustments, o.budget_room) == (sgd("0"), sgd("373.44"))
+    # Mixed: only the purchase counts against the budget.
+    mixed = budget_month(
+        [payday()],
+        [parse_adjustment("+2308.42", "carried over", "SGD"), parse_adjustment("-500", "x", "SGD")],
+    )
+    assert mixed.adjustments_total == sgd("1808.42")
+    assert (mixed.budget_adjustments, mixed.budget_room) == (sgd("-500"), sgd("-126.56"))
+
+
+def test_without_a_budget_or_for_a_past_month_there_is_no_room() -> None:
+    none = with_budget([bill("Electricity", "515.95")], limit=None, spent=None)
+    assert (none.budget_room, none.budget_adjustments) == (None, None)
+    past = with_budget([], month=date(2026, 10, 1))
+    assert (past.budget_room, past.budget_adjustments) == (None, None)
+    assert past.pay_not_yet_in == sgd("0") and past.next_pay_day is None
+    future = with_budget([bill("Rent", "1800")], spent="0", received="0", month=date(2026, 12, 1))
+    assert future.budget_room == sgd("2700")
+
+
+def test_pay_not_yet_in_is_the_salary_still_expected_and_its_first_day() -> None:
+    o = november()
+    assert (o.pay_not_yet_in, o.next_pay_day) == (sgd("4798.00"), date(2026, 11, 25))
+    two = build_outlook(
+        month=date(2026, 11, 1), today=TODAY, currency="SGD",
+        received=sgd("0"), spent=sgd("0"), moved=sgd("0"),
+        items=[payday("1000", 27), payday("250.50", 21), bill("Rent", "100"),
+               item(22, "Bonus", None, ExpectedKind.SALARY, Direction.IN)],
+    )  # fmt: skip
+    assert (two.pay_not_yet_in, two.next_pay_day) == (sgd("1250.50"), date(2026, 11, 21))
+    nothing = with_budget([bill("Electricity", "100")])
+    assert (nothing.pay_not_yet_in, nothing.next_pay_day) == (sgd("0"), None)
+
+
+def test_the_reply_opens_with_the_budget_room_and_says_pay_is_not_counted() -> None:
+    text = describe_outlook(budget_month([bill("Electricity", "515.95"), payday()]))
+    lines = text.splitlines()
+    assert lines[0].startswith("Outlook for November 2026")
+    assert lines[1].startswith("Answer for how much can I spend / can I afford / left to spend")
+    assert "the budget left once what's due is paid, -142.51 (over by 142.51)." in lines[1]
+    assert (
+        "Pay not yet received (payday 4,798.00 on 25 Nov) is not counted and is not money to "
+        "spend." in lines[1]
+    )
+    assert lines[2].startswith("The budget has no room: say so plainly")
+    assert "already taken off it" not in text
+    # The month-end figures are relabelled, so they can't be read as spending room.
+    assert "counts pay not yet received, so it is not spending room while a budget is set" in text
+    assert "Headroom (month-end cash leeway): 5,155.49" in text
+    assert "Headroom (the leeway)" not in text
+    assert "Of that, pay not yet received" not in text  # the budget line says it
+
+
+def test_a_purchase_is_said_to_be_taken_off_and_money_coming_in_not_added() -> None:
+    dinner = describe_outlook(budget_month([payday()], [parse_adjustment("-50", "dinner", "SGD")]))
+    assert "the budget left once what's due is paid, 323.44." in dinner
+    assert "What you asked about (50.00) is already taken off it." in dinner
+    assert "The budget has no room" not in dinner
+    carry = describe_outlook(budget_month([payday()], [parse_adjustment("2000", "oct", "SGD")]))
+    assert "once what's due is paid, 373.44." in carry
+    assert "Money you mentioned as coming in is not added to a budget." in carry
+    assert "taken off it" not in carry
+
+
+def test_with_a_budget_and_no_pay_to_come_nothing_is_said_about_pay() -> None:
+    text = describe_outlook(budget_month([bill("Electricity", "100")]))
+    assert "Pay not yet received" not in text
+
+
+def test_without_a_budget_the_projection_stays_the_answer_and_names_the_pay_in_it() -> None:
+    text = describe_outlook(november())
+    assert "Answer for how much can I spend" not in text
+    assert "Projected month-end net: +2,992.22" in text
+    assert "Headroom (the leeway): 2,992.22" in text
+    assert "Of that, pay not yet received: payday 4,798.00 on 25 Nov. Say so in the reply" in text
+    assert "this counts your 4,798.00 pay on 25 Nov, not in yet" in text
+    assert "Without it" not in text
+
+
+def test_without_a_budget_and_no_pay_to_come_nothing_extra_is_said() -> None:
+    text = describe_outlook(with_budget([bill("Electricity", "100")], limit=None, spent=None))
+    assert "pay not yet received" not in text.lower()
+    assert "Headroom (the leeway)" in text
+
+
+def test_a_past_month_reads_as_before() -> None:
+    text = describe_outlook(with_budget([], month=date(2026, 10, 1)))
+    assert "Answer for how much can I spend" not in text
+    assert "pay not yet received" not in text.lower()
+    assert "Headroom" not in text and "Projected month-end net" not in text
+    assert text.startswith("Outlook for October 2026, which is over.")

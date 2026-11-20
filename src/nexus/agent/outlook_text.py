@@ -42,6 +42,53 @@ def over_by(amount: Money) -> str:
     return f" (over by {plain(abs_money(amount))})" if amount < Money.zero(amount.currency) else ""
 
 
+def pay_phrase(o: MonthOutlook) -> str:
+    """ "payday 4,798.00 on 25 Nov": the pay still to come (a total, with the first date, if
+    there is more than one)."""
+    pays = [
+        i
+        for i in o.items
+        if i.kind is ExpectedKind.SALARY and i.direction is Direction.IN and i.amount is not None
+    ]
+    day = pay_day(o) if o.next_pay_day else "later this month"
+    if len(pays) > 1:
+        return f"pay {plain(o.pay_not_yet_in)} in all, the first on {day}"
+    return f"payday {plain(o.pay_not_yet_in)} on {day}"
+
+
+def pay_day(o: MonthOutlook) -> str:
+    return f"{o.next_pay_day:%-d %b}" if o.next_pay_day else "payday"
+
+
+def budget_answer(o: MonthOutlook) -> list[str]:
+    """The line that answers how much can I spend, with a budget: the budget room, which never
+    counts pay that hasn't come in. Empty without one, or for a month already over."""
+    if o.budget_room is None or o.budget_adjustments is None:
+        return []
+    out = [
+        "Answer for how much can I spend / can I afford / left to spend / budget left: the budget "
+        f"left once what's due is paid, {plain(o.budget_room)}{over_by(o.budget_room)}."
+    ]
+    if o.pay_not_yet_in.is_positive:
+        out[0] += (
+            f" Pay not yet received ({pay_phrase(o)}) is not counted and is not money to spend."
+        )
+    if o.budget_adjustments < Money.zero(o.currency):
+        out[0] += (
+            f" What you asked about ({plain(abs_money(o.budget_adjustments))}) is already taken "
+            "off it."
+        )
+    if any(a.amount.is_positive for a in o.adjustments):
+        out[0] += " Money you mentioned as coming in is not added to a budget."
+    if o.budget_room < Money.zero(o.currency) or o.budget_room.is_zero:
+        out.append("The budget has no room: say so plainly, whatever the month-end net says.")
+    elif o.overall < o.budget_room:
+        out.append(
+            f"The month-end net is lower still ({plain(o.overall, signed=True)}): say so too."
+        )
+    return out
+
+
 def describe_budget(o: MonthOutlook) -> list[str]:
     """The overall budget's lines; nothing without one. Every figure is a field of ``o``."""
     if o.budget_limit is None or o.budget_spent is None or o.budget_left is None:
@@ -77,8 +124,9 @@ def describe_budget(o: MonthOutlook) -> list[str]:
         )
     out.append(
         "These measure different things: the projected net (Home's left to spend) is cash "
-        "movement for the month; budget left once they're paid is what the budget allows after "
-        "what is due. A spending bill still due is in BOTH: in the projected net as expected "
+        "movement for the month and counts pay not yet received; budget left once they're paid "
+        "is what the budget allows after what is due, and is the one that says how much you can "
+        "spend. A spending bill still due is in BOTH: in the projected net as expected "
         "out, and in the budget's spent once it is paid. Never say it isn't in the budget."
     )
     return out
@@ -98,6 +146,7 @@ def describe_outlook(o: MonthOutlook) -> str:
             f"Outlook for {name}, as of {o.today:%a %-d %b}. All amounts in {o.currency}, "
             "worked out exactly in code: quote them, don't redo the sums."
         )
+        out += budget_answer(o)
         if o.status == "current":
             out.append(f"So far ({o.month:%-d %b} to {o.today:%-d %b}):")
         else:
@@ -133,10 +182,14 @@ def describe_outlook(o: MonthOutlook) -> str:
         )
         if not o.moved.is_zero:
             terms += f" - moved to your wallets {plain(o.moved)}"
-        out.append(
-            f"Projected month-end net: {plain(o.projected_net, signed=True)} ({terms})"
-            '. This is Home\'s "left to spend".'
-        )
+        label = "Projected month-end net"
+        note = '. This is Home\'s "left to spend".'
+        if o.budget_room is not None:
+            note += (
+                " It is month-end cash movement and counts pay not yet received, so it is not "
+                "spending room while a budget is set."
+            )
+        out.append(f"{label}: {plain(o.projected_net, signed=True)} ({terms}){note}")
         if not o.moved.is_zero:
             out.append(
                 "Before transfers to your own wallets it is "
@@ -161,14 +214,27 @@ def describe_outlook(o: MonthOutlook) -> str:
     out += describe_budget(o)
     if o.status != "past":
         if o.overall.is_positive or o.overall.is_zero:
+            what = "the leeway" if o.budget_room is None else "month-end cash leeway"
             out.append(
-                f"Headroom (the leeway): {plain(o.headroom)}. That much more everyday spending, "
+                f"Headroom ({what}): {plain(o.headroom)}. That much more everyday spending, "
                 "beyond what is listed, still keeps the month at zero or above."
+                + (
+                    ""
+                    if o.budget_room is None
+                    else " It counts pay not yet received and is not spending room while a "
+                    "budget is set."
+                )
             )
         else:
             out.append(
                 f"Shortfall: {plain(o.shortfall)} below zero. That much more would have to come "
                 "in, or be left unspent, to reach zero."
+            )
+        if o.budget_room is None and o.pay_not_yet_in.is_positive:
+            out.append(
+                f"Of that, pay not yet received: {pay_phrase(o)}. Say so in the reply (like "
+                f'"this counts your {plain(o.pay_not_yet_in)} pay on {pay_day(o)}, not in '
+                f'yet").'
             )
         out.append(
             "Everyday spending for the rest of the month (food, transport, shopping) is not "

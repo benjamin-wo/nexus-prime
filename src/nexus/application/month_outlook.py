@@ -22,6 +22,14 @@ the user's timezone, from the same figures Home shows (``month_figures``, ``expe
   will count as spending when paid (bills that are spending, subscriptions; not moves to the
   user's own wallets, trip set-asides or payday); ``budget_left_after_due`` is the first less
   the second. ``tighter`` says which is lower, that or ``overall``, and by how much.
+- ``budget_room`` is the answer to "how much can I spend / can I afford it" when there is an
+  overall budget: ``budget_left_after_due`` less the user's purchases, never the projection. Only
+  the negative adjustments (a purchase they ask about, spending they plan) come off it, as
+  ``budget_adjustments``; a positive one (a carry-over, money they expect) is cash, not budget,
+  so it never adds to the room.
+- ``pay_not_yet_in`` is the part of the projection that is payday still to come (items of kind
+  salary with an amount) and ``next_pay_day`` its first date: pay not received is not money to
+  spend, so the reply has to say when the projection counts it.
 
 Everyday spending for the rest of the month is not forecast, and none of this is an
 account balance. A month already over has actuals only.
@@ -109,6 +117,15 @@ class MonthOutlook:
     budget_left_after_due: Money | None  # budget_left - spending_due: negative when it'll be over
     tighter: Literal["budget", "outlook"] | None  # lower of budget_left_after_due and overall
     tighter_by: Money | None  # how far apart they are (>= 0)
+    # With an overall budget, for this month or a future one: what the budget leaves to spend,
+    # budget_left_after_due + budget_adjustments (negative: over). The answer to "how much can I
+    # spend", unlike the projection, which counts pay not yet received.
+    budget_room: Money | None
+    budget_adjustments: Money | None  # the negative adjustments only (<= 0), already in the room
+    # Payday still to come (kind salary, with an amount), counted in expected_in and so in the
+    # projection. Zero, with no date, when none is left (and for a month already over).
+    pay_not_yet_in: Money
+    next_pay_day: date | None
 
     @property
     def last_day(self) -> date:
@@ -146,6 +163,21 @@ def spending_due(items: Iterable[OutlookItem], currency: str) -> Money:
         if item.direction is Direction.OUT and item.spending and item.amount is not None:
             total = total + item.amount
     return total
+
+
+def pay_still_to_come(items: Iterable[OutlookItem], currency: str) -> tuple[Money, date | None]:
+    """The pay (salary items with an amount) still expected, and the day of the first."""
+    total = Money.zero(currency)
+    first: date | None = None
+    for item in items:
+        if (
+            item.kind is ExpectedKind.SALARY
+            and item.direction is Direction.IN
+            and item.amount is not None
+        ):
+            total = total + item.amount
+            first = item.day if first is None else min(first, item.day)
+    return total, first
 
 
 def items_of(found: Sequence[tuple[date, Expected]]) -> list[OutlookItem]:
@@ -207,6 +239,7 @@ def build_outlook(
     budget_left = None
     due = after_due = tighter_by = None
     tighter: Literal["budget", "outlook"] | None = None
+    room = purchases = None
     if budget_limit is not None and budget_spent is not None:
         budget_left = budget_limit - budget_spent
         if status != "past":
@@ -215,8 +248,14 @@ def build_outlook(
             # Compared with ``overall`` (not the clamped headroom), so a shortfall counts in full.
             tighter = "budget" if after_due < overall else "outlook"
             tighter_by = after_due - overall if after_due > overall else overall - after_due
+            purchases = zero
+            for a in adjustments:
+                if a.amount < zero:
+                    purchases = purchases + a.amount
+            room = after_due + purchases
     else:
         budget_limit = budget_spent = None
+    pay, next_pay_day = pay_still_to_come(items, currency)
     return MonthOutlook(
         month=first,
         today=today,
@@ -245,6 +284,10 @@ def build_outlook(
         budget_left_after_due=after_due,
         tighter=tighter,
         tighter_by=tighter_by,
+        budget_room=room,
+        budget_adjustments=purchases,
+        pay_not_yet_in=pay,
+        next_pay_day=next_pay_day,
     )
 
 

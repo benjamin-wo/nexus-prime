@@ -2634,6 +2634,33 @@ CASES: tuple[Case, ...] = (
         amounts=(seed.BUDGET_AFTER_DUE,),
     ),
     Case(
+        "money-math-budget-room",
+        "money-math",
+        _t("how much can i still spend this month?"),
+        november=True,
+        budget=True,
+        unchanged=True,
+        calls=(Call("month_outlook"),),
+        # The budget left once what's due is paid (over by 305.78), not the month-end net
+        # (2,442.22), which counts the payday still to come.
+        amounts=(seed.BUDGET_AFTER_DUE,),
+        never_amounts=(seed.BUDGET_PROJECTED,),
+    ),
+    Case(
+        "money-math-budget-afford-dinner",
+        "money-math",
+        _t("can i afford a 50 dinner this month?"),
+        november=True,
+        budget=True,
+        unchanged=True,
+        calls=(Call("month_outlook", {"adjustments": Has("50")}),),
+        # No: the budget is over once what's due is paid, and 50 more makes it 355.78 over
+        # (or 305.78 before the dinner). The month-end net is not spending room.
+        reply=(("no", "over", "can't", "cannot", "not", "don't"),),
+        amounts=((seed.BUDGET_AFTER_DINNER, seed.BUDGET_AFTER_DUE),),
+        never_amounts=(seed.BUDGET_PROJECTED,),
+    ),
+    Case(
         "money-math-budget-non-spending",
         "money-math",
         _t("i have a 300 citi card bill on the 21st. does that come out of my budget?"),
