@@ -44,8 +44,11 @@ pytestmark = pytest.mark.integration
 # Then the same rule was told what answers "how much can I spend" with a budget (the budget room
 # line, never the month-end net or pay not yet received): a8571d1e... (14691) became the text
 # below, that sentence (322 characters) being the only difference.
-DEFAULT_PREFIX_SHA256 = "27ffdb10b51d24da9925768551b2eb3868cc0d4cca1c5c0666cb291630a00877"
-DEFAULT_PREFIX_LENGTH = 15013
+# Then the same rule was told that per day, pace and "compared to my usual" questions are
+# month_outlook's too, and never to call spending usual, comfy or tight without its pace figure:
+# 27ffdb10... (15013) became the text below, those 146 characters being the only difference.
+DEFAULT_PREFIX_SHA256 = "06114a7323eab61b47cc013ffa3b5c978214c165140e91d39984393083757bdb"
+DEFAULT_PREFIX_LENGTH = 15159
 
 
 def prefix_of(prompt: str) -> str:

@@ -14,10 +14,16 @@ from nexus.application.month_outlook import (
     Adjustment,
     MonthOutlook,
     OutlookItem,
+    Scheduled,
+    Spend,
     build_outlook,
+    compare_pace,
     parse_adjustment,
     parse_month,
+    per_day,
     plain,
+    room_per_day,
+    scheduled_in,
     sum_expected,
 )
 from nexus.domain.errors import InvalidInput
@@ -566,3 +572,282 @@ def test_a_past_month_reads_as_before() -> None:
     assert "pay not yet received" not in text.lower()
     assert "Headroom" not in text and "Projected month-end net" not in text
     assert text.startswith("Outlook for October 2026, which is over.")
+
+
+# --- per day: days left, the room per day, the pace so far and how they compare ------------------
+
+
+def pace_month(
+    *,
+    today: date = TODAY,
+    month: date = date(2026, 11, 1),
+    spent: str = "1922.78",
+    scheduled: str | None = "1817.98",
+    names: tuple[str, ...] = ("Rent", "Netflix"),
+    limit: str | None = None,
+    items: list[OutlookItem] | None = None,
+    adjustments: list[Adjustment] | None = None,
+) -> MonthOutlook:
+    """The seed's November (250.00 in, 1,922.78 out, of which rent and Netflix are 1,817.98),
+    with payday and Singtel ahead unless ``items`` says otherwise. A budget is spent as spent."""
+    ahead = (
+        [payday(), item(28, "Singtel", "45.00", ExpectedKind.BILL, Direction.OUT)]
+        if items is None
+        else items
+    )
+    return build_outlook(
+        month=month, today=today, currency="SGD", received=sgd("250.00"), spent=sgd(spent),
+        moved=sgd("0"), items=ahead, adjustments=adjustments or [],
+        budget_limit=sgd(limit) if limit else None,
+        budget_spent=sgd(spent) if limit else None,
+        scheduled_spent=sgd(scheduled) if scheduled else None, scheduled_names=names,
+    )  # fmt: skip
+
+
+def production_month() -> MonthOutlook:
+    """3,475 spent in 19 days and 1,033.79 of budget room over the 11 days left, nothing else."""
+    return build_outlook(
+        month=date(2026, 11, 1), today=date(2026, 11, 20), currency="SGD",
+        received=sgd("0"), spent=sgd("3475"), moved=sgd("0"), items=[],
+        budget_limit=sgd("4508.79"), budget_spent=sgd("3475"),
+    )  # fmt: skip
+
+
+def test_days_left_count_today_through_month_end_and_days_elapsed_the_1st_through_today() -> None:
+    o = pace_month()
+    assert (o.days_left, o.days_elapsed) == (18, 13)  # the 13th to the 30th; the 1st to the 13th
+    assert pace_month(today=date(2026, 11, 30)).days_left == 1
+    assert pace_month(today=date(2026, 11, 1)).days_elapsed == 1
+
+
+def test_the_pace_is_everyday_spending_over_the_days_elapsed_leaving_out_scheduled_payments() -> (
+    None
+):
+    o = pace_month()
+    assert o.scheduled_spent == sgd("1817.98") and o.scheduled_names == ["Rent", "Netflix"]
+    assert o.everyday_spent == sgd("104.80")  # 1,922.78 less rent and Netflix
+    assert o.everyday_per_day == sgd("8.06")  # 104.80 / 13 = 8.0615...
+    assert o.spent_per_day == sgd("147.91")  # everything: 1,922.78 / 13 = 147.9061...
+
+
+def test_with_no_scheduled_payments_found_the_pace_is_everything_spent() -> None:
+    o = pace_month(scheduled=None)
+    assert o.scheduled_spent == sgd("0") and o.scheduled_names == []
+    assert o.everyday_per_day == o.spent_per_day == sgd("147.91")
+    # Never more than was spent.
+    assert pace_month(scheduled="5000").everyday_spent == sgd("0")
+
+
+def test_without_a_budget_the_headroom_is_the_room_per_day_over_both_counts_of_days() -> None:
+    o = pace_month()
+    assert o.headroom == sgd("3080.22")  # 250 + 4,798 - 1,922.78 - 45
+    assert o.headroom_per_day == sgd("171.12")  # / 18 = 171.1233...
+    assert o.headroom_per_day_from_tomorrow == sgd("181.19")  # / 17 = 181.1894...
+    assert (o.budget_room_per_day, o.budget_room_per_day_from_tomorrow) == (None, None)
+
+
+def test_the_seeds_november_gives_the_figures_the_evals_expect() -> None:
+    """-1,672.78 so far, 4,798.00 payday and 133.00 of bills ahead: 2,992.22 over 18 or 17 days."""
+    o = november()
+    assert o.headroom == sgd("2992.22")
+    assert (o.headroom_per_day, o.headroom_per_day_from_tomorrow) == (sgd("166.23"), sgd("176.01"))
+    assert (o.days_left, o.days_elapsed) == (18, 13)
+
+
+def test_with_a_budget_the_budget_room_is_the_room_per_day_and_there_is_no_headroom_figure() -> (
+    None
+):
+    o = pace_month(limit="3000", items=[payday()])
+    assert o.budget_room == sgd("1077.22")
+    assert o.budget_room_per_day == sgd("59.85")  # 1,077.22 / 18 = 59.8455...
+    assert o.budget_room_per_day_from_tomorrow == sgd("63.37")  # / 17 = 63.3659...
+    assert (o.headroom_per_day, o.headroom_per_day_from_tomorrow) == (None, None)
+
+
+def test_no_budget_room_is_zero_per_day_never_negative() -> None:
+    insurance = item(26, "Insurance", "250", ExpectedKind.BILL, Direction.OUT)
+    over = pace_month(limit="2000", items=[payday(), insurance])
+    assert over.budget_room == sgd("-172.78")
+    assert over.budget_room_per_day == over.budget_room_per_day_from_tomorrow == sgd("0")
+    assert (over.room_vs_pace_percent, over.room_vs_pace) == (0, "far_below")
+    exactly = pace_month(limit="1922.78", items=[payday()])
+    assert exactly.budget_room == sgd("0") and exactly.budget_room_per_day == sgd("0")
+
+
+def test_a_shortfall_is_no_headroom_and_zero_per_day() -> None:
+    o = pace_month(spent="9000", scheduled=None, items=[])
+    assert o.shortfall.is_positive and o.headroom == sgd("0")
+    assert o.headroom_per_day == o.headroom_per_day_from_tomorrow == sgd("0")
+
+
+def test_what_you_asked_about_comes_off_the_room_per_day() -> None:
+    o = pace_month(
+        limit="3000", items=[payday()], adjustments=[parse_adjustment("-180", "x", "SGD")]
+    )
+    assert o.budget_room == sgd("897.22") and o.budget_room_per_day == sgd("49.85")  # 49.8455...
+
+
+def test_on_the_last_day_there_is_one_day_left_and_no_from_tomorrow_figure() -> None:
+    o = pace_month(today=date(2026, 11, 30), limit="3000", items=[])
+    assert o.days_left == 1
+    assert o.budget_room_per_day == o.budget_room == sgd("1077.22")
+    assert o.budget_room_per_day_from_tomorrow is None
+    assert pace_month(today=date(2026, 11, 30), items=[]).headroom_per_day_from_tomorrow is None
+
+
+def test_a_future_month_spreads_the_room_over_all_its_days_with_no_pace() -> None:
+    o = pace_month(month=date(2026, 12, 1), spent="0", scheduled=None, items=[])
+    assert (o.days_left, o.days_elapsed) == (31, None)
+    assert o.headroom == sgd("250") and o.headroom_per_day == sgd("8.06")  # 250 / 31 = 8.0645...
+    assert o.headroom_per_day_from_tomorrow is None  # the month has not begun
+    assert (o.spent_per_day, o.everyday_per_day, o.room_vs_pace) == (None, None, None)
+
+
+def test_a_past_month_has_only_the_pace_over_the_whole_month() -> None:
+    o = pace_month(
+        month=date(2026, 10, 1), spent="310", scheduled="62", names=("Netflix",), items=[]
+    )
+    assert (o.days_left, o.days_elapsed) == (None, 31)
+    assert o.everyday_per_day == sgd("8.00")  # (310 - 62) / 31
+    assert o.spent_per_day == sgd("10.00")
+    assert o.scheduled_names == ["Netflix"]
+    assert (o.budget_room_per_day, o.headroom_per_day, o.room_vs_pace) == (None, None, None)
+
+
+def test_the_room_per_day_is_compared_with_the_pace_in_code() -> None:
+    # Against a pace of 100.00 a day, the room per day is that many percent of it.
+    bands = {"40": "far_below", "70": "below", "100": "about", "150": "above", "250": "far_above"}
+    for room_day, band in bands.items():
+        assert compare_pace(sgd(room_day), sgd("100")) == (int(room_day), band)
+    assert compare_pace(sgd("0"), sgd("100")) == (0, "far_below")
+    assert compare_pace(sgd("50"), sgd("0")) is None  # nothing spent: no pace to compare with
+    # The edges: 49 is far below, 50 below, 90 and 110 about it, 111 above, 200 far above.
+    assert compare_pace(sgd("49.4"), sgd("100")) == (49, "far_below")
+    assert compare_pace(sgd("50"), sgd("100")) == (50, "below")
+    assert compare_pace(sgd("90"), sgd("100")) == (90, "about")
+    assert compare_pace(sgd("110"), sgd("100")) == (110, "about")
+    assert compare_pace(sgd("111"), sgd("100")) == (111, "above")
+    assert compare_pace(sgd("200"), sgd("100")) == (200, "far_above")
+
+
+def test_the_production_case_94_a_day_against_a_pace_of_174_is_below_it() -> None:
+    o = production_month()
+    assert o.budget_room == sgd("1033.79") and o.days_left == 11
+    assert o.budget_room_per_day == sgd("93.98")  # 1,033.79 / 11
+    assert o.budget_room_per_day_from_tomorrow == sgd("103.38")  # / 10
+    assert o.everyday_per_day == sgd("173.75")  # 3,475 / 20, the 1st to the 20th
+    assert (o.room_vs_pace_percent, o.room_vs_pace) == (54, "below")
+
+
+def test_per_day_rounds_to_the_currencys_minor_unit_halves_up() -> None:
+    assert per_day(sgd("100"), 8) == sgd("12.50")
+    assert per_day(sgd("0.05"), 2) == sgd("0.03")  # 0.025 up
+    assert per_day(Money.of("1000", "JPY"), 3) == Money.of("333", "JPY")
+    assert room_per_day(sgd("-5"), 3) == sgd("0")
+
+
+# --- per day: the words -----------------------------------------------------------------------
+
+
+def test_the_words_give_the_room_per_day_both_ways_the_pace_and_the_comparison() -> None:
+    text = describe_outlook(november())
+    assert "Per day, 13 Nov to 30 Nov: 18 days left counting today." in text
+    assert (
+        "Headroom per day: 166.23 (2,992.22 over 18 days), or 176.01 from tomorrow (17 days)."
+    ) in text
+    assert "This counts pay not yet received (payday 4,798.00 on 25 Nov)" in text
+    # No scheduled payment found: the pace is everything spent over the 13 days.
+    assert "Pace so far, everyday spending: 147.91 a day (1,922.78 over 13 days)." in text
+    assert "Room per day against that pace: 112% of it, above your pace so far." in text
+    assert text.index("Headroom (the leeway)") < text.index("Per day, 13 Nov")
+
+
+def test_the_pace_names_the_scheduled_payments_it_leaves_out() -> None:
+    text = describe_outlook(pace_month())
+    assert (
+        "Pace so far, everyday spending: 8.06 a day (104.80 over 13 days, leaving out 1,817.98 of "
+        "scheduled payments: Rent, Netflix. Counting those too it is 147.91 a day, but that is "
+        "not the figure to compare with)."
+    ) in text
+    assert "Room per day against that pace: more than double your pace so far." in text
+
+
+def test_a_budget_room_below_the_pace_is_said_to_be_tight() -> None:
+    text = describe_outlook(production_month())
+    assert "Per day, 20 Nov to 30 Nov: 11 days left counting today." in text
+    assert (
+        "Budget room per day: 93.98 (1,033.79 over 11 days), or 103.38 from tomorrow (10 days)."
+    ) in text
+    assert "Pace so far, everyday spending: 173.75 a day (3,475.00 over 20 days)." in text
+    assert "Room per day against that pace: 54% of it, below your pace so far: tight." in text
+    # With a budget the block follows the budget room line, before the month's figures.
+    assert text.index("Answer for how much can I spend") < text.index("Per day,")
+    assert text.index("Per day,") < text.index("So far (")
+
+
+def test_with_no_budget_room_it_says_no_room_and_gives_no_per_day_figure() -> None:
+    insurance = item(26, "Insurance", "250", ExpectedKind.BILL, Direction.OUT)
+    text = describe_outlook(pace_month(limit="2000", items=[payday(), insurance]))
+    assert "- No budget room (it is -172.78), so nothing to spend per day" in text
+    assert "never a per-day figure, and none from the month-end net" in text
+    assert "Budget room per day" not in text and "Room per day against that pace" not in text
+
+
+def test_a_future_month_in_words_has_the_room_per_day_and_no_pace() -> None:
+    text = describe_outlook(
+        pace_month(month=date(2026, 12, 1), spent="0", scheduled=None, items=[])
+    )
+    assert "Per day, over the month's 31 days." in text
+    assert "Headroom per day: 8.06 (250.00 over 31 days)." in text
+    assert "Pace" not in text and "from tomorrow" not in text
+
+
+def test_a_past_month_in_words_has_only_the_pace() -> None:
+    text = describe_outlook(
+        pace_month(
+            month=date(2026, 10, 1), spent="310", scheduled="62", names=("Netflix",), items=[]
+        )
+    )
+    assert (
+        "Per day: Pace over the whole month, everyday spending: 8.00 a day (248.00 over 31 days, "
+        "leaving out 62.00 of scheduled payments: Netflix."
+    ) in text
+    assert "days left" not in text and "Headroom" not in text and "Room per day" not in text
+
+
+# --- finding scheduled payments in the month's spending ---------------------------------------
+
+
+def spend(name: str | None, amount: str) -> Spend:
+    return Spend(name, sgd(amount), sgd(amount))
+
+
+def test_a_scheduled_payment_is_found_in_an_expense_of_the_same_amount_and_a_shared_name() -> None:
+    planned = [Scheduled("Rent", sgd("1800"), 1), Scheduled("Netflix", sgd("17.98"), 1)]
+    spends = [
+        spend("NTUC FairPrice", "76.40"),
+        spend("Rent", "1800.00"),
+        spend("Netflix.com 8829", "17.98"),
+    ]
+    assert scheduled_in(planned, spends, "SGD") == (sgd("1817.98"), ["Rent", "Netflix"])
+
+
+def test_a_different_amount_or_name_or_no_name_is_not_a_scheduled_payment() -> None:
+    planned = [Scheduled("Rent", sgd("1800"), 1)]
+    for other in (spend("Rent", "1750.00"), spend("Landlord", "1800.00"), spend(None, "1800.00")):
+        assert scheduled_in(planned, [other], "SGD") == (sgd("0"), [])
+
+
+def test_each_expense_is_used_once_and_a_payment_only_as_often_as_it_falls_due() -> None:
+    gym = [Scheduled("Gym", sgd("88"), 1)]
+    twice = [spend("Gym", "88.00"), spend("Gym", "88.00")]
+    assert scheduled_in(gym, twice, "SGD") == (sgd("88"), ["Gym"])
+    weekly = [Scheduled("Gym", sgd("88"), 2), Scheduled("Gym pass", sgd("88"), 1)]
+    assert scheduled_in(weekly, [*twice, spend("Gym", "88.00")], "SGD")[0] == sgd("264")
+    assert scheduled_in(weekly, twice, "SGD") == (sgd("176"), ["Gym"])
+
+
+def test_a_found_payment_counts_at_its_home_currency_value() -> None:
+    usd = Spend("OpenAI ChatGPT", Money.of("20", "USD"), sgd("27.00"))
+    planned = [Scheduled("OpenAI ChatGPT", Money.of("20", "USD"), 1)]
+    assert scheduled_in(planned, [usd], "SGD") == (sgd("27.00"), ["OpenAI ChatGPT"])

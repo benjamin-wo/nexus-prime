@@ -89,6 +89,86 @@ def budget_answer(o: MonthOutlook) -> list[str]:
     return out
 
 
+def days(n: int) -> str:
+    return f"{n} day" if n == 1 else f"{n} days"
+
+
+COMPARISONS = {
+    "far_below": "less than half your pace so far: tight",
+    "below": "below your pace so far: tight",
+    "about": "about your pace so far",
+    "above": "above your pace so far",
+    "far_above": "more than double your pace so far",
+}
+
+
+def pace_line(o: MonthOutlook) -> str | None:
+    """How fast everyday spending has gone: leaves out the scheduled payments found in it."""
+    if o.everyday_per_day is None or o.spent_per_day is None or o.days_elapsed is None:
+        return None
+    when = "over the whole month" if o.status == "past" else "so far"
+    line = (
+        f"Pace {when}, everyday spending: {plain(o.everyday_per_day)} a day "
+        f"({plain(o.everyday_spent)} over {days(o.days_elapsed)}"
+    )
+    if o.scheduled_spent.is_positive:
+        line += (
+            f", leaving out {plain(o.scheduled_spent)} of scheduled payments: "
+            f"{', '.join(o.scheduled_names)}. Counting those too it is {plain(o.spent_per_day)} "
+            "a day, but that is not the figure to compare with"
+        )
+    return line + "). Compare only with this pace, never with a figure of your own."
+
+
+def per_day_lines(o: MonthOutlook) -> list[str]:
+    """The Per day block: the room per day (with a budget, the budget room; without, the
+    headroom), the pace so far and how they compare, every figure from code. Empty for a month
+    already over without a pace to give."""
+    pace = pace_line(o)
+    if o.status == "past":
+        return [f"Per day: {pace}"] if pace else []
+    if o.days_left is None:
+        return []
+    budget = o.budget_room is not None
+    room, day = (
+        (o.budget_room, o.budget_room_per_day) if budget else (o.headroom, o.headroom_per_day)
+    )
+    tomorrow = o.budget_room_per_day_from_tomorrow if budget else o.headroom_per_day_from_tomorrow
+    if room is None or day is None:
+        return []
+    if o.status == "current":
+        left = f"{days(o.days_left)} left counting today"
+        head = f"Per day, {o.today:%-d %b} to {o.last_day:%-d %b}: {left}."
+    else:
+        left = f"{days(o.days_left)}"
+        head = f"Per day, over the month's {left}."
+    what = "budget room" if budget else "headroom"
+    if not day.is_positive:
+        out = [
+            head,
+            f"- No {what} (it is {plain(room)}), so nothing to spend per day: say so plainly, "
+            "never a per-day figure, and none from the month-end net.",
+        ]
+    else:
+        text = (
+            f"- {what.capitalize()} per day: {plain(day)} ({plain(room)} over {days(o.days_left)})"
+        )
+        if tomorrow is not None and o.days_left > 1:
+            text += f", or {plain(tomorrow)} from tomorrow ({days(o.days_left - 1)})"
+        out = [head, text + "."]
+        if not budget and o.pay_not_yet_in.is_positive:
+            out[1] += (
+                f" This counts pay not yet received ({pay_phrase(o)}): say so, it is not money "
+                "you have today."
+            )
+    if pace:
+        out.append("- " + pace)
+    if day.is_positive and o.room_vs_pace is not None and o.room_vs_pace_percent is not None:
+        share = "" if o.room_vs_pace == "far_above" else f"{o.room_vs_pace_percent}% of it, "
+        out.append(f"- Room per day against that pace: {share}{COMPARISONS[o.room_vs_pace]}.")
+    return out
+
+
 def describe_budget(o: MonthOutlook) -> list[str]:
     """The overall budget's lines; nothing without one. Every figure is a field of ``o``."""
     if o.budget_limit is None or o.budget_spent is None or o.budget_left is None:
@@ -147,6 +227,8 @@ def describe_outlook(o: MonthOutlook) -> str:
             "worked out exactly in code: quote them, don't redo the sums."
         )
         out += budget_answer(o)
+        if o.budget_room is not None:
+            out += per_day_lines(o)
         if o.status == "current":
             out.append(f"So far ({o.month:%-d %b} to {o.today:%-d %b}):")
         else:
@@ -236,10 +318,14 @@ def describe_outlook(o: MonthOutlook) -> str:
                 f'"this counts your {plain(o.pay_not_yet_in)} pay on {pay_day(o)}, not in '
                 f'yet").'
             )
+        if o.budget_room is None:
+            out += per_day_lines(o)
         out.append(
             "Everyday spending for the rest of the month (food, transport, shopping) is not "
             "forecast, and this is movement only, not an account balance."
         )
+    else:
+        out += per_day_lines(o)
     return "\n".join(out)
 
 

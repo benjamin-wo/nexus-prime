@@ -4644,7 +4644,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "purchase they are considering) as adjustments. With a budget, it opens with the "
             "budget room line: that is the answer to how much can I spend / afford / left to "
             "spend, never the month-end net, which counts pay not yet received (never money "
-            "to spend). Say plainly when the budget is tight or over. Not an account balance.",
+            "to spend). Say plainly when the budget is tight or over. It also gives days left, "
+            "the room per day and the pace of everyday spending so far, and how they compare: "
+            "use it for how much is that per day, daily, days left, my pace, how does that "
+            "compare to my usual. Not an account balance.",
             MonthOutlookArgs,
             _month_outlook,
         ),

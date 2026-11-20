@@ -88,6 +88,12 @@ def _named_alike(a: str | None, b: str | None) -> bool:
     return bool(_words(a) & _words(b))
 
 
+def shares_a_name(a: str | None, b: str | None) -> bool:
+    """Whether both names exist and share a word that names the place: stricter than
+    ``same_merchant``, which lets a missing name match."""
+    return _named_alike(a, b)
+
+
 def _close_in_value(a: Money, b: Money, a_day: date, b_day: date, value: Valuer) -> bool:
     first, second = value(a, a_day), value(b, b_day)
     if first is None or second is None or first.currency != second.currency:

@@ -16,13 +16,15 @@ from nexus.agent.tools import ToolContext
 from nexus.application import bills as bill_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import salary as salary_cases
+from nexus.application import splits as split_cases
 from nexus.application import wallets as wallet_cases
 from nexus.application.cashflow import ExpectedKind
 from nexus.application.month_outlook import month_outlook
+from nexus.application.ports import LedgerQuery
 from nexus.application.users import RegisterUser, register_user
 from nexus.application.wallet_figures import month_plan
 from nexus.domain.errors import InvalidInput
-from nexus.domain.ledger import Direction, User
+from nexus.domain.ledger import Direction, ShareRequest, User
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
 from nexus.evals import seed
@@ -400,3 +402,51 @@ async def test_a_month_with_nothing_left_says_so(uow: UowFactory, alice: object)
 
 def test_decimal_is_what_the_figures_are_made_of() -> None:
     assert isinstance(Money.of("1", "SGD").amount, Decimal)
+
+
+# --- per day: the pace leaves out the scheduled payments found in the month's spending ----------
+
+
+async def test_the_pace_leaves_out_rent_and_netflix_found_in_the_months_spending(
+    uow: UowFactory,
+) -> None:
+    """Rent (a bill of 1,800.00) and Netflix (a tracked subscription of 17.98) are in the
+    1,922.78 spent: what is left, 104.80, is everyday spending over the 13 days."""
+    user = await november(uow)
+    o = await month_outlook(uow, RATES, user, now=NOV)
+    assert o.scheduled_spent == sgd("1817.98") and o.scheduled_names == ["Rent", "Netflix"]
+    assert o.everyday_spent == sgd("104.80")
+    assert (o.days_left, o.days_elapsed) == (18, 13)
+    assert o.everyday_per_day == sgd("8.06") and o.spent_per_day == sgd("147.91")
+    assert (o.headroom_per_day, o.headroom_per_day_from_tomorrow) == (sgd("166.23"), sgd("176.01"))
+
+
+async def test_a_split_expense_is_not_left_out_of_the_pace(uow: UowFactory) -> None:
+    """What the user spent on a split rent is their share, not the bill's amount: it stays in."""
+    user = await november(uow)
+    async with uow() as db:
+        page = await db.ledger.list_transactions(
+            user.id,
+            LedgerQuery(search="Rent", start=datetime(2026, 11, 1, tzinfo=NOV.tzinfo), limit=10),
+        )
+    [rent] = page.items
+    await split_cases.split_bill(uow(), user.id, rent.id, [ShareRequest("Ann")])
+    o = await month_outlook(uow, RATES, user, now=NOV)
+    assert o.scheduled_names == ["Netflix"] and o.scheduled_spent == sgd("17.98")
+    assert o.everyday_spent == o.spent - sgd("17.98")
+
+
+async def test_a_past_month_has_a_pace_and_no_room_per_day(uow: UowFactory) -> None:
+    user = await november(uow)
+    sept = await month_outlook(uow, RATES, user, now=NOV, month="2026-09")
+    assert (sept.days_left, sept.days_elapsed) == (None, 30)
+    assert sept.scheduled_names == ["Netflix"] and sept.scheduled_spent == sgd("17.98")
+    assert sept.everyday_per_day == sgd("14.74")  # (460.03 - 17.98) / 30 = 14.735
+    assert (sept.headroom_per_day, sept.budget_room_per_day, sept.room_vs_pace) == (None,) * 3
+
+
+async def test_a_month_ahead_spreads_its_room_over_all_its_days(uow: UowFactory) -> None:
+    user = await november(uow)
+    december = await month_outlook(uow, RATES, user, now=NOV, month="2026-12")
+    assert (december.days_left, december.days_elapsed) == (31, None)
+    assert december.everyday_per_day is None and december.headroom_per_day is not None

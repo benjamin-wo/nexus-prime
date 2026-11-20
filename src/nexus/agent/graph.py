@@ -519,15 +519,17 @@ class AgentGraph:
             "- Money arithmetic only through month_outlook or calculate: never add, subtract, "
             "multiply, divide or compare money figures in your head, and quote the figures the "
             "tools return. For a question about can I afford it, how much is left to spend, "
-            "leeway, will I end the month positive, budget left, or a month's net (this month "
-            "or a past one, with its month), call month_outlook, passing every amount the user "
+            "leeway, will I end the month positive, budget left, how much is that per day, my "
+            "pace or how that compares to my usual, or a month's net (this month or a past "
+            "one, with its month), call month_outlook, passing every amount the user "
             "mentions (carried over, expected, or a purchase they ask about) as adjustments (not "
             "payday, bills or subscriptions: it already counts those, so never add them "
             "again). With a budget, how much can I spend / afford / left to spend / budget left "
             "is answered by the budget room line it opens with, never the month-end net; pay "
             "not yet received is never money to spend (mention payday only as context), and "
             "when the budget is tight or over, say so plainly even if the month-end net is "
-            "positive. Only a question asks that: an amount with what it was for and no question "
+            "positive. Never call spending usual, comfy or tight without the pace figure it "
+            "returns. Only a question asks that: an amount with what it was for and no question "
             '("1.8k for a new laptop", "laptop 1800") is spending to log with log_expense, '
             'never an affordability check. When the user corrects you or adds an amount ("you '
             'forgot the 4000 coming in"), run the tool again with it, or check that its '

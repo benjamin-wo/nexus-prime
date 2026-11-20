@@ -19,6 +19,7 @@ from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
 from nexus.application.ports import LedgerQuery
 from nexus.domain.ledger import Direction
+from nexus.domain.money import Money
 from nexus.evals import clips, photos, seed
 from nexus.evals.cases import CASES, WRITES, Case
 from nexus.evals.runner import FixedRates, clock_of, run_cases
@@ -855,12 +856,27 @@ async def test_the_money_sense_seed_matches_the_figures_the_cases_expect(
     assert budgeted.budget_room is not None
     assert budgeted.budget_room.amount == Decimal(seed.BUDGET_AFTER_DUE) < 0
     assert budgeted.projected_net.amount == Decimal(seed.BUDGET_PROJECTED)
+    # The tool's own per-day figures: no room, so zero (the model says so, never a figure).
+    assert budgeted.days_left == seed.NOV_DAYS_LEFT
+    assert budgeted.budget_room_per_day == Money.zero("SGD")
+    assert budgeted.budget_room_per_day_from_tomorrow == Money.zero("SGD")
+    assert budgeted.headroom_per_day is None
     # Without it: the month-end net counts the payday still to come.
     plain = (await seed.seed_user(uow, 801, november=True)).user
     p = await month_outlook(uow, FixedRates(), plain, now=now)
     assert p.projected_net.amount == Decimal(seed.NOV_PROJECTED)
     assert p.pay_not_yet_in.amount == Decimal(seed.NOV_PAYDAY)
     assert p.budget_limit is None
+    # The per-day figures the pace case expects are the tool's own: the headroom over the days
+    # left counting today, and over the days left from tomorrow.
+    assert p.days_left == seed.NOV_DAYS_LEFT
+    assert p.headroom_per_day is not None and p.headroom_per_day_from_tomorrow is not None
+    assert p.headroom_per_day.amount == Decimal(seed.NOV_PER_DAY)
+    assert p.headroom_per_day_from_tomorrow.amount == Decimal(seed.NOV_PER_DAY_FROM_TOMORROW)
+    assert p.days_left - 1 == seed.NOV_DAYS_FROM_TOMORROW
+    # The pace is everyday spending: rent and Netflix are scheduled payments, left out.
+    assert p.scheduled_names == ["Rent", "Netflix"]
+    assert p.everyday_per_day is not None and p.everyday_per_day.amount == Decimal("8.06")
 
 
 MONEY_SENSE = (
