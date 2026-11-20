@@ -31,6 +31,18 @@ the user's timezone, from the same figures Home shows (``month_figures``, ``expe
   salary with an amount) and ``next_pay_day`` its first date: pay not received is not money to
   spend, so the reply has to say when the projection counts it.
 
+- per day, for this month and future ones: ``days_left`` counts today through month end (a
+  future month: all its days). ``budget_room_per_day`` is the budget room over them, or, with no
+  budget, ``headroom_per_day`` is the headroom (which counts pay not yet in); each also over
+  the days left from tomorrow (this month only). With no room it is zero: say "no room", never
+  a spend per day. ``everyday_per_day`` is the pace so far: spending from the 1st to today
+  (a month already over: all of it), leaving out the scheduled payments and subscriptions set up
+  in Nexus that can be found in it (a logged expense of the same amount, under a name that shares
+  a word with the bill's, once per due date; split ones are not left out). Rent is not
+  everyday spending, and the room per day already has what is due taken off. Without a match
+  nothing is left out, and ``spent_per_day`` is everything. ``room_vs_pace`` says, in code, how
+  the room per day compares with the pace (percent and a band), so no one compares in their head.
+
 Everyday spending for the rest of the month is not forecast, and none of this is an
 account balance. A month already over has actuals only.
 """
@@ -38,25 +50,38 @@ account balance. A month already over has actuals only.
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 from zoneinfo import ZoneInfo
 
+from nexus.application import fx
 from nexus.application.budgets import budget_statuses
 from nexus.application.cashflow import Expected, ExpectedKind, expected_between
 from nexus.application.fx import RateSource
-from nexus.application.ports import UnitOfWork
+from nexus.application.ports import LedgerQuery, UnitOfWork
 from nexus.application.wallet_figures import month_range, wallet_figures
 from nexus.domain.calc import calculate
+from nexus.domain.duplicates import shares_a_name
 from nexus.domain.errors import InvalidInput
-from nexus.domain.ledger import Direction, User
+from nexus.domain.ledger import Direction, TransactionStatus, User
 from nexus.domain.money import Money, minor_units
-from nexus.domain.planning import month_start, next_month_start
+from nexus.domain.planning import due_dates, month_start, next_month_start
+from nexus.domain.recurring import SubscriptionStatus, next_charge
 
 type UowFactory = Callable[[], UnitOfWork]
 
 MAX_ADJUSTMENTS = 20
 MAX_MONTHS_AHEAD = 24
+# The room per day against the pace so far, in percent: under the first is "far below", under
+# the second "below", up to the third "about", under the fourth "above", from it "far above".
+FAR_BELOW_PERCENT = 50
+BELOW_PERCENT = 90
+ABOUT_PERCENT = 110
+FAR_ABOVE_PERCENT = 200
+# How many of a month's expenses are looked through for scheduled payments.
+_SCHEDULED_POOL = 2_000
+
+type Band = Literal["far_below", "below", "about", "above", "far_above"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +151,28 @@ class MonthOutlook:
     # projection. Zero, with no date, when none is left (and for a month already over).
     pay_not_yet_in: Money
     next_pay_day: date | None
+    # Per day. Days: today through month end (a future month: all of it), None for a month
+    # already over; and the days elapsed, 1st through today (a past month: all of it), None for a
+    # future month.
+    days_left: int | None
+    days_elapsed: int | None
+    # Of ``spent``, the scheduled payments and subscriptions found in it (zero when none), by name.
+    scheduled_spent: Money
+    scheduled_names: list[str]
+    everyday_spent: Money  # spent less scheduled_spent
+    spent_per_day: Money | None  # spent over the days elapsed, everything
+    everyday_per_day: Money | None  # the pace: everyday_spent over the days elapsed
+    # The room over the days left (zero when there is no room), and over the days left from
+    # tomorrow (this month only, when more than one day is left). The budget's room with a
+    # budget, the headroom (which counts pay not yet in) without one; None when not applicable.
+    budget_room_per_day: Money | None
+    budget_room_per_day_from_tomorrow: Money | None
+    headroom_per_day: Money | None
+    headroom_per_day_from_tomorrow: Money | None
+    # The room per day as a share of the pace, whole percent, and its band; None with no pace
+    # (nothing spent yet, or no month so far) or no per-day room.
+    room_vs_pace_percent: int | None
+    room_vs_pace: Band | None
 
     @property
     def last_day(self) -> date:
@@ -139,6 +186,77 @@ def plain(amount: Money, *, signed: bool = False) -> str:
     if shown < 0:
         return f"-{text}"
     return f"+{text}" if signed else text
+
+
+def per_day(total: Money, days: int) -> Money:
+    """``total`` over ``days``, to the currency's minor unit, halves rounded up."""
+    unit = Decimal(1).scaleb(-minor_units(total.currency))
+    return Money((total.amount / days).quantize(unit, rounding=ROUND_HALF_UP), total.currency)
+
+
+def room_per_day(room: Money, days: int) -> Money:
+    """What ``room`` leaves per day: zero when there is no room, never a negative spend."""
+    return per_day(room, days) if room.is_positive else Money.zero(room.currency)
+
+
+def compare_pace(room_day: Money, pace: Money) -> tuple[int, Band] | None:
+    """The room per day as a whole percent of the pace, and its band. None with no pace."""
+    if not pace.is_positive:
+        return None
+    percent = int((room_day.amount / pace.amount * 100).quantize(Decimal(1), ROUND_HALF_UP))
+    if percent < FAR_BELOW_PERCENT:
+        return percent, "far_below"
+    if percent < BELOW_PERCENT:
+        return percent, "below"
+    if percent <= ABOUT_PERCENT:
+        return percent, "about"
+    return percent, "above" if percent < FAR_ABOVE_PERCENT else "far_above"
+
+
+@dataclass(frozen=True, slots=True)
+class Scheduled:
+    """A scheduled payment or subscription set up in Nexus, to look for in the month's spending:
+    ``times`` due dates in the month."""
+
+    name: str
+    amount: Money
+    times: int
+
+
+@dataclass(frozen=True, slots=True)
+class Spend:
+    """One logged expense of the month, as logged and in the home currency."""
+
+    counterparty: str | None
+    amount: Money
+    home: Money
+
+
+def scheduled_in(
+    planned: Iterable[Scheduled], spends: Sequence[Spend], currency: str
+) -> tuple[Money, list[str]]:
+    """The scheduled payments found in the month's spending, and their names. A payment is found
+    in an expense of the same amount, under a name that shares a word with its own; each expense
+    is used once, and a payment at most as often as it falls due."""
+    total = Money.zero(currency)
+    names: list[str] = []
+    used: set[int] = set()
+    for p in planned:
+        left = p.times
+        for i, spend in enumerate(spends):
+            if left == 0:
+                break
+            if (
+                i not in used
+                and spend.amount == p.amount
+                and shares_a_name(spend.counterparty, p.name)
+            ):
+                used.add(i)
+                left -= 1
+                total = total + spend.home
+                if p.name not in names:
+                    names.append(p.name)
+    return total, names
 
 
 def sum_expected(items: Iterable[OutlookItem], currency: str) -> Expectations:
@@ -222,9 +340,12 @@ def build_outlook(
     unconverted: Sequence[Money] = (),
     budget_limit: Money | None = None,
     budget_spent: Money | None = None,
+    scheduled_spent: Money | None = None,
+    scheduled_names: Sequence[str] = (),
 ) -> MonthOutlook:
     """The month's figures from its parts. Pure: all the arithmetic is here. The budget
-    figures are worked out only when both ``budget_limit`` and ``budget_spent`` are given."""
+    figures are worked out only when both ``budget_limit`` and ``budget_spent`` are given.
+    ``scheduled_spent`` is the part of ``spent`` that is scheduled payments (``scheduled_in``)."""
     expected = sum_expected(items, currency)
     first = month_start(month)
     this_month = month_start(today)
@@ -256,6 +377,42 @@ def build_outlook(
     else:
         budget_limit = budget_spent = None
     pay, next_pay_day = pay_still_to_come(items, currency)
+
+    last_day = next_month_start(first) - timedelta(days=1)
+    month_days = (last_day - first).days + 1
+    days_left = (
+        None
+        if status == "past"
+        else (month_days if status == "future" else (last_day - today).days + 1)
+    )
+    days_elapsed = (
+        None
+        if status == "future"
+        else (month_days if status == "past" else (today - first).days + 1)
+    )
+    scheduled = zero if scheduled_spent is None else scheduled_spent.min(spent)
+    everyday = spent - scheduled
+    spent_day = everyday_day = None
+    if days_elapsed is not None:
+        spent_day, everyday_day = per_day(spent, days_elapsed), per_day(everyday, days_elapsed)
+    # The room over the days left, and over the days left from tomorrow (this month only).
+    tomorrow = (
+        days_left - 1 if status == "current" and days_left is not None and days_left > 1 else None
+    )
+    budget_day = budget_day_tomorrow = headroom_day = headroom_day_tomorrow = None
+    compared: tuple[int, Band] | None = None
+    if days_left is not None:
+        if room is not None:
+            budget_day = room_per_day(room, days_left)
+            budget_day_tomorrow = room_per_day(room, tomorrow) if tomorrow else None
+            if everyday_day is not None:
+                compared = compare_pace(budget_day, everyday_day)
+        elif budget_limit is None:
+            headroom = overall if overall.is_positive else zero
+            headroom_day = room_per_day(headroom, days_left)
+            headroom_day_tomorrow = room_per_day(headroom, tomorrow) if tomorrow else None
+            if everyday_day is not None:
+                compared = compare_pace(headroom_day, everyday_day)
     return MonthOutlook(
         month=first,
         today=today,
@@ -288,6 +445,19 @@ def build_outlook(
         budget_adjustments=purchases,
         pay_not_yet_in=pay,
         next_pay_day=next_pay_day,
+        days_left=days_left,
+        days_elapsed=days_elapsed,
+        scheduled_spent=scheduled,
+        scheduled_names=list(scheduled_names) if scheduled.is_positive else [],
+        everyday_spent=everyday,
+        spent_per_day=spent_day,
+        everyday_per_day=everyday_day,
+        budget_room_per_day=budget_day,
+        budget_room_per_day_from_tomorrow=budget_day_tomorrow,
+        headroom_per_day=headroom_day,
+        headroom_per_day_from_tomorrow=headroom_day_tomorrow,
+        room_vs_pace_percent=compared[0] if compared else None,
+        room_vs_pace=compared[1] if compared else None,
     )
 
 
@@ -304,6 +474,66 @@ def parse_month(text: str | None, today: date) -> date:
     if ahead > MAX_MONTHS_AHEAD:
         raise InvalidInput(f"at most {MAX_MONTHS_AHEAD} months ahead")
     return first
+
+
+async def scheduled_spending(
+    uow: UowFactory,
+    rates: RateSource,
+    user: User,
+    first: date,
+    until: date,
+    tz: ZoneInfo,
+) -> tuple[Money, list[str]]:
+    """The scheduled payments and subscriptions set up in Nexus found in the user's expenses from
+    ``first`` to ``until`` (a day of the same month): how much, in the home currency, and which.
+    Expenses that were split or repaid are left out (what the user spent on them is not their
+    amount), and so are bills with no amount: those are not found, so they stay in the pace."""
+    home = user.home_currency
+    last_day = next_month_start(first) - timedelta(days=1)
+    async with uow() as tx:
+        bills = await tx.planning.list_bills(user.id)
+        subscriptions = await tx.planning.list_subscriptions(user.id)
+        page = await tx.ledger.list_transactions(
+            user.id,
+            LedgerQuery(
+                direction=Direction.OUT,
+                status=TransactionStatus.CONFIRMED,
+                start=datetime.combine(first, time(), tzinfo=tz),
+                end=datetime.combine(until + timedelta(days=1), time(), tzinfo=tz),
+                limit=_SCHEDULED_POOL,
+            ),
+        )
+        shared = await tx.ledger.lineage(user.id, [t.id for t in page.items])
+    planned = [
+        Scheduled(b.name, b.amount, len(due_dates(b.anchor, b.cadence, first, last_day)))
+        for b in bills
+        if b.amount is not None and b.spending and b.wallet_id is None
+    ]
+    for sub in subscriptions:
+        if sub.status is not SubscriptionStatus.ACTIVE:
+            continue
+        # Charges in the month: the last one if it was this month, and those after it.
+        times = 1 if first <= sub.last_charged_on <= last_day else 0
+        charge = next_charge(sub.cadence, sub.last_charged_on)
+        while charge <= last_day:
+            times += charge >= first
+            charge = next_charge(sub.cadence, charge)
+        planned.append(Scheduled(sub.name, sub.amount, times))
+    mine = [t for t in page.items if t.id not in shared]
+    found = await fx.rates_for(
+        rates, home, ((t.amount.currency, t.occurred_at.astimezone(tz).date()) for t in mine)
+    )
+    spends = [
+        Spend(t.counterparty, t.amount, home_amount)
+        for t in mine
+        if (
+            home_amount := fx.convert(
+                t.amount, t.occurred_at.astimezone(tz).date(), home, found
+            ).home
+        )
+        is not None
+    ]
+    return scheduled_in([p for p in planned if p.times], spends, home)
 
 
 async def month_outlook(
@@ -342,6 +572,10 @@ async def month_outlook(
         ),
         None,
     )
+    # The scheduled payments among what was spent, for the pace (nothing for a month not begun).
+    scheduled: tuple[Money, list[str]] | None = None
+    if first <= today:
+        scheduled = await scheduled_spending(uow, rates, user, first, min(today, last_day), tz)
     return build_outlook(
         month=first,
         today=today,
@@ -354,4 +588,6 @@ async def month_outlook(
         unconverted=figures.unconverted,
         budget_limit=overall_budget.budget.limit if overall_budget else None,
         budget_spent=overall_budget.spent if overall_budget else None,
+        scheduled_spent=scheduled[0] if scheduled else None,
+        scheduled_names=scheduled[1] if scheduled else (),
     )

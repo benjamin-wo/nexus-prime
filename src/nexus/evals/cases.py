@@ -192,6 +192,29 @@ _FILLER = (
 
 _QUIET = ("remember", "noted", "i'll keep", "saved that", "memory")
 
+# A reply that says the ledger has no earlier months than November, when it has August to
+# October. Lowercase; the check ignores case. No "since 1 nov": a reply may say "this month
+# (since 1 Nov)". The apostrophe is left out of "don't have" so a curly one matches too.
+_NO_HISTORY = (
+    "only goes back",
+    "only go back",
+    "goes back to 1 nov",
+    "go back to 1 nov",
+    "goes back to nov",
+    "starts on 1 nov",
+    "starts 1 nov",
+    "begins on 1 nov",
+    "no history",
+    "have history",
+    "have any history",
+    "history to average",
+    "not enough history",
+    "no previous months",
+    "no earlier months",
+    "no data before",
+    "real number",
+)
+
 # A reply that asks again for the amount of the Jumbo dinner the user said they'd send
 # later. The seed has a Jumbo Seafood dinner of its own, so "jumbo" alone proves nothing.
 # Replies after a change say what happened, not how the app works, and write
@@ -2673,5 +2696,111 @@ CASES: tuple[Case, ...] = (
         # bill, or 77.22 less it. The figure isn't required: the question is yes or no.
         reply=(("doesn't", "does not", "isn't", "won't", "not spending", "not count"),),
         never_amounts=(seed.BUDGET_CARD_SUBTRACTED, seed.BUDGET_ONLY_CARD),
+    ),
+    # --- money sense: real bad replies from production, 20 November 2026 ---------------
+    # A user with August to November in the ledger and an overall budget was told (1) there was
+    # no history to average, though August, September and October were there (the money
+    # snapshot of each turn only covers the month, and the model took it for all the data);
+    # (2) that 94 a day was "comfy, well above your usual daily burn" when it was half their
+    # pace, a comparison made up without a figure; (3) that they "could comfortably" save more
+    # than 20% of salary, which the month's spending doesn't show. Graded on outcomes only:
+    # the figures and claims in the reply and no change to the data, never a particular tool.
+    # The seed has August and September in full, nothing in October and 12 days of November
+    # (``seed.SEP_NET`` and ``seed.AUG_NET``: net is received less spent; no moves to savings).
+    Case(
+        "money-sense-save-per-month",
+        "money-sense",
+        _t("how much do i save per month?"),
+        november=True,
+        unchanged=True,
+        # The ledger has August and September in full: a month's net or their average shows the
+        # history was read (an average is a fair answer to "per month").
+        amounts=((seed.AUG_NET, seed.SEP_NET, *seed.SAVE_AVERAGE),),
+        never_say=_NO_HISTORY,
+    ),
+    Case(
+        "money-sense-savings-previous-months",
+        "money-sense",
+        _t("what are my savings for previous months?"),
+        november=True,
+        unchanged=True,
+        amounts=(seed.AUG_NET, seed.SEP_NET),
+        never_say=_NO_HISTORY,
+    ),
+    Case(
+        "money-sense-per-day-over-budget",
+        "money-sense",
+        _t(
+            "how much can i spend for the rest of the month?",
+            "how much is that per day?",
+        ),
+        november=True,
+        budget=True,
+        unchanged=True,
+        # The budget is over once what's due is paid (-305.78): no room, so no per-day figure.
+        reply=(
+            (
+                "over budget",
+                "over by",
+                "already over",
+                "re over",
+                "are over",
+                "is over",
+                "gone over",
+                "went over",
+                "overspent",
+                "exceed",
+                "no room",
+                "nothing",
+                "none",
+                "negative",
+                "zero",
+            ),
+        ),
+        # No per-day figure from the month-end net (2,442.22 over the 18 days left counting
+        # today, or the 17 from tomorrow): that counts the payday still to come.
+        never_amounts=(
+            seed.BUDGET_PROJECTED_PER_DAY,
+            seed.BUDGET_PROJECTED_PER_DAY_FROM_TOMORROW,
+        ),
+        never_say=("comfy", "comfortable", "comfortably", "well above", "plenty"),
+    ),
+    Case(
+        "money-sense-per-day-pace",
+        "money-sense",
+        _t(
+            "how much can i spend for the rest of the month?",
+            "how much is that per day?",
+        ),
+        november=True,
+        unchanged=True,
+        # No budget: the room is the month-end net (2,992.22), which counts the 4,798.00 payday
+        # on the 25th, still to come. The per-day figure is that over the 18 days left counting
+        # today or the 17 from tomorrow, and the reply says what it depends on.
+        amounts=((seed.NOV_PER_DAY, seed.NOV_PER_DAY_FROM_TOMORROW),),
+        reply=(
+            (
+                "payday",
+                "pay day",
+                "salary",
+                "paycheck",
+                "paycheque",
+                "your pay",
+                "25th",
+                "25 nov",
+                "nov 25",
+            ),
+        ),
+    ),
+    Case(
+        "money-sense-how-much-should-i-save",
+        "money-sense",
+        _t("how much should i be saving per month?"),
+        november=True,
+        unchanged=True,
+        # Grounded in their own figures (a month's net or the usual salary), not just a
+        # benchmark; and no "you could comfortably do more" from a part-month's spending.
+        amounts=((seed.AUG_NET, seed.SEP_NET, seed.NOV_PAYDAY),),
+        never_say=("comfortably",),
     ),
 )

@@ -44,6 +44,26 @@ def test_find_likely_moves_is_core_and_owns_the_question() -> None:
     assert "means money in minus money out" in tools["query_ledger"].description
 
 
+def test_money_history_is_core_and_owns_the_saving_questions() -> None:
+    # "How much do I save per month?" was answered from ad-hoc ledger queries and a sum in the
+    # model's head (or with "no history"): the tool that has the months, the averages and the
+    # figures to ground "how much should I save" in is core and says what it answers.
+    assert "money_history" in CORE_TOOLS
+    tools = build_tools(SkillLibrary.load().body)
+    mine = tools["money_history"]
+    assert mine.exposed
+    for question in (
+        "how much do I save",
+        "savings for previous months",
+        "savings rate",
+        "how much should or could I save",
+        "am I saving more than before",
+    ):
+        assert question in mine.description, question
+    # query_ledger's net is the same saving, so the two don't contradict each other.
+    assert "means money in minus money out" in tools["query_ledger"].description
+
+
 async def _skills(agent: object, alice: object) -> dict[str, int]:
     config = {"configurable": {"thread_id": thread_id(alice), "user_id": str(alice)}}  # type: ignore[arg-type]
     state = await agent._graph.aget_state(config)  # type: ignore[attr-defined]

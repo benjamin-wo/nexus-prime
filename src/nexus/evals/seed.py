@@ -137,6 +137,26 @@ BUDGET_PROJECTED = "2442.22"  # NOV_PROJECTED less the insurance and the card bi
 BUDGET_CARD_SUBTRACTED = "-605.78"  # BUDGET_AFTER_DUE less the card bill: the card bill counted
 BUDGET_ONLY_CARD = "-222.78"  # BUDGET_LEFT less just the card bill
 
+# For the ``money-sense`` cases, which reproduce real replies of 20 November 2026 (user with
+# August to November in the ledger). With ``november`` the ledger holds August and September in
+# full, nothing in October and the first twelve days of November. Net = received less spent.
+# August's is ``AUG_NET`` (4,753.22). September: 5,000.00 received (25 Sep) less 460.03 spent.
+# October has no rows (net 0.00). The month's net so far is NOV_NET_SO_FAR (-1,672.78).
+SEP_NET = "4539.97"  # 5,000.00 less SEPT_SPENT (460.03)
+# The two full months averaged: (4,753.22 + 4,539.97) / 2 = 4,646.595, said either way to the cent.
+SAVE_AVERAGE = ("4646.60", "4646.59")
+# "Per day for the rest of the month" on 13 November: the month has 18 days left counting
+# today (13th to 30th) and 17 from tomorrow. Each figure is the amount to spend over the days,
+# rounded to cents the way ``mentions_amount`` reads a figure.
+NOV_DAYS_LEFT = 18
+NOV_DAYS_FROM_TOMORROW = 17
+NOV_PER_DAY = "166.23"  # NOV_PROJECTED / 18 (166.2344...)
+NOV_PER_DAY_FROM_TOMORROW = "176.01"  # NOV_PROJECTED / 17 (176.0129...)
+# With the budget the room is BUDGET_AFTER_DUE (over), so no per-day figure may come from the
+# month-end net the budget case has (BUDGET_PROJECTED, which counts the payday still to come).
+BUDGET_PROJECTED_PER_DAY = "135.68"  # BUDGET_PROJECTED / 18 (135.6788...)
+BUDGET_PROJECTED_PER_DAY_FROM_TOMORROW = "143.66"  # BUDGET_PROJECTED / 17 (143.66 exactly)
+
 # The owner of the shared Japan trip gets this id on top of the case user's.
 OWNER_OFFSET = 5_000_000
 OWNER_NAME = "Alex"

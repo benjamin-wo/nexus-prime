@@ -19,7 +19,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nexus.agent import price_text
 from nexus.agent.confirmation import Ask, entry_text
-from nexus.agent.outlook_text import describe_calculation, describe_outlook
+from nexus.agent.outlook_text import (
+    describe_calculation,
+    describe_money_history,
+    describe_outlook,
+)
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
@@ -32,6 +36,7 @@ from nexus.application import email as email_cases
 from nexus.application import income as income_cases
 from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
+from nexus.application import money_history as history_cases
 from nexus.application import month_outlook as outlook_cases
 from nexus.application import moves as move_cases
 from nexus.application import notifications as notify_cases
@@ -757,7 +762,12 @@ async def _undo(ctx: ToolContext, _: NoArgs) -> ToolResult:
 
 
 class SummaryArgs(Args):
-    start_date: str | None = Field(None, description="YYYY-MM-DD; default: 1st of this month")
+    start_date: str | None = Field(
+        None,
+        description="YYYY-MM-DD. Default: the 1st of this month, or with group_by month the "
+        "start of the ledger (at most 12 months back). A default is not the whole history: "
+        "set it for anything earlier, and the result says how far the ledger goes back",
+    )
     end_date: str | None = Field(None, description="YYYY-MM-DD inclusive; default: today")
 
 
@@ -799,7 +809,12 @@ type DayName = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun", "weekday
 
 
 class QueryArgs(Args):
-    start_date: str | None = Field(None, description="YYYY-MM-DD; default: 1st of this month")
+    start_date: str | None = Field(
+        None,
+        description="YYYY-MM-DD. Default: the 1st of this month, or with group_by month the "
+        "start of the ledger (at most 12 months back). A default is not the whole history: "
+        "set it for anything earlier, and the result says how far the ledger goes back",
+    )
     end_date: str | None = Field(None, description="YYYY-MM-DD inclusive; default: today")
     direction: Literal["out", "in", "move"] = Field(
         "out",
@@ -839,11 +854,49 @@ def _bound(value: str | None) -> Decimal | None:
         raise InvalidInput(f"not an amount: {value!r}") from exc
 
 
-async def _question(ctx: ToolContext, a: QueryArgs) -> question_cases.LedgerQuestion:
+# With group_by month and no start_date, the months shown go back at most this far.
+HISTORY_MONTHS = 12
+
+
+def _default_start(ctx: ToolContext, a: QueryArgs, span: question_cases.LedgerSpan | None) -> date:
+    """The start when none was given: the 1st of this month, or for months the 1st of the
+    ledger's first month, at most HISTORY_MONTHS months (this one included) back."""
+    this_month = ctx.today().replace(day=1)
+    if a.group_by != "month" or span is None:
+        return this_month
+    index = min(span.first.year * 12 + span.first.month, this_month.year * 12 + this_month.month)
+    floor = this_month.year * 12 + this_month.month - (HISTORY_MONTHS - 1)
+    index = max(index, floor) - 1
+    return date(index // 12, index % 12 + 1, 1)
+
+
+def _default_note(start: date, group_by: str | None, span: question_cases.LedgerSpan | None) -> str:
+    """One line for a start the model did not choose, so a default window never reads as the
+    whole history: where the ledger really begins."""
+    months = group_by == "month"
+    if span is None:
+        return f"Period defaulted to {_window(months)}. The ledger is empty."
+    first = f"{span.first:%-d %b %Y}"
+    if span.first >= start:  # the window reaches the first transaction
+        whole = "the whole ledger" if months else "this month"
+        return f"Period defaulted to {whole}. The ledger begins {first}, so that is all of it."
+    return (
+        f"Period defaulted to {_window(months)}. "
+        f"The ledger goes back to {first}: pass start_date for earlier."
+    )
+
+
+def _window(months: bool) -> str:
+    return f"the last {HISTORY_MONTHS} months" if months else "this month"
+
+
+async def _question(
+    ctx: ToolContext, a: QueryArgs, span: question_cases.LedgerSpan | None = None
+) -> question_cases.LedgerQuestion:
     start = (
         day_start(ctx, a.start_date)
         if a.start_date
-        else datetime.combine(ctx.today().replace(day=1), time(), tzinfo=ctx.tz)
+        else datetime.combine(_default_start(ctx, a, span), time(), tzinfo=ctx.tz)
     )
     end = day_start(ctx, a.end_date or ctx.today().isoformat()) + timedelta(days=1)
     uncategorised = a.category is not None and a.category.casefold() in {
@@ -870,7 +923,8 @@ async def _question(ctx: ToolContext, a: QueryArgs) -> question_cases.LedgerQues
         weekdays=weekdays,
         group_by=question_cases.GroupBy(a.group_by) if a.group_by else None,
         measure=question_cases.Measure(a.measure),
-        top=a.top,
+        # Months are listed oldest first and ``top`` cuts the newest: never cut the default window.
+        top=max(a.top, HISTORY_MONTHS) if a.group_by == "month" and not a.start_date else a.top,
         compare_previous=a.compare_previous,
     )
 
@@ -912,7 +966,8 @@ def _group_line(g: question_cases.Group, measure: question_cases.Measure) -> str
 
 
 async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
-    q = await _question(ctx, a)
+    span = None if a.start_date else await question_cases.ledger_span(ctx.uow(), ctx.user)
+    q = await _question(ctx, a, span)
     answer = await question_cases.ask_ledger(ctx.uow, _rates(ctx), ctx.user, q)
     cats = await category_map(ctx)
     wallets = await wallet_map(ctx) if q.direction is Direction.MOVE else None
@@ -922,6 +977,8 @@ async def _query_ledger(ctx: ToolContext, a: QueryArgs) -> ToolResult:
     ]
     head, *notes = _figure_lines(now, ctx.tz)
     lines = [f"{word}, in {answer.currency}, {head}", *notes]
+    if not a.start_date:
+        lines.append(_default_note(q.start.date(), a.group_by, span))
     if q.direction is Direction.MOVE:
         lines.append("These are transfers between the user's own wallets, not spending or income.")
     if q.group_by:
@@ -2130,6 +2187,21 @@ async def _month_outlook(ctx: ToolContext, a: MonthOutlookArgs) -> ToolResult:
         adjustments=[(x.amount, x.label) for x in a.adjustments],
     )
     return ToolResult(describe_outlook(outlook))
+
+
+class MoneyHistoryArgs(Args):
+    months: int = Field(
+        history_cases.DEFAULT_MONTHS,
+        description="How many full months back to show (default 6, at most 12). The current "
+        "month so far is always added, marked as not over.",
+    )
+
+
+async def _money_history(ctx: ToolContext, a: MoneyHistoryArgs) -> ToolResult:
+    history = await history_cases.money_history(
+        ctx.uow, _rates(ctx), ctx.user, now=ctx.now, months=a.months
+    )
+    return ToolResult(describe_money_history(history))
 
 
 class CalculateArgs(Args):
@@ -4239,7 +4311,7 @@ READ_ONLY = frozenset(
         "find_ideas", "find_places",
         "find_transactions", "list_bills", "list_budgets", "list_categories",
         "list_category_rules", "list_ious", "list_subscriptions", "list_trips", "list_wallets",
-        "list_split_habits", "month_outlook", "show_voice",
+        "list_split_habits", "money_history", "month_outlook", "show_voice",
         "find_likely_moves", "load_skill",
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
@@ -4474,6 +4546,10 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "merchant, day, week, month or weekday; rank by total, count, average or largest; "
             "compare with the period before. Read-only. Prefer it for any 'how much', "
             "'how often', 'biggest' or 'compare' question over adding up search results. "
+            "Without start_date the period is only this month (the last 12 months for "
+            "group_by month), not the user's whole history: the result says how far the "
+            "ledger goes back, and start_date reaches earlier. For 'per month' or "
+            "'previous months' use group_by month. "
             "'How much did I save' means money in minus money out for the period (net), not "
             "transfers into a savings wallet, unless the user names that wallet.",
             QueryArgs,
@@ -4644,9 +4720,26 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             "purchase they are considering) as adjustments. With a budget, it opens with the "
             "budget room line: that is the answer to how much can I spend / afford / left to "
             "spend, never the month-end net, which counts pay not yet received (never money "
-            "to spend). Say plainly when the budget is tight or over. Not an account balance.",
+            "to spend). Say plainly when the budget is tight or over. It also gives days left, "
+            "the room per day and the pace of everyday spending so far, and how they compare: "
+            "use it for how much is that per day, daily, days left, my pace, how does that "
+            "compare to my usual. Not an account balance.",
             MonthOutlookArgs,
             _month_outlook,
+        ),
+        ToolSpec(
+            "money_history",
+            "What the user saves, month by month, worked out exactly in code: for each of the "
+            "last full months (6 by default) received, spent, net (received less spent, which "
+            "is what saved means), what moved to their own savings or investment wallets and "
+            "the saving rate, plus this month so far; then the average net and saving rate, "
+            "the best and worst month, and the figures to ground a suggestion in (average "
+            "spent, usual salary, 20% of it, their average net as a share of it). Use it for "
+            "how much do I save (per month), savings for previous months, savings rate, how "
+            "much should or could I save, am I saving more than before. Not an account "
+            "balance.",
+            MoneyHistoryArgs,
+            _money_history,
         ),
         ToolSpec(
             "calculate",
