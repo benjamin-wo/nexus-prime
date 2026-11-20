@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, type Memory } from "../api";
+import { ConfirmBox } from "../components/ConfirmBox";
 
 const KIND_LABEL: Record<Memory["kind"], string> = {
   fact: "About you",
@@ -16,14 +17,20 @@ function day(iso: string): string {
 
 function MemoryRow({ memory, onChanged }: { memory: Memory; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // A forgotten memory can't be brought back, so it asks first, then says if it didn't work.
   async function forget() {
     setBusy(true);
+    setError(null);
     try {
       await api(`/memories/${memory.id}`, { method: "DELETE" });
-    } finally {
-      setBusy(false);
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't forget that");
+      setConfirming(false);
+      setBusy(false);
     }
   }
 
@@ -33,9 +40,26 @@ function MemoryRow({ memory, onChanged }: { memory: Memory; onChanged: () => voi
         {memory.happened_on && <span className="caption">{day(memory.happened_on)} · </span>}
         {memory.text}
       </span>
-      <button type="button" className="btn btn-ghost" onClick={forget} disabled={busy} aria-label={`Forget: ${memory.text}`}>
-        Forget
-      </button>
+      {!confirming && (
+        <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)} aria-label={`Forget: ${memory.text}`}>
+          Forget
+        </button>
+      )}
+      {confirming && (
+        <ConfirmBox
+          label={`Forget: ${memory.text}`}
+          question="Forget this? Nexus won't remember it."
+          confirm="Forget"
+          busy={busy}
+          onConfirm={() => void forget()}
+          onKeep={() => setConfirming(false)}
+        />
+      )}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
     </li>
   );
 }
@@ -45,15 +69,22 @@ export function MemorySection() {
   const client = useQueryClient();
   const memories = useQuery({ queryKey: ["memories"], queryFn: () => api<Memory[]>("/memories") });
   const [confirmAll, setConfirmAll] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function refresh() {
     void client.invalidateQueries({ queryKey: ["memories"] });
   }
 
   async function forgetAll() {
-    await api("/memories", { method: "DELETE" });
-    setConfirmAll(false);
-    refresh();
+    setError(null);
+    try {
+      await api("/memories", { method: "DELETE" });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't forget everything");
+    } finally {
+      setConfirmAll(false);
+    }
   }
 
   const items = memories.data ?? [];
@@ -82,6 +113,11 @@ export function MemorySection() {
           </div>
         );
       })}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
       {items.length > 0 && (
         <div className="memory-foot">
           {confirmAll ? (

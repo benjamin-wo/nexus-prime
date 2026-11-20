@@ -28,6 +28,8 @@ export type BriefInput = {
   lastMonthToDate?: Money;
   trip?: TripDetail | null;
   needs?: FeedItem[];
+  /** What needs the person could not be loaded: the brief must not say that nothing does. */
+  needsFailed?: boolean;
   /** This month's plan: what's left to spend once what's still due is paid. */
   plan?: BudgetMonth;
   /** The biggest held mover of the latest session, when notable (see `notableMove`). */
@@ -105,6 +107,7 @@ export function brief({
   lastMonthToDate,
   trip,
   needs,
+  needsFailed,
   plan,
   move,
 }: BriefInput): Part[] {
@@ -224,7 +227,9 @@ export function brief({
     });
   if (!parts.length)
     parts.push({
-      text: "Nothing needs you right now. Ask me anything about your money, plans or trips.",
+      text: needsFailed
+        ? "Ask me anything about your money, plans or trips."
+        : "Nothing needs you right now. Ask me anything about your money, plans or trips.",
     });
   return parts;
 }

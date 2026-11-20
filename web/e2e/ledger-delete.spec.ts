@@ -9,7 +9,13 @@ type Point = { x: number; y: number };
 
 async function centre(target: Locator): Promise<Point> {
   await target.scrollIntoViewIfNeeded();
-  const box = (await target.boundingBox())!;
+  let box = (await target.boundingBox())!;
+  // A row only partly in view may have its middle under the bottom bar, which fingers can't get through.
+  const nav = await target.page().locator(".bottom-nav").boundingBox();
+  if (nav && box.y + box.height / 2 > nav.y - 8) {
+    await target.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    box = (await target.boundingBox())!;
+  }
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 

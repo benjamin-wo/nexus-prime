@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, type Bill, type Me, type Wallet } from "../api";
+import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
 
 const CADENCES = [
@@ -251,7 +252,7 @@ export function BillsSection({ me }: { me: Me }) {
         <span className="caption">Reminders 7, 3 and 1 days before</span>
       </div>
       {bills.isLoading && <p className="state">Loading…</p>}
-      {bills.isError && <p className="state error-text">Couldn't load bills.</p>}
+      {bills.isError && <LoadError message="Couldn't load scheduled payments." query={bills} />}
       {bills.data?.length === 0 && (
         <p className="state">Nothing scheduled yet. Add rent, a bill, a regular investment or a transfer below.</p>
       )}
@@ -267,6 +268,7 @@ export function BillsSection({ me }: { me: Me }) {
           ))}
         </ul>
       )}
+      {!bills.isError && (
       <form className="budget-add plan-add" onSubmit={add} aria-label="Add a scheduled payment">
         <label className="field">
           Name
@@ -333,6 +335,7 @@ export function BillsSection({ me }: { me: Me }) {
           Add
         </button>
       </form>
+      )}
       {error && (
         <p className="error-text" role="alert">
           {error}

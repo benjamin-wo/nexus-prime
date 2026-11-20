@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, type Subscription, type Subscriptions } from "../api";
+import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
 
 const PER = { weekly: "week", monthly: "month", yearly: "year" } as const;
@@ -103,7 +104,7 @@ export function SubscriptionsSection() {
         {total && <span className="caption">About {total} a month</span>}
       </div>
       {subs.isLoading && <p className="state">Loading…</p>}
-      {subs.isError && <p className="state error-text">Couldn't load subscriptions.</p>}
+      {subs.isError && <LoadError message="Couldn't load subscriptions." query={subs} />}
       {data && data.proposed.length > 0 && (
         <>
           <h3 className="caption">Looks recurring. Track it?</h3>

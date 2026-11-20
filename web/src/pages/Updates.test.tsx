@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -121,5 +121,140 @@ describe("investment notification settings", () => {
     await userEvent.tab();
     expect(puts()).toEqual([]);
     expect(screen.getByLabelText("Messages a day")).toHaveValue(6);
+  });
+});
+
+/** The server, with answers held back until the test lets each one go. Each request is applied when it
+ * arrives (as a server does), and its answer is the state at that moment, so answers can land out of order. */
+function slowServer() {
+  let state = { ...base };
+  const pending: { body: Record<string, unknown>; answer: () => void; refuse: () => void }[] = [];
+  mockApi({
+    "GET /notifications": () => state,
+    "PUT /notifications": (body) =>
+      new Promise((resolve) => {
+        state = { ...state, ...(body as object) } as Updates;
+        const snapshot = state;
+        pending.push({
+          body: body as Record<string, unknown>,
+          answer: () => resolve(snapshot),
+          refuse: () => resolve(new Response(JSON.stringify({ detail: "that time isn't allowed" }), { status: 422, headers: { "Content-Type": "application/json" } })),
+        });
+      }),
+  });
+  renderWithProviders(<UpdatesSection />);
+  return { pending };
+}
+
+describe("time fields save what was typed", () => {
+  it("sends nothing while a time is being typed, then one save when the field is left", async () => {
+    const { pending } = slowServer();
+    const field = await screen.findByLabelText("Daily summary at");
+    act(() => field.focus());
+    // 07 hours, then 45 minutes: each step is already a whole time to the browser.
+    for (const typed of ["07:00", "07:45"]) fireEvent.change(field, { target: { value: typed } });
+    expect(field).toHaveValue("07:45");
+    expect(pending).toHaveLength(0);
+
+    act(() => field.blur());
+    await waitFor(() => expect(pending).toHaveLength(1));
+    expect(pending[0].body).toEqual({ frequency: "daily", daily_at: "07:45" });
+    act(() => pending[0].answer());
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+    expect(screen.getByLabelText("Daily summary at")).toHaveValue("07:45");
+  });
+
+  it("Enter saves, and leaving the field afterwards does not save it twice", async () => {
+    const { pending } = slowServer();
+    const field = await screen.findByLabelText("Daily summary at");
+    act(() => field.focus());
+    fireEvent.change(field, { target: { value: "07:45" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    act(() => field.blur());
+    await waitFor(() => expect(pending).toHaveLength(1));
+    act(() => pending[0].answer());
+    await screen.findByText("Saved");
+    expect(pending).toHaveLength(1);
+  });
+
+  it("keeps the last time typed when answers come back out of order", async () => {
+    const { pending } = slowServer();
+    const field = await screen.findByLabelText("Daily summary at");
+    // A picker changes the value without the field being focused: each change is saved at once.
+    fireEvent.change(field, { target: { value: "07:00" } });
+    fireEvent.change(field, { target: { value: "07:30" } });
+    fireEvent.change(field, { target: { value: "07:45" } });
+    await waitFor(() => expect(pending.map((p) => p.body.daily_at)).toEqual(["07:00", "07:30", "07:45"]));
+
+    // The last answer first, then the older ones: nothing puts an older time back.
+    act(() => pending[2].answer());
+    await screen.findByText("Saved");
+    act(() => pending[0].answer());
+    act(() => pending[1].answer());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.getByLabelText("Daily summary at")).toHaveValue("07:45");
+  });
+
+  it("does not overwrite a field that has focus or a newer draft with the answer to an earlier save", async () => {
+    const { pending } = slowServer();
+    const field = await screen.findByLabelText("Daily summary at");
+    act(() => field.focus());
+    fireEvent.change(field, { target: { value: "07:45" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(pending).toHaveLength(1));
+
+    // Still typing when the answer to 07:45 arrives.
+    fireEvent.change(field, { target: { value: "08:15" } });
+    act(() => pending[0].answer());
+    await screen.findByText("Saved");
+    expect(screen.getByLabelText("Daily summary at")).toHaveValue("08:15");
+
+    act(() => field.blur());
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(pending[1].body).toEqual({ frequency: "daily", daily_at: "08:15" });
+    act(() => pending[1].answer());
+    await waitFor(() => expect(screen.getByLabelText("Daily summary at")).toHaveValue("08:15"));
+  });
+
+  it("saves quiet hours From and To on their own, each as typed", async () => {
+    const { pending } = slowServer();
+    const from = await screen.findByLabelText("From");
+    const to = screen.getByLabelText("To");
+    act(() => from.focus());
+    fireEvent.change(from, { target: { value: "22:00" } });
+    fireEvent.change(from, { target: { value: "22:30" } });
+    act(() => to.focus());
+    fireEvent.change(to, { target: { value: "07:15" } });
+    act(() => to.blur());
+    await waitFor(() => expect(pending.map((p) => p.body)).toEqual([{ quiet_start: "22:30" }, { quiet_end: "07:15" }]));
+    act(() => pending[1].answer());
+    act(() => pending[0].answer());
+    await waitFor(() => expect(screen.getAllByText("Saved")).toHaveLength(2));
+    expect(screen.getByLabelText("From")).toHaveValue("22:30");
+    expect(screen.getByLabelText("To")).toHaveValue("07:15");
+  });
+
+  it("shows a refusal next to the field and keeps the time that was typed", async () => {
+    const { pending } = slowServer();
+    const to = await screen.findByLabelText("To");
+    act(() => to.focus());
+    fireEvent.change(to, { target: { value: "07:15" } });
+    act(() => to.blur());
+    await waitFor(() => expect(pending).toHaveLength(1));
+    act(() => pending[0].refuse());
+    expect(await screen.findByRole("alert")).toHaveTextContent("that time isn't allowed");
+    expect(screen.getByLabelText("To")).toHaveValue("07:15");
+    expect(screen.getByLabelText("To")).toBeInvalid();
+    expect(screen.queryByText("Saved")).toBeNull();
+  });
+
+  it("goes back to the saved time when the field is left empty", async () => {
+    const { pending } = slowServer();
+    const field = await screen.findByLabelText("Daily summary at");
+    act(() => field.focus());
+    fireEvent.change(field, { target: { value: "" } });
+    act(() => field.blur());
+    expect(pending).toHaveLength(0);
+    expect(screen.getByLabelText("Daily summary at")).toHaveValue("21:00");
   });
 });

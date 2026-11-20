@@ -373,8 +373,69 @@ describe("Home: buttons that settle an item", () => {
     });
     renderHome();
     await userEvent.setup().click(await screen.findByRole("button", { name: "Log it" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("that email was already dealt with");
+    // The cards whose requests the test leaves unmocked say so too: this alert is the one in Needs you.
+    expect(await within(await screen.findByRole("region", { name: "Needs you" })).findByRole("alert")).toHaveTextContent("that email was already dealt with");
     expect(screen.getByRole("button", { name: "Log it" })).toBeEnabled();
+  });
+});
+
+describe("Home: when a load fails", () => {
+  const failing = (status = 500) => new Response(JSON.stringify({ detail: "boom" }), { status });
+
+  it("never says nothing needs you when what needs you could not be loaded, and Retry fetches it again", async () => {
+    let up = false;
+    mockApi({
+      "GET /home": () => (up ? [item("Rent due tomorrow", "soon")] : failing()),
+      "GET /runs": () => [],
+      "GET /summary": () => summary,
+      "GET /spending/months": () => spending,
+      "GET /budgets": () => [],
+      "GET /budgets/month": () => null,
+      "GET /investments": () => empty,
+      "GET /investments/today": () => session([]),
+      "GET /travel/next": () => null,
+      "GET /setup": () => setup([true, true, true, true]),
+    });
+    renderHome();
+    const needs = await screen.findByRole("region", { name: "Needs you" });
+    expect(await within(needs).findByRole("alert")).toHaveTextContent("Couldn't load what needs you.");
+    const hero = screen.getByRole("region", { name: "Nexus" });
+    await waitFor(() => expect(hero).toHaveTextContent("SGD 412.00"));
+    expect(hero).toHaveTextContent("Ask me anything");
+    expect(screen.queryByText(/Nothing needs you right now/)).toBeNull();
+    up = true;
+    await userEvent.setup().click(within(needs).getByRole("button", { name: "Retry" }));
+    expect(await within(needs).findByText("Rent due tomorrow")).toBeInTheDocument();
+    expect(hero).toHaveTextContent("1 thing needs you below.");
+  });
+
+  it("says so, with a Retry, where the month's money and the other cards would be", async () => {
+    mockApi({
+      "GET /home": () => [],
+      "GET /runs": () => [],
+      "GET /summary": () => failing(),
+      "GET /spending/months": () => spending,
+      "GET /budgets": () => [],
+      "GET /budgets/month": () => null,
+      "GET /investments": () => failing(),
+      "GET /investments/today": () => session([]),
+      "GET /travel/next": () => failing(),
+      "GET /setup": () => setup([true, true, true, true]),
+    });
+    renderHome();
+    const money = await screen.findByRole("region", { name: "Money this month" });
+    expect(await within(money).findByRole("alert")).toHaveTextContent("Couldn't load this month's spending.");
+    expect(within(money).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(money).not.toHaveTextContent("Loading…");
+    const hero = screen.getByRole("region", { name: "Nexus" });
+    expect(within(hero).getByRole("alert")).toHaveTextContent("Couldn't load this month's spending.");
+    expect(hero).not.toHaveTextContent("…");
+    const portfolio = screen.getByRole("region", { name: "Portfolio today" });
+    expect(await within(portfolio).findByRole("alert")).toHaveTextContent("Couldn't load your portfolio.");
+    expect(portfolio).not.toHaveTextContent("No holdings yet.");
+    const trip = screen.getByRole("region", { name: "Next trip" });
+    expect(await within(trip).findByRole("alert")).toHaveTextContent("Couldn't load your next trip.");
+    expect(trip).not.toHaveTextContent("No trip coming up.");
   });
 });
 

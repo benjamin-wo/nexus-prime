@@ -4,17 +4,34 @@ import type { Booking, Budget, Money, Portfolio, TripDetail } from "../api";
 import { type Pace } from "../brief";
 import { Block } from "../components/Block";
 import { Icon } from "../components/Icon";
+import { LoadError } from "../components/LoadError";
 import { PriceWhen } from "../components/PriceWhen";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
 import { daySpot, spotsOf } from "./TripArrange";
 import { landingOn, landsOnly, leavingOn, todayIso } from "./TripBits";
 
 /* Home's small cards: the glance column and the trip card for a trip that is on. Each is
- * given what it shows, so Home owns the queries. */
+ * given what it shows, so Home owns the queries; a glance card is also given its query, to say
+ * when it failed and to retry it. */
+
+type Query = { isError: boolean; isFetching: boolean; refetch: () => unknown };
 
 /** This month's spending and how it is going, against the overall budget or else last
  * month by this date. */
-export function MoneyGlance({ spent, overall, pace }: { spent?: Money; overall?: Budget; pace: Pace | null }) {
+export function MoneyGlance({
+  spent,
+  query,
+  partial = false,
+  overall,
+  pace,
+}: {
+  spent?: Money;
+  query: Query;
+  /** The budget or last month's spending could not be loaded, so a missing comparison is not "no budget". */
+  partial?: boolean;
+  overall?: Budget;
+  pace: Pace | null;
+}) {
   return (
     <Block
       id="glance-money"
@@ -27,7 +44,7 @@ export function MoneyGlance({ spent, overall, pace }: { spent?: Money; overall?:
       }
     >
       {!spent ? (
-        <p className="state">Loading…</p>
+        query.isError ? <LoadError message="Couldn't load this month's spending." query={query} /> : <p className="state">Loading…</p>
       ) : (
         <>
           <span className="glance-figure">{formatMoney(spent)}</span>
@@ -45,7 +62,7 @@ export function MoneyGlance({ spent, overall, pace }: { spent?: Money; overall?:
             </div>
           )}
           {pace && <p className="caption">{pace.detail}</p>}
-          {!pace && <p className="muted">Set a budget on the Budgets page to see how it is going.</p>}
+          {!pace && !partial && <p className="muted">Set a budget on the Budgets page to see how it is going.</p>}
         </>
       )}
     </Block>
@@ -53,7 +70,7 @@ export function MoneyGlance({ spent, overall, pace }: { spent?: Money; overall?:
 }
 
 /** The portfolio's value in the home currency and how it moved in the latest session. */
-export function PortfolioGlance({ portfolio }: { portfolio?: Portfolio }) {
+export function PortfolioGlance({ portfolio, query }: { portfolio?: Portfolio; query: Query }) {
   const totals = portfolio?.totals;
   return (
     <Block
@@ -67,7 +84,7 @@ export function PortfolioGlance({ portfolio }: { portfolio?: Portfolio }) {
       }
     >
       {!portfolio ? (
-        <p className="state">Loading…</p>
+        query.isError ? <LoadError message="Couldn't load your portfolio." query={query} /> : <p className="state">Loading…</p>
       ) : portfolio.holdings.length === 0 ? (
         <p className="muted">
           No holdings yet. <Link to="/investment">Add your stocks</Link>.
@@ -91,7 +108,7 @@ export function PortfolioGlance({ portfolio }: { portfolio?: Portfolio }) {
 }
 
 /** The trip that is coming up: "Tokyo in 12 days", or a way to plan one. */
-export function TripGlance({ detail }: { detail?: TripDetail | null }) {
+export function TripGlance({ detail, query }: { detail?: TripDetail | null; query: Query }) {
   const t = detail?.trip;
   const coming = t && t.status === "upcoming" ? t : null;
   const gaps = detail?.ready.nights_without_stay.length ?? 0;
@@ -108,7 +125,9 @@ export function TripGlance({ detail }: { detail?: TripDetail | null }) {
         ) : undefined
       }
     >
-      {detail === undefined ? (
+      {query.isError && !detail ? (
+        <LoadError message="Couldn't load your next trip." query={query} />
+      ) : detail === undefined ? (
         <p className="state">Loading…</p>
       ) : coming ? (
         <>

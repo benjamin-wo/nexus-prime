@@ -823,6 +823,7 @@ test("telegram updates default to an end-of-day summary and can be changed", asy
   await expect(choice).toHaveValue("daily");
   await expect(card.getByText("You get a summary of your transactions once a day at 9pm.")).toBeVisible();
   await card.getByLabel("Daily summary at").fill("23:59");
+  await card.getByLabel("Daily summary at").press("Enter");
   await expect(card.getByText("You get a summary of your transactions once a day at 11:59pm.")).toBeVisible();
   await choice.selectOption("instant");
   await expect(card.getByLabel("Daily summary at")).toBeHidden();
@@ -938,7 +939,7 @@ test("the cog opens Settings, which is grouped, and Budgets keeps only budgeting
   await page.getByRole("link", { name: "Settings" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
-  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data"]);
+  await expect(page.locator("h2.section-title")).toHaveText(["Preferences", "Notifications", "Connections", "Your data", "Account"]);
   for (const name of ["Telegram updates", "Shared trips", "Receipts by email", "Import a statement", "Categories", "Wallets", "Category rules", "What Nexus remembers"])
     await expect(page.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
   // Each one opens on its own page.
@@ -1014,6 +1015,7 @@ test("see and forget what Nexus remembers", async ({ page }) => {
   await expect(card.getByText("Ann is the user's sister.")).toBeVisible();
   await expect(card.getByText(/27 Sep|Sep 27/)).toBeVisible();
   await card.getByRole("button", { name: "Forget: Ann is the user's sister." }).click();
+  await card.getByRole("group", { name: "Forget: Ann is the user's sister." }).getByRole("button", { name: "Forget" }).click();
   await expect(card.getByText("Ann is the user's sister.")).toHaveCount(0);
   await card.getByRole("button", { name: "Forget everything" }).click();
   await card.getByRole("button", { name: "Forget all" }).click();
@@ -1202,6 +1204,7 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("12");
   await holdings.getByRole("button", { name: "Remove AAPL" }).click();
+  await holdings.getByRole("group", { name: "Remove AAPL" }).getByRole("button", { name: "Remove" }).click();
   await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
   await page.goto("/");
   const glance = page.getByRole("region", { name: "Portfolio today" });
@@ -1441,8 +1444,10 @@ test("big move alerts, quiet hours and the morning summary are saved one field a
   await expect(card.getByText("At 8am after each US trading day.")).toBeVisible();
 
   await card.getByLabel("From", { exact: true }).fill("22:30");
+  await card.getByLabel("From", { exact: true }).press("Enter");
   await expect.poll(() => puts).toEqual([{ quiet_start: "22:30" }]);
   await card.getByLabel("To", { exact: true }).fill("07:15");
+  await card.getByLabel("To", { exact: true }).press("Enter");
   await expect.poll(() => puts).toEqual([{ quiet_start: "22:30" }, { quiet_end: "07:15" }]);
 
   const move = card.getByLabel("Big move alerts (%)");
@@ -1849,7 +1854,7 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await expect(itinerary.getByRole("form", { name: "Change the entry" })).toHaveCount(0);
   await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toBeVisible();
   await expect(itinerary).toContainText("1-2-3 Ginza");
-  await dinner.click({ position: { x: 6, y: 3 } }); // the open part below takes its own taps
+  await dinner.click({ position: { x: 150, y: 3 } }); // the open part below takes its own taps, and the drag handle at the left has a 44 px reach on a phone
   await expect(dinner).toHaveAttribute("aria-expanded", "false");
   await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toHaveCount(0);
   await editEntry(page, "Dinner at Sushi Ten");
@@ -1858,9 +1863,17 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await edit.getByRole("button", { name: "Save" }).click();
   await expect(itinerary.getByRole("list", { name: /^Day 3/ })).toContainText("20:00");
 
-  page.once("dialog", (d) => void d.accept());
+  // Removing asks in the page (no browser dialog); Keep leaves the plan alone.
   await editEntry(page, "Dinner at Sushi Ten");
-  await itinerary.getByRole("form", { name: "Change the entry" }).getByRole("button", { name: "Remove" }).click();
+  const change = itinerary.getByRole("form", { name: "Change the entry" });
+  await change.getByRole("button", { name: "Remove" }).click();
+  const ask = change.getByRole("group", { name: "Remove Dinner at Sushi Ten" });
+  await expect(ask).toContainText("Take Dinner at Sushi Ten off the trip?");
+  await ask.getByRole("button", { name: "Keep" }).click();
+  await expect(ask).toHaveCount(0);
+  expect(state.plans).toHaveLength(1);
+  await change.getByRole("button", { name: "Remove" }).click();
+  await ask.getByRole("button", { name: "Remove" }).click();
   await expect(itinerary).not.toContainText("Dinner at Sushi Ten");
   await expect.poll(() => state.plans).toEqual([]);
 
@@ -2245,7 +2258,6 @@ test("a trip's day is one panel: its weather, tonight's stay, and the plans to e
 
 test("a trip's plan is shared by a read-only link that shows no money, references or notes", async ({ page }) => {
   const state = await fakeApi(page);
-  page.on("dialog", (d) => void d.accept());
   await addTrip(page, "Tokyo", "2026-11-10", "2026-11-12");
   const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
   state.plans.push(
@@ -2266,8 +2278,14 @@ test("a trip's plan is shared by a read-only link that shows no money, reference
 
   // A new link replaces the old one; stopping turns it off.
   await sheet.getByRole("button", { name: "Make a new link" }).click();
+  // It asks first, in the sheet: Keep the old one changes nothing.
+  await sheet.getByRole("group", { name: "Make a new link" }).getByRole("button", { name: "Keep the old one" }).click();
+  await expect(link).toHaveValue(/\/shared\/fakeShare0001x+$/);
+  await sheet.getByRole("button", { name: "Make a new link" }).click();
+  await sheet.getByRole("group", { name: "Make a new link" }).getByRole("button", { name: "Make a new link" }).click();
   await expect(link).toHaveValue(/\/shared\/fakeShare0002x+$/);
   await sheet.getByRole("button", { name: "Stop sharing" }).click();
+  await sheet.getByRole("group", { name: "Stop sharing" }).getByRole("button", { name: "Stop sharing" }).click();
   await expect(sheet.getByRole("button", { name: "Create a link" })).toBeVisible();
   await expect.poll(() => Object.keys(state.shares).length).toBe(0);
   await sheet.getByRole("button", { name: "Create a link" }).click();
@@ -3087,7 +3105,6 @@ test("when they only owe you, settling has no spending choice", async ({ page })
 
 test("a shared link can leave bookings out, and the shared page says so", async ({ page }) => {
   const state = await fakeApi(page);
-  page.on("dialog", (d) => void d.accept());
   await addTrip(page, "Tokyo", "2026-11-10", "2026-11-12");
   const entry = { trip_id: "trip1", provider: null, segments: [], name: null, day: null, at: null, category: null, place_id: null, scheduled: true, logged: false, manual: true };
   state.plans.push(
@@ -3117,6 +3134,7 @@ test("a shared link can leave bookings out, and the shared page says so", async 
   expect(state.shareBookings.trip1).toBe(false);
   // A new link keeps the choice.
   await sheet.getByRole("button", { name: "Make a new link" }).click();
+  await sheet.getByRole("group", { name: "Make a new link" }).getByRole("button", { name: "Make a new link" }).click();
   await expect(link).toHaveValue(/\/shared\/fakeShare0002x+$/);
   await expect(toggle).not.toBeChecked();
   const shared = new URL(await link.inputValue()).pathname;
@@ -3149,6 +3167,7 @@ test("a shared link can leave bookings out, and the shared page says so", async 
   await sheet.getByRole("switch", { name: "Show bookings (flights, stays, tickets)" }).click();
   await expect.poll(() => state.shareBookings.trip1).toBe(false);
   await sheet.getByRole("button", { name: "Stop sharing" }).click();
+  await sheet.getByRole("group", { name: "Stop sharing" }).getByRole("button", { name: "Stop sharing" }).click();
   await expect(sheet.getByRole("button", { name: "Create a link" })).toBeVisible();
   await expect(sheet.getByRole("switch", { name: "Show bookings (flights, stays, tickets)" })).toBeChecked();
 });

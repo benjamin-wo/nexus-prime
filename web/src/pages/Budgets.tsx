@@ -3,6 +3,7 @@ import { Fragment, type FormEvent, useState } from "react";
 
 import { api, type Budget, type BudgetMonth, type Category, type Me } from "../api";
 import { CategoryTransactions } from "../components/CategoryTransactions";
+import { LoadError } from "../components/LoadError";
 import { NexusMark } from "../components/NexusMark";
 import { level } from "../components/PastBudgets";
 import { formatMoney, isoDay } from "../format";
@@ -239,7 +240,7 @@ export function BudgetsSection({ me }: { me: Me }) {
         {!none && <span className="caption">Monthly in {home} · alerts at 50/80/100%</span>}
       </div>
       {budgets.isLoading && <p className="state">Loading…</p>}
-      {budgets.isError && <p className="state error-text">Couldn't load budgets.</p>}
+      {budgets.isError && <LoadError message="Couldn't load budgets." query={budgets} />}
       {none && (
         <div className="budget-first">
           <h3>Set a monthly limit</h3>
@@ -264,7 +265,8 @@ export function BudgetsSection({ me }: { me: Me }) {
           ))}
         </ul>
       )}
-      {options.length > 0 && (
+      {/* With the list failed, "taken" is unknown: offering to add one could replace a budget that is there. */}
+      {!budgets.isError && options.length > 0 && (
         <form className="budget-add plan-add" onSubmit={add} aria-label="Add a budget">
           <label className="field">
             {none ? "Category" : "Budget for"}

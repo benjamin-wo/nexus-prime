@@ -47,19 +47,20 @@ test("the owner removes someone after a confirmation", async ({ page }) => {
   state.members.trip1 = [{ id: "u-alex", name: "Alex T.", role: "member", added_at: "2026-09-20T03:00:00Z", you: false }];
   await page.reload();
 
-  const asked: string[] = [];
-  page.on("dialog", (d) => {
-    asked.push(d.message());
-    void d.accept();
-  });
   await page.getByRole("button", { name: "Share the plan" }).click();
   const sheet = page.getByRole("dialog", { name: "Share the plan" });
   const people = sheet.getByRole("list", { name: "People on this trip" });
   await expect(people.getByRole("listitem")).toHaveCount(2);
   await expect(people).toContainText("Alex T.");
   await people.getByRole("button", { name: "Remove Alex T." }).click();
+  // It asks in the sheet, not in a browser dialog: Keep removes no one.
+  const ask = sheet.getByRole("group", { name: "Remove Alex T." });
+  await expect(ask).toContainText("Remove Alex T. from this trip? They'll lose access straight away.");
+  await ask.getByRole("button", { name: "Keep" }).click();
+  await expect(people.getByRole("listitem")).toHaveCount(2);
+  await people.getByRole("button", { name: "Remove Alex T." }).click();
+  await ask.getByRole("button", { name: "Remove" }).click();
   await expect(people.getByRole("listitem")).toHaveCount(1);
-  expect(asked).toEqual(["Remove Alex T. from this trip? They'll lose access straight away."]);
   expect(state.members.trip1).toEqual([]);
 });
 
@@ -108,7 +109,6 @@ test("a member's notes are saved through the notes endpoint", async ({ page }) =
 test("a member sees the people, can leave, and is told they're no longer on the trip afterwards", async ({ page }) => {
   const state = await fakeApi(page);
   state.trips = [sharedTrip()];
-  page.on("dialog", (d) => void d.accept());
   await page.goto("/travel");
   // The list keeps their own trips apart from the ones shared with them.
   const shared = page.getByRole("region", { name: "Shared with you" });
@@ -126,12 +126,13 @@ test("a member sees the people, can leave, and is told they're no longer on the 
   await expect(sheet.getByRole("heading", { name: "Read-only link" })).toHaveCount(0);
 
   await sheet.getByRole("button", { name: "Leave trip" }).click();
+  await sheet.getByRole("group", { name: "Leave this trip" }).getByRole("button", { name: "Leave trip" }).click();
   await expect(page).toHaveURL(/\/travel$/);
   expect(state.trips).toHaveLength(0);
 
   // Opening the trip again, from an old link: the server says there is no such trip.
   await page.goto("/travel/trips/shared1");
-  await expect(page.getByText("You're no longer on this trip.")).toBeVisible();
+  await expect(page.getByText("This trip isn't here any more.")).toBeVisible();
   await page.getByRole("link", { name: "Go to your trips" }).click();
   await expect(page).toHaveURL(/\/travel$/);
 });

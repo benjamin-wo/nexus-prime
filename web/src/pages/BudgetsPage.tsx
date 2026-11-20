@@ -1,4 +1,5 @@
 import type { Me } from "../api";
+import { LoadError } from "../components/LoadError";
 import { MonthPicker } from "../components/MonthPicker";
 import { PastBudgets, usePastBudgets } from "../components/PastBudgets";
 import { monthLabel } from "../months";
@@ -33,7 +34,7 @@ export function BudgetsPage({ me }: { me: Me }) {
             <span className="caption">Against today's limits</span>
           </div>
           {budgets.isLoading && <p className="state">Loading…</p>}
-          {budgets.isError && <p className="state error-text">Couldn't load that month's budgets.</p>}
+          {budgets.isError && <LoadError message="Couldn't load that month's budgets." query={budgets} />}
           {budgets.data && (
             <PastBudgets budgets={budgets.data} month={month} timezone={me.user.timezone} />
           )}

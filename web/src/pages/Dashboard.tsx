@@ -17,6 +17,7 @@ import {
 import { Block } from "../components/Block";
 import { CategoryBars } from "../components/CategoryBars";
 import { Icon } from "../components/Icon";
+import { LoadError } from "../components/LoadError";
 import { MonthPicker } from "../components/MonthPicker";
 import { PastBudgets, usePastBudgets } from "../components/PastBudgets";
 import { StatTile } from "../components/StatTile";
@@ -32,6 +33,9 @@ import { AccentTitle } from "../motion";
 import { useMonthParam } from "../useMonthParam";
 
 type Total = Summary["totals"][number];
+
+/** What a card needs of its query to say it failed, and to retry. */
+type Query = { isError: boolean; isFetching: boolean; refetch: () => unknown };
 
 function list(amounts: Money[]): string {
   return amounts.map(formatMoney).join(", ");
@@ -177,14 +181,20 @@ export function SpendingChart({
  * received) and a usual month. The biggest category is "Where it went", beside it. */
 function SpendingByMonth({
   spending,
+  query,
   summary,
+  summaryFailed,
   overall,
   picked,
   past,
   onPick,
 }: {
   spending?: Spending;
+  /** The query behind `spending`. */
+  query: Query;
   summary?: Summary;
+  /** The month's totals could not be loaded, so "Received" is not a figure that is merely late. */
+  summaryFailed: boolean;
   overall?: Budget;
   picked: MonthKey;
   /** The picked month is over: budget left and money received are about this month, so they go. */
@@ -196,7 +206,13 @@ function SpendingByMonth({
   const received = summary?.totals.find((t) => t.direction === "in");
   return (
     <Block id="spending-months" title="Spending by month" className="spend-card">
-      {spending ? <SpendingChart data={spending} picked={picked} onPick={onPick} /> : <p className="state">Loading…</p>}
+      {spending ? (
+        <SpendingChart data={spending} picked={picked} onPick={onPick} />
+      ) : query.isError ? (
+        <LoadError message="Couldn't load spending by month." query={query} />
+      ) : (
+        <p className="state">Loading…</p>
+      )}
       <div className={`mini-tiles${past ? " single" : ""}`}>
         {past ? null : overall ? (
           <div className="mini-tile">
@@ -207,7 +223,7 @@ function SpendingByMonth({
         ) : (
           <div className="mini-tile">
             <span className="caption">Received</span>
-            <span className="mini-value">{received ? formatMoney(received.total) : "…"}</span>
+            <span className="mini-value">{received ? formatMoney(received.total) : summaryFailed ? "–" : "…"}</span>
             <span className="caption">This month</span>
           </div>
         )}
@@ -215,7 +231,9 @@ function SpendingByMonth({
           <span className="caption">A usual month</span>
           <span className="mini-value">
             {!now
-              ? "…"
+              ? query.isError
+                ? "–"
+                : "…"
               : usual === null
                 ? "Not yet"
                 : formatMoney({ amount: usual.toFixed(2), currency: now.spent.currency })}
@@ -331,7 +349,7 @@ function Headline({
   );
 }
 
-function Latest({ page, timezone }: { page?: Page; timezone: string }) {
+function Latest({ page, query, timezone }: { page?: Page; query: Query; timezone: string }) {
   return (
     <Block
       id="latest"
@@ -343,7 +361,7 @@ function Latest({ page, timezone }: { page?: Page; timezone: string }) {
       }
     >
       {!page ? (
-        <p className="state">Loading…</p>
+        query.isError ? <LoadError message="Couldn't load your latest entries." query={query} /> : <p className="state">Loading…</p>
       ) : page.items.length === 0 ? (
         <p className="state">Nothing logged yet.</p>
       ) : (
@@ -435,11 +453,12 @@ export function Dashboard({
   const beforeSpent = beforeRow?.spent ?? beforeSummary.data?.totals.find((t) => t.direction === "out")?.total;
   const pastBudgets = usePastBudgets(month, past);
   // What only makes sense now (the latest entries, who owes you) isn't fetched for a past month.
-  const latest = useQuery({
+  const latestQuery = useQuery({
     queryKey: ["transactions", "latest"],
     queryFn: () => api<Page>("/transactions?limit=5"),
     enabled: !past,
-  }).data;
+  });
+  const latest = latestQuery.data;
   const ious = useQuery({
     queryKey: ["ious"],
     queryFn: () => api<Iou[]>("/ious"),
@@ -517,26 +536,25 @@ export function Dashboard({
         overall={overall}
       />
 
-      {summary.isError && (
-        <p className="error-text">Couldn't load {past ? `${monthLabel(month)}'s` : "this month's"} totals.</p>
-      )}
       {!past && <Nudge budgets={budgets} timezone={me.user.timezone} onAsk={onAsk} />}
       <div className="tiles tiles-quiet">
         <StatTile
           label="Spent"
-          value={spent ? formatMoney(spent.total) : "…"}
+          value={spent ? formatMoney(spent.total) : summary.isError ? "–" : "…"}
           extra={conversionNote(spent)}
         />
         <StatTile
           label="Received"
-          value={received ? formatMoney(received.total) : "…"}
+          value={received ? formatMoney(received.total) : summary.isError ? "–" : "…"}
           extra={conversionNote(received)}
         />
         <StatTile
           label="Net"
           value={
             net === null
-              ? "…"
+              ? summary.isError
+                ? "–"
+                : "…"
               : formatMoney({ amount: String(net), currency: home })
           }
           extra={partial ? "Leaves out amounts with no rate" : undefined}
@@ -557,15 +575,17 @@ export function Dashboard({
       <div className="pair">
         <div className="stack">
           <Block id="by-category" title="Where it went" action={<span className="caption">In {home}</span>}>
-            {summary.isLoading ? (
-              <p className="state">Loading…</p>
-            ) : (
+            {summary.data ? (
               <CategoryBars
                 key={month}
-                rows={summary.data?.by_category ?? []}
-                period={summary.data && { start: summary.data.start, end: summary.data.end }}
+                rows={summary.data.by_category}
+                period={{ start: summary.data.start, end: summary.data.end }}
                 timezone={me.user.timezone}
               />
+            ) : summary.isError ? (
+              <LoadError message={`Couldn't load where ${past ? `${monthName(month)}'s` : "this month's"} money went.`} query={summary} />
+            ) : (
+              <p className="state">Loading…</p>
             )}
             {foreign && (
               <p className="muted">
@@ -577,7 +597,9 @@ export function Dashboard({
           </Block>
           <SpendingByMonth
             spending={spending}
+            query={spendingQuery}
             summary={summary.data}
+            summaryFailed={summary.isError}
             overall={overall}
             picked={month}
             past={past}
@@ -592,16 +614,17 @@ export function Dashboard({
               action={<span className="caption">Against today's limits</span>}
             >
               {pastBudgets.isLoading && <p className="state">Loading…</p>}
-              {pastBudgets.isError && <p className="state error-text">Couldn't load that month's budgets.</p>}
+              {pastBudgets.isError && <LoadError message="Couldn't load that month's budgets." query={pastBudgets} />}
               {pastBudgets.data && (
                 <PastBudgets budgets={pastBudgets.data} month={month} timezone={me.user.timezone} />
               )}
             </Block>
           ) : (
             <>
-              <Latest page={latest} timezone={me.user.timezone} />
+              <Latest page={latest} query={latestQuery} timezone={me.user.timezone} />
               <Block id="owed" title="Who owes you">
             {ious.isLoading && <p className="state">Loading…</p>}
+            {ious.isError && <LoadError message="Couldn't load who owes you." query={ious} />}
             {ious.data?.length === 0 && (
               <p className="state">Nobody owes you anything.</p>
             )}
