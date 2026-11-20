@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ErrorBoundary, pageFallback } from "./ErrorBoundary";
+import { describeFailure, ErrorBoundary, pageFallback } from "./ErrorBoundary";
 
 let broken = true;
 
@@ -62,5 +62,29 @@ describe("ErrorBoundary", () => {
     );
     expect(screen.getByText("B is fine")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("describeFailure", () => {
+  it("names the message and the innermost components", () => {
+    const stack = "\n    at Latest (http://x/assets/Dashboard-abc.js:1:2)\n    at div\n    at Dashboard (http://x/a.js:3:4)\n    at Suspense";
+    expect(describeFailure(new TypeError("Cannot read properties of undefined (reading 'amount')"), stack)).toBe(
+      "Cannot read properties of undefined (reading 'amount') · in Latest < div < Dashboard",
+    );
+  });
+
+  it("reads Safari's stack form and falls back to the message alone", () => {
+    expect(describeFailure(new Error("boom"), "\nLatest@http://x/a.js:1:2\nDashboard@http://x/a.js:3:4")).toBe("boom · in Latest < Dashboard");
+    expect(describeFailure("plain", null)).toBe("plain");
+  });
+
+  it("shows the detail on the page fallback", () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <ErrorBoundary fallback={pageFallback}>
+        <Page name="Home" />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Home exploded · in Page");
   });
 });
