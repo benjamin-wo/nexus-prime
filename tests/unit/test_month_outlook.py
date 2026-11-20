@@ -498,7 +498,6 @@ def test_without_a_budget_or_for_a_past_month_there_is_no_room() -> None:
 def test_pay_not_yet_in_is_the_salary_still_expected_and_its_first_day() -> None:
     o = november()
     assert (o.pay_not_yet_in, o.next_pay_day) == (sgd("4798.00"), date(2026, 11, 25))
-    assert o.overall_without_pay == sgd("-1805.78") == o.overall - o.pay_not_yet_in
     two = build_outlook(
         month=date(2026, 11, 1), today=TODAY, currency="SGD",
         received=sgd("0"), spent=sgd("0"), moved=sgd("0"),
@@ -508,7 +507,6 @@ def test_pay_not_yet_in_is_the_salary_still_expected_and_its_first_day() -> None
     assert (two.pay_not_yet_in, two.next_pay_day) == (sgd("1250.50"), date(2026, 11, 21))
     nothing = with_budget([bill("Electricity", "100")])
     assert (nothing.pay_not_yet_in, nothing.next_pay_day) == (sgd("0"), None)
-    assert nothing.overall_without_pay == nothing.overall
 
 
 def test_the_reply_opens_with_the_budget_room_and_says_pay_is_not_counted() -> None:
@@ -553,7 +551,7 @@ def test_without_a_budget_the_projection_stays_the_answer_and_names_the_pay_in_i
     assert "Headroom (the leeway): 2,992.22" in text
     assert "Of that, pay not yet received: payday 4,798.00 on 25 Nov. Say so in the reply" in text
     assert "this counts your 4,798.00 pay on 25 Nov, not in yet" in text
-    assert "Without it the month ends at -1,805.78 (below zero by 1,805.78)." in text
+    assert "Without it" not in text
 
 
 def test_without_a_budget_and_no_pay_to_come_nothing_extra_is_said() -> None:

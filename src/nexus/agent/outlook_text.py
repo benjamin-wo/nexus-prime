@@ -56,14 +56,6 @@ def pay_phrase(o: MonthOutlook) -> str:
     return f"payday {plain(o.pay_not_yet_in)} on {day}"
 
 
-def below_zero(amount: Money) -> str:
-    return (
-        f" (below zero by {plain(abs_money(amount))})"
-        if amount < Money.zero(amount.currency)
-        else ""
-    )
-
-
 def pay_day(o: MonthOutlook) -> str:
     return f"{o.next_pay_day:%-d %b}" if o.next_pay_day else "payday"
 
@@ -242,8 +234,7 @@ def describe_outlook(o: MonthOutlook) -> str:
             out.append(
                 f"Of that, pay not yet received: {pay_phrase(o)}. Say so in the reply (like "
                 f'"this counts your {plain(o.pay_not_yet_in)} pay on {pay_day(o)}, not in '
-                f'yet"). Without it the month ends at {plain(o.overall_without_pay, signed=True)}'
-                f"{below_zero(o.overall_without_pay)}."
+                f'yet").'
             )
         out.append(
             "Everyday spending for the rest of the month (food, transport, shopping) is not "

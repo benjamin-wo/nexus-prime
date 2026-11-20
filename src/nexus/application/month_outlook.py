@@ -29,8 +29,7 @@ the user's timezone, from the same figures Home shows (``month_figures``, ``expe
   so it never adds to the room.
 - ``pay_not_yet_in`` is the part of the projection that is payday still to come (items of kind
   salary with an amount) and ``next_pay_day`` its first date: pay not received is not money to
-  spend, so the reply has to say when the projection counts it. ``overall_without_pay`` is
-  ``overall`` less it.
+  spend, so the reply has to say when the projection counts it.
 
 Everyday spending for the rest of the month is not forecast, and none of this is an
 account balance. A month already over has actuals only.
@@ -127,7 +126,6 @@ class MonthOutlook:
     # projection. Zero, with no date, when none is left (and for a month already over).
     pay_not_yet_in: Money
     next_pay_day: date | None
-    overall_without_pay: Money  # overall - pay_not_yet_in
 
     @property
     def last_day(self) -> date:
@@ -290,7 +288,6 @@ def build_outlook(
         budget_adjustments=purchases,
         pay_not_yet_in=pay,
         next_pay_day=next_pay_day,
-        overall_without_pay=overall - pay,
     )
 
 
