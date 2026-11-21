@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, retryQuery } from "./App";
@@ -28,9 +28,12 @@ async function open(address: string, heading: string) {
 afterEach(() => window.history.pushState({}, "", "/"));
 
 describe("where pages live now", () => {
-  it("opens Home at /app and sends / there", async () => {
-    await open("/", "Home");
-    expect(window.location.pathname).toBe("/app");
+  it("sends / to Home at /app", async () => {
+    // Only the address: Home itself needs more than this file's empty answers (Home.test.tsx).
+    signedIn();
+    window.history.pushState({}, "", "/");
+    render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    await waitFor(() => expect(window.location.pathname).toBe("/app"));
   });
 
   it("opens Budgets at /accounting/budgets", async () => {
