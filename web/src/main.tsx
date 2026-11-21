@@ -2,11 +2,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
+import { startNative } from "./native";
 import "./styles.css";
 import { startMiniApp } from "./telegram";
 import { watchViewport } from "./viewport";
 
 startMiniApp();
+startNative();
 watchViewport();
 
 const root = document.getElementById("root");
