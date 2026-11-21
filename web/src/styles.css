@@ -680,6 +680,8 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 }
 .login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: var(--space-4); }
 .login .card { width: min(420px, 100%); padding: var(--space-8); display: grid; gap: var(--space-4); text-align: center; }
+.app-signin { display: grid; gap: var(--space-3); justify-items: center; }
+.app-signin-code { margin: 0; font-size: 2.25rem; font-weight: 700; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; color: var(--text-strong); }
 .login .landing-cta { min-height: 48px; text-decoration: none; }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }

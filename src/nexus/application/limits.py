@@ -40,6 +40,12 @@ VOICE: Sequence[Window] = ((30, timedelta(hours=1)),)
 DEMOS: Sequence[Window] = ((5, timedelta(hours=1)),)
 # The bot's /web command: a sign-in link each.
 WEB_LINKS: Sequence[Window] = ((5, timedelta(hours=1)),)
+# Signing in from the iOS app: new codes per visitor address, tries at a code per Telegram
+# user (a guess must not be cheap), polls per request and per address.
+DEVICE_STARTS: Sequence[Window] = ((10, timedelta(minutes=10)),)
+DEVICE_CLAIMS: Sequence[Window] = ((8, timedelta(minutes=10)),)
+DEVICE_POLLS: Sequence[Window] = ((6, timedelta(seconds=10)),)
+DEVICE_POLLS_BY_IP: Sequence[Window] = ((120, timedelta(minutes=1)),)
 DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "message": MESSAGES,
     "import": IMPORTS,
@@ -54,6 +60,10 @@ DEFAULT_RULES: Mapping[str, Sequence[Window]] = {
     "voice": VOICE,
     "demo": DEMOS,
     "web_link": WEB_LINKS,
+    "device_start": DEVICE_STARTS,
+    "device_claim": DEVICE_CLAIMS,
+    "device_poll": DEVICE_POLLS,
+    "device_poll_ip": DEVICE_POLLS_BY_IP,
 }
 
 

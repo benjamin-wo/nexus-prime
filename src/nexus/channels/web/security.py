@@ -22,8 +22,10 @@ from nexus.agent.service import AgentService
 from nexus.agent.tools import UowFactory
 from nexus.application import acting, ops
 from nexus.application.access import SESSION_TTL, resolve_session
+from nexus.application.clock import utcnow
 from nexus.application.demo import DemoGate, Use
 from nexus.application.departments import Departments, default_registry
+from nexus.application.device_signin import DeviceSignin
 from nexus.application.email import EmailRuntime
 from nexus.application.fx import RateSource
 from nexus.application.ideas import IdeaFinder
@@ -66,6 +68,8 @@ class WebRuntime:
     weather: Weather | None = None  # trip weather; None = not offered
     scans: StatementPageReader | None = None  # reads scanned statements; None = not set up
     demo: DemoGate | None = None  # public-demo allowances and spend cap; None = not counted
+    # App sign-in codes: the same store as the bot's (main.py passes it in).
+    devices: DeviceSignin = field(default_factory=lambda: DeviceSignin(utcnow))
 
 
 @dataclass(frozen=True, slots=True)

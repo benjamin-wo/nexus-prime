@@ -1420,3 +1420,7 @@ export type MerchantSuggestion = {
   times: number;
   last_on: string;
 };
+
+/** Signing in from the iOS app: POST /auth/device, then GET /auth/device/{poll_id} until approved. */
+export type DeviceStart = { code: string; poll_id: string; expires_in: number; bot_username: string };
+export type DevicePoll = { status: "pending" } | { status: "approved"; login_path: string };
