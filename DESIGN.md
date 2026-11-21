@@ -2,149 +2,165 @@
 
 ## 1. Atmosphere & Identity
 
-Nexus ("Just ask Nexus") is a focused financial command center: cool and quick to scan, light by default and dark when the phone (or Telegram) is. Its
-palette is Nexus's own: Midnight, Nexus Blue, Digital Teal, Lime and Cloud. Home is a Today page: it opens on
-a Nexus Blue hero (the month's one big figure and the assistant's brief, not in a card) that fades into the
-page, with what needs the person directly under it; every other segment is its own white card,
-its title above it. Nexus Blue is the action
-signal; emerald marks money in, amber attention or pending work, rose a budget gone over. Lime is only ever
-"you are here": the open place in the bottom bar and the rail's current glyph in dark. Teal and Lime are
-decoration and chart colours, never text on a light surface.
-The bottom bar is Midnight with the assistant in its middle.
+Nexus is a focused financial command center that reads like a well-set bank statement: quiet, exact and easy to
+scan. The direction is called **Statement**. The page is a warm off-white (near-black in dark), the type is
+Inter Tight, and the structure comes from rules, not boxes: each section has a heading with a 1px ink rule under
+it, and rows are divided by hairlines. A card is kept only for a thing that is genuinely a separate object: a
+sheet, a dialog, a photo.
+
+The month's one key figure is the headline of Home ("Left to spend in November", 1,842.60 SGD at about 52px),
+and every other figure in the app is set the same way: right-aligned where it belongs to a row, tabular, with the
+currency smaller and muted. There is one accent, action blue, and it marks only what can be pressed: buttons and
+links. Money is green, attention is amber text with no tinted pill, an error or a month over budget is red text.
+Nothing glows, nothing is a gradient, and no copy narrates the interface.
+
+The app is light by default and dark when the phone (or Telegram) is. It is also a Telegram Mini App, and an iOS
+WebView shell is coming, so every colour and size comes from a token and the dark scheme is a full second set of
+the same roles.
+
+Status: this file is the target. `web/src/styles.css` still holds the previous look (Midnight and Nexus Blue,
+a gradient hero, Lime, glows) until the token and component PRs land; where a token's role goes away it is marked
+"to remove in the token PR", and `web/src/design.test.ts` lists what still breaks the rules (see Rules).
 
 ## 2. Color
 
 ### Palette
 
-The brand: **Midnight** `#0B1020`, **Nexus Blue** `#2563EB`, **Digital Teal** `#22D3EE`, **Lime** `#A3FF12`, **Cloud** `#F8FAFC`. Light is a Cloud page with white cards and Midnight text; dark is a Midnight page with lifted-midnight cards and Cloud-ish text. Nexus Blue fills carry white text (5.2:1) in both. Teal and Lime fail as text on white (1.7:1 and 1.2:1), so on light they appear only as chart marks and decoration, in darkened variants where a mark must be 3:1 on the card.
+The roles: **Page** `#FBFBFA`, **Ink** `#15171C` (text, the section rule, the progress bar, the current tab), **Rule** `#E4E4E0` (hairlines), **Action blue** `#1F4FD1` (only things you can press), **Money** `#11713F`, **Attention** `#A3470B`. Light is the page with ink on it; a white surface appears only on a sheet, a dialog or a photo's frame. Action blue fills carry white text (6.8:1). Nothing else is blue.
+
+The token names are the ones in `styles.css`, kept where the role survives so the token PR changes values without renaming. Contrast is against the page `#FBFBFA` and white `#FFFFFF` (sheets) unless a column says otherwise.
 
 | Role | Token | Value | Usage |
 |------|-------|-------|-------|
-| Surface/primary | --bg-shell | #f8fafc | Page background (Cloud) |
-| Surface/secondary | --bg-frame | #ffffff | The rail, the chat panel |
-| Surface/elevated | --bg-card | #ffffff | Cards, tables, sheets |
-| Surface/interactive | --bg-card-hover | #f1f5f9 | Hovered controls and rows; tiles inside a card |
-| Input surface | --bg-input | #f1f5f9 | Form controls |
-| Text/primary | --text-primary | #1b243b | Main content (slate toward Midnight; 15.4:1 on cards) |
-| Text/strong | --text-strong | #0b1020 | Headings and emphasis (Midnight; white on the hero) |
-| Text/secondary | --text-secondary | #44506b | Supporting content (8.1:1 on cards, 7.7:1 on the page) |
-| Text/tertiary | --text-muted | #566178 | Metadata and hints (6.2:1 on cards, 5.9:1 on the page, 5.1:1 on the tab tray) |
-| Border/default | --border-card | #dce3ee | Card and table boundaries |
-| Border/subtle | --border-subtle | #e6ebf3 | Rails and dividers |
-| Accent | --accent | #2563eb | Primary actions (white text, 5.2:1), money out, the month shown |
-| Accent/hover | --accent-hover | #1d4ed8 | Primary hover and pressed state (white text 6.7:1) |
-| Accent/soft | --accent-soft | rgba(37,99,235,0.10) | Money-out surfaces, pills, the soft button, an "on" chip |
-| Accent/border | --accent-border | rgba(37,99,235,0.30) | Money-out control edge, a field's focus edge |
-| Accent/text | --accent-text | #1d4ed8 | Accent words and icons on light surfaces (pills, links that are actions; 6.7:1 on cards, 5.5:1 on the glow) |
-| Accent/title | --title-accent | #2563eb | The accent word in a page title (5.2:1 on cards, 4.9:1 on the page) |
-| Focus ring | --ring | #2563eb | Every `:focus-visible` outline and the month shown's outline (4.6:1 or more on every surface); separate from `--accent` because the dark fill is not bright enough for a ring on raised surfaces |
-| Accent/soft-hover | (none, in `.btn-soft:hover`) | rgba(37,99,235,0.16) | Soft secondary button on hover |
-| Accent/glow-shadow | (none, in `.fab`) | rgba(37,99,235,0.6) | Shadow under the floating Add button |
-| Scrim/info | (none, in `.photo-credit-button`) | rgba(11,16,32,0.45) | Round info button on a photo (0.65 on hover) |
-| Scrim/credit | (none, in `.photo-credit`) | rgba(9,9,11,0.8) | The photo credit that the info button opens |
-| Accent/glow | --accent-glow | #dbeafe | Soft blue fills (a planned day's dot) |
-| Status/success | --emerald-accent | #047857 | Money in and completed states |
-| Status/success-soft | --emerald-soft | rgba(5,150,105,0.12) | Money-in surfaces |
-| Status/success-border | --emerald-border | rgba(5,150,105,0.35) | Money-in control edge |
-| Status/warning | --status-warning | #a94a08 | Pending and attention states (5.7:1 on cards, 5.1:1 on raised surfaces) |
-| Status/warning-soft | --status-warning-soft | rgba(245,158,11,0.12) | Pending surfaces |
-| Status/warning-border | --status-warning-border | rgba(217,119,6,0.35) | Pending control edge |
-| Status/error | --rose-accent | #c0365c | Errors, deleting, a month over budget |
-| Status/info | --cyan-accent | #0891b2 | Digital Teal darkened for light: informational fills, borders and drop markers (3.7:1 on white: never for text) |
-| Status/info-text | --cyan-text | #0e7490 | Informational text on light surfaces: receipt links, stop numbers, time pills (5.4:1 on white) |
-| Surface/raised | --bg-raised | #edf1f7 | Secondary buttons, icon tiles inside cards |
-| Chart/second | --sky-accent | #0284c7 | Rain and "wet" marks, the packing meter (4.1:1 on white) |
-| Chart/second-text | --sky-text | #075985 | Sky words and the focus ring of chart columns (7.6:1 on white) |
-| Chart/second-soft | (none, in `.kind-chip`) | rgba(2,132,199,0.12) | Kind chip surface, the sky tint (text on it 7.6:1) |
-| Surface/glass | --bg-glass | #ffffff | Cards |
-| Text/on-accent | --on-accent | #ffffff | Text and icons on an accent fill (primary button, Add, numbered dots, switch knob when on); white in both schemes |
-| Tabs/tray | --tabs-bg | #e3e9f2 | The tray behind segmented tabs (department tabs, trip tabs, Ideas switch) |
-| Tabs/open | --tab-active-bg | #ffffff | The open tab, with `--shadow-tab` |
-| Button/hover | --btn-hover-bg | #dde4ee | A secondary button or chip under the pointer |
-| Scrim/overlay | --overlay | rgba(11,16,32,0.45) | The dim behind a sheet or dialog |
-| Link/underline | --link-underline | rgba(11,16,32,0.35) | The underline of a link in text |
-| Switch/knob | --switch-thumb | #ffffff | The knob of a switch when off (on, it is `--on-accent`) |
-| Switch/off | --switch-off | #7a889f | The track of a switch that is off (3.6:1 on a card, with the knob 3.6:1 on it) |
-| Rail/active | --nav-active-glyph | #2563eb | The current place's icon in the rail (Lime in dark) |
-| Accent/rgb | --accent-rgb | 37, 99, 235 | The accent as r, g, b, for shadows, tints and the usual-month outline with their own opacity (`rgba(var(--accent-rgb), 0.16)`) |
-| Status/rgb | --rose-rgb, --danger-rgb | 192,54,92 · 244,63,94 | The over-budget hatching, delete buttons and warnings, as r, g, b |
-| Hero/top | --hero-top | #2563eb | Home hero, top (and Telegram's header on Home) |
-| Hero/mid | --hero-mid | #1e40af | Home hero's deeper blue before it fades into the page; white text 8.7:1 here, and the hero's secondary and muted text (white at 95% and 92%) are 4.8:1 and 4.6:1 on `--hero-top`, the lightest part |
-| Hero/fade | --hero-fade | #8ea6dc | Where the phone's hero fades into the page (no text sits on it) |
-| Assistant button | --nexus-from, --nexus-to | #2f6df0, #1d4ed8 | The gradient of the assistant's button (`--on-accent` text, 4.6:1 at the light end) |
-| Bar/background | --bar-bg | #0b1020 | The phone's bottom bar (Midnight) |
-| Bar/text | --bar-text | #a9b4cb | Inactive bottom bar items (9.1:1) |
-| Bar/active | --bar-text-active, --bar-active-bg, --bar-indicator | #a3ff12, rgba(163,255,18,0.10), #a3ff12 | The open tab in the phone's bottom bar: Lime text and icon (15.2:1) on a faint Lime pill, with a 2px Lime underline |
-| Shadows | --shadow-frame, -card, -modal, -tab, -drag, -dock, -bar, -slim, -thumb | (in `:root`) | Every shadow that sits on the page's own surfaces, Midnight-tinted; the dark theme has darker ones |
+| Surface/primary | --bg-shell | #FBFBFA | Page background |
+| Surface/secondary | --bg-frame | #FBFBFA | The rail and the chat panel: the page's own colour, told apart by a rule |
+| Surface/elevated | --bg-card | #FFFFFF | Only a sheet, a dialog, a menu or a photo's frame; never a section |
+| Surface/interactive | --bg-card-hover | #F3F3F0 | A hovered or pressed row or control |
+| Input surface | --bg-input | #FFFFFF | Form controls, with a `--border-input` edge |
+| Surface/raised | --bg-raised | #EEEEEB | The user's chat bubble and the secondary button (text 5.3–15.4:1) |
+| Text/primary | --text-primary | #15171C | Main content, figures (17.3:1 on the page, 17.9:1 on white) |
+| Text/strong | --text-strong | #15171C | Headings, the section rule, the progress bar, the current tab (Ink, the same as primary) |
+| Text/secondary | --text-secondary | #4A4E58 | Supporting content (8.0:1 on the page, 8.3:1 on white) |
+| Text/tertiary | --text-muted | #5D616B | Sub-lines, labels and hints (6.0:1 on the page, 6.2:1 on white, 5.5:1 on a raised surface) |
+| Border/default | --border-card | #E4E4E0 | Hairline row dividers (decorative: 1.2:1) |
+| Border/subtle | --border-subtle | #EDEDEA | A quieter divider, inside a sheet |
+| Border/input | --border-input (new) | #8A8E98 | The edge of a field, a checkbox and an off switch's track (3.2:1 on the page, 3.3:1 on white) |
+| Accent | --accent | #1F4FD1 | A primary button's fill (white text 6.8:1), a link, a pressed control; nothing that cannot be pressed |
+| Accent/hover | --accent-hover | #1A43B5 | Primary hover and pressed (white text 8.4:1) |
+| Accent/text | --accent-text | #1F4FD1 | A link or a text button (6.6:1 on the page, 6.8:1 on white, 6.1:1 on a hovered row) |
+| Accent/border | --accent-border | #1F4FD1 | A field's focus edge |
+| Focus ring | --ring | #1F4FD1 | Every `:focus-visible` outline (6.6:1 on the page); 2px, offset 2px |
+| Text/on-accent | --on-accent | #FFFFFF | Text on an accent fill; white in both schemes |
+| Status/money | --emerald-accent | #11713F | Money in, completed states (5.9:1 on the page, 5.5:1 on a hovered row) |
+| Status/warning | --status-warning | #A3470B | Attention and pending: a word or figure in this colour, no pill (5.9:1 on the page, 5.5:1 on a hovered row) |
+| Status/error | --rose-accent | #B42318 | An error, deleting, a month over budget: text (6.4:1 on the page) |
+| Link/underline | --link-underline | rgba(21,23,28,0.35) | The underline of a link inside text |
+| Scrim/overlay | --overlay | rgba(21,23,28,0.45) | The dim behind a sheet or dialog |
+| Switch/knob | --switch-thumb | #FFFFFF | The knob of a switch (3.3:1 on the off track) |
+| Switch/off | --switch-off | #8A8E98 | The track of a switch that is off (3.2:1 on the page) |
+| Rail/active | --nav-active-glyph | #15171C | The current place in the rail: ink, with a 2px ink bar |
+| Button/hover | --btn-hover-bg | #ECECE8 | A secondary button or chip under the pointer |
+| Bar/background | --bar-bg | #FBFBFA | The phone's bottom bar: the page's colour with a 1px `--border-card` rule on top |
+| Bar/text | --bar-text | #5D616B | Inactive bottom bar labels (6.0:1) |
+| Bar/active | --bar-text-active, --bar-indicator | #15171C, #15171C | The current label (17.3:1) and the 2px bar over it |
+| Shadows | --shadow-modal, -drag, -thumb | (in `:root`) | Black at low opacity, only on a sheet or dialog, a dragged item and a button on a photo |
 
-The chart palette, for charts and category swatches (every mark is 3:1 or more on a card, light and dark): `--pal-blue` #2563eb, `--pal-teal` #0891b2 (Digital Teal darkened from #22d3ee, which is 1.7:1 on white), `--pal-lime` #4d7c0f (Lime darkened from #a3ff12, which is 1.2:1), `--pal-slate` #475569, `--pal-track` #7a889f (past months, the rest bucket and an off switch), `--pal-track-hover` #5b6a85, `--pal-wash` #e4edfc (the pale half of the planned-spend hatching). Category swatches go blue, teal, lime, slate, then the track grey for the rest; past months are the track grey; the cost chart's columns are teal with the chosen one in `--accent`.
+The chart palette, for charts and category swatches (every mark is 3:1 or more on the page and on white): `--pal-blue` #1F4FD1 (6.6:1, the selected or pressable bar only), `--pal-slate` #4A4E58 (8.0:1), `--pal-track` #8A8E98 (3.2:1: past months, the rest bucket), `--pal-track-hover` #6E727C (4.7:1), `--pal-wash` #E4E4E0 (the pale half of the planned-spend hatching). Category swatches go ink, slate, then the track grey for the rest; this month's bar is `--text-strong`. Any chart value is also in text.
+
+#### Going away (remove in the token PR)
+
+These roles do not exist in Statement. Their tokens stay in `styles.css` until the component PRs stop using them, then the token PR deletes them.
+
+| Token | Was | Why it goes |
+|-------|-----|-------------|
+| --hero-top, --hero-mid, --hero-fade | The blue hero gradient | No gradient and no hero panel; Home's headline sits on the page |
+| --nexus-from, --nexus-to | The assistant button's gradient | The Ask button is a plain `--accent` fill |
+| --accent-glow, --accent-soft, --emerald-soft, --status-warning-soft, --emerald-border, --status-warning-border, --sky-soft | Tinted pill and tile fills | No tinted pills or tiles; status is a word in its colour |
+| --title-accent | The accent word in a page title | No coloured accent word |
+| --cyan-accent, --cyan-text, --sky-accent, --sky-text, --pal-teal | Digital Teal and sky | One accent; they were decoration |
+| --pal-lime, --bar-active-bg, and Lime in --bar-text-active, --bar-indicator, --nav-active-glyph | Lime "you are here" | No neon; the current place is ink with a 2px bar |
+| --tabs-bg, --tab-active-bg | The tab tray and open tab | Tabs are underlined text |
+| --accent-rgb, --danger-rgb | The accent and rose as r, g, b for tints and glows | Nothing is tinted or glows (`--rose-rgb` stays for the over-budget hatching until the chart PR) |
+| --shadow-frame, -card, -tab, -bar, -slim | Soft shadows under cards, tabs and bars | Rules, not shadows, separate sections |
+| `.fab`'s blue glow shadow and the scrims named in `.photo-credit*` | Literals in rules | Become tokens in `:root` (see Rules) |
 
 ### Dark
 
-The app follows the phone: the dark values apply under `@media (prefers-color-scheme: dark)` unless `<html data-theme="light">`, and always under `<html data-theme="dark">`; the same set is written out once for each (keep them identical). Inside Telegram, `telegram.ts` sets `data-theme` from `Telegram.WebApp.colorScheme` at start and on Telegram's `themeChanged`, since Telegram's theme can differ from the phone's; it then paints Telegram's header, background and bottom bar (`CHROME` in `theme.ts`: light page `#f8fafc`, Home hero `#2563eb`, bar `#0b1020`; dark page `#0b1020`, Home hero `#1d4ed8`, bar `#131a2e`). `index.html` declares `color-scheme: light dark` and a `theme-color` for each (`#f8fafc`, `#0b1020`), and `:root` sets `color-scheme`, so native inputs, selects and scrollbars follow. There is no manual toggle.
+The app follows the phone: the dark values apply under `@media (prefers-color-scheme: dark)` unless `<html data-theme="light">`, and always under `<html data-theme="dark">`; the same set is written out once for each (keep them identical). Inside Telegram, `telegram.ts` sets `data-theme` from `Telegram.WebApp.colorScheme` at start and on Telegram's `themeChanged`, since Telegram's theme can differ from the phone's; it then paints Telegram's header, background and bottom bar (`CHROME` in `theme.ts`: light page, header and bar `#FBFBFA`; dark page, header and bar `#111214`; there is no hero colour any more). `index.html` declares `color-scheme: light dark` and a `theme-color` for each (`#FBFBFA`, `#111214`), and `:root` sets `color-scheme`, so native inputs, selects and scrollbars follow. There is no manual toggle.
+
+Same roles, values chosen to keep text at 4.5:1 and marks at 3:1. Dark ink is not pure white, and the page is not pure black.
 
 | Token | Dark | Notes |
 |-------|------|-------|
-| --bg-shell | #0b1020 | Page (Midnight) |
-| --bg-frame, --bg-card, --bg-glass | #131a2e | Rail, cards, sheets (a lifted midnight) |
-| --bg-card-hover | #1a2340 | Hovered rows, tiles inside a card |
-| --bg-input | #0f1527 | Form controls |
-| --bg-raised | #1c2642 | Secondary buttons, icon tiles |
-| --text-primary / strong / secondary / muted | #e2e8f4 / #f8fafc / #b5bfd3 / #9aa6bd | 7.1–16.5:1 on cards |
-| --border-card, --border-subtle | #263152, #1c2642 | Hairlines; cards are told apart by surface, as in light |
-| --accent, --accent-hover | #2563eb, #1d4ed8 | A fill, with `--on-accent` white on it (5.2:1 and 6.7:1); on a card the fill itself is 3.3:1 |
-| --ring | #3b82f6 | Focus rings: 4.1–5.2:1 on every surface |
-| --accent-text, --title-accent | #8db6ff | Links, accent words and the page-title accent word (8.5:1 on cards) |
-| --accent-soft, --accent-glow, --accent-border, --accent-rgb | #15234d, #15234d, rgba(96,165,250,0.45), 59,130,246 | |
-| --emerald-accent, --status-warning, --rose-accent | #5fd3a5, #f2b06a, #f08aa5 | Text and fills; soft surfaces are the same colours at 14% |
-| --cyan-accent, --cyan-text | #22d3ee, #67e0f5 | Digital Teal itself, 9.6:1 on cards |
-| --sky-accent, --sky-text | #38bdf8, #7dd3fc | |
-| --tabs-bg, --tab-active-bg, --btn-hover-bg | #080c18, #243055, #26325a | The tray is darker than the page, the open tab lighter |
-| --overlay | rgba(3,5,12,0.70) | |
-| --switch-off, --switch-thumb | #5c6b88, #e2e8f4 | An off switch: 3.2:1 on a card, the knob 4.4:1 on the track |
-| --nav-active-glyph | #a3ff12 | Lime: the current place's icon in the rail |
-| --hero-top, --hero-mid, --hero-fade | #1d4ed8, #172a6b, #101c4a | White text 6.7:1 and 13.3:1 (the secondary and muted white 6.2:1 and 5.9:1 at the top) |
-| --bar-bg, --bar-text, --bar-text-active, --bar-active-bg, --bar-indicator | #131a2e, #a9b4cb, #a3ff12, rgba(163,255,18,0.10), #a3ff12 | The bar is the card colour so it reads against the Midnight page |
-| --nexus-from, --nexus-to | #2f6df0, #1d4ed8 | The assistant's button, as in light |
-| --pal-* | blue #4f86f7, teal #22d3ee, lime #a3ff12, slate #94a3b8, track #5c6b88, track-hover #7b8bab, wash #1b2a52 | Chart marks are 3:1 or more on a card; past months (track) are 3.2:1 |
-| Shadows | black at 35–60% | Darker, because a shadow on a dark page hardly shows |
+| --bg-shell, --bg-frame, --bar-bg | #111214 | Page, rail, bottom bar |
+| --bg-card | #1A1C20 | Sheets, dialogs, menus |
+| --bg-card-hover | #22242A | Hovered rows and controls |
+| --bg-input | #1A1C20 | Form controls |
+| --bg-raised | #23252A | The user's bubble, the secondary button |
+| --text-primary, --text-strong | #ECECE9 | 15.8:1 on the page, 14.4:1 on a sheet |
+| --text-secondary | #B8BBC3 | 9.8:1 on the page, 8.9:1 on a sheet |
+| --text-muted, --bar-text | #9A9EA8 | 7.0:1 on the page, 6.4:1 on a sheet, 5.8:1 on a hovered row |
+| --border-card | #2C2E33 | Hairlines (decorative); also the progress bar's track (ink on it 11.5:1) |
+| --border-subtle | #24262B | Quieter divider |
+| --border-input, --switch-off, --pal-track | #7A7E88 | 4.6:1 on the page, 4.2:1 on a sheet; the knob `--switch-thumb` #ECECE9 is 3.4:1 on the off track |
+| --accent, --accent-hover | #3560E0, #2B52CC | A fill, `--on-accent` white on it 5.4:1 and 6.6:1; the fill itself 3.5:1 on the page, 3.2:1 on a sheet |
+| --accent-text, --accent-border, --ring, --pal-blue | #8FA9FF | Links, focus edge, rings: 8.3:1 on the page, 7.6:1 on a sheet, 6.9:1 on a hovered row |
+| --emerald-accent | #5CC48C | Money: 8.7:1 on the page, 7.9:1 on a sheet |
+| --status-warning | #E8995A | Attention: 8.2:1 on the page, 7.4:1 on a sheet |
+| --rose-accent | #F28B82 | Error: 7.9:1 on the page, 7.1:1 on a sheet |
+| --pal-slate, --pal-track-hover | #B8BBC3, #9A9EA8 | |
+| --pal-wash | #2C2E33 | |
+| --bar-text-active, --bar-indicator, --nav-active-glyph | #ECECE9 | The current place |
+| --overlay | rgba(0,0,0,0.60) | |
+| Shadows | black at 45–60% | Darker, because a shadow on a dark page hardly shows |
 
-Every text pair is at least 4.5:1 and every chart mark and focus ring at least 3:1 in both schemes (card borders are decorative, in light and dark alike). The ticked checkbox's check is white on the accent in both schemes.
+### Contrast
+
+Every text pair is at least 4.5:1 and every mark (a progress bar or chart mark, a focus ring, a field's edge, a switch track) at least 3:1 in both schemes. Hairlines and the ink rule under a section heading are decoration, not marks that carry meaning (a row is also told apart by its spacing and content). The progress bar is ink on `--border-card`: 14.1:1 in light, 11.5:1 in dark. A user bubble's text: 15.4:1 (primary), 7.2:1 (secondary), 5.3:1 (muted) on `#EEEEEB`; dark 13.0:1 and 5.7:1. The ticked checkbox's check is white on the accent in both schemes. Recompute and update the ratios here whenever a value in the tables above changes.
 
 ### Rules
 
-- Two schemes of the same palette, light and dark (below); do not introduce a third visual theme. Every colour outside `:root` is a token: no hex or `rgb()` literals in rules, except the constants named below.
-- Constant colours, the same in both schemes because what they sit on is: the white text and glass buttons on the Home hero (a Nexus Blue panel in both), and the white text, scrims and light-glass buttons on a trip's cover photo.
-- Light text sits only on the hero (4.6–8.7:1 light, 5.9–13.3:1 dark) and on photos (under a dark fade).
-- Teal and Lime are not text colours on light surfaces. Lime is reserved for the current place (the bottom bar, and the rail's glyph in dark); Teal is for charts and decoration. In dark both pass as text, but are still kept for marks and the current place.
-- Accent colors communicate action or transaction direction, not decoration.
-- New colors must be added here before they are used in CSS.
+- Two schemes of the same palette, light and dark; do not introduce a third visual theme.
+- Every colour outside `:root` is a token: no hex, `rgb()`, `rgba()` or `hsl()` literals in rules (`rgba(var(--token-rgb), 0.16)` is fine). The only places a literal colour may appear are the `:root` token blocks: the light set, the dark set under `prefers-color-scheme`, and the dark set under `data-theme`. A colour that is the same in both schemes because what it sits on is (white text and scrims on a trip's cover photo, the photo credit) is a token in `:root` too (`--on-photo`, `--scrim-*`, to add in the token PR), not a literal in the rule.
+- No gradients and no coloured or glowing shadow. A `box-shadow` is `none` or `var(--shadow-*)`.
+- `font-family` is `inherit`, a `var(--font-*)` token, or one of the two stacks in Typography.
+- `web/src/design.test.ts` checks the three rules above against `styles.css`. It carries `KNOWN_OFFENDERS`, an explicit list of the rules that still break them (selector and kind). The test fails on a new violation, and also when a listed offender no longer exists, so the list only shrinks: when a PR fixes a rule it deletes that line; nobody adds one.
+- Action blue marks only what can be pressed. Nothing decorative is blue. Money in is green only on the figure or its word; attention is amber text; an error is red text. No fill is tinted with a status colour.
+- Light text sits only on an accent fill and on photos (under a dark fade).
+- Colour never carries a meaning alone: money out and in are said by sign and word, state by text.
+- New colours must be added here before they are used in CSS.
 
 ## 3. Typography
 
 ### Scale
 
+Weights are 400, 500 and 600 only.
+
 | Level | Size | Weight | Line Height | Usage |
 |-------|------|--------|-------------|-------|
-| Display | 2rem | 600 | 1.2 | Page title (1.75rem on phones) |
-| Figure | 2.125rem | 600 | 1.1 | A card's headline amount |
-| Brief | 1.5rem | 500 | 1.4 | The Nexus brief (1.25rem on phones) |
-| H2 | 1.125rem | 600 | 1.3 | Card heading (the same on phones) |
+| Headline | 3.25rem (52px) | 600 | 1.0 | The month's key figure on Home ("1,842.60"), letter-spacing -0.02em; 2.75rem under 360px. The currency beside it is 1.25rem, 500, `--text-muted` |
+| Display | 1.75rem | 600 | 1.2 | Page title (1.5rem on phones) |
+| Figure | 1.5rem | 600 | 1.15 | A section's headline amount |
+| H2 | 1.0625rem | 600 | 1.3 | Section heading, with the 1px ink rule under it |
 | H3 | 1rem | 600 | 1.4 | Sub-heading |
-| Body | 0.9375rem | 400 | 1.5 | Default copy |
-| Caption | 0.8125rem | 500 | 1.4 | Metadata and labels; nothing smaller than this |
-| Data | 0.9rem | 600 | 1.4 | Amounts and identifiers |
+| Body | 0.9375rem | 400 | 1.5 | Default copy and chat prose |
+| Row title | 1rem | 500 | 1.35 | The first line of a row |
+| Caption | 0.8125rem | 400 | 1.4 | A row's muted sub-line, hints and metadata |
+| Label | 0.75rem (12px) | 500 | 1.3 | Small uppercase labels ("TUESDAY 24 NOVEMBER", column heads, "LEFT TO SPEND IN NOVEMBER"), letter-spacing 0.07em, `--text-muted` |
+| Data | 1rem | 500 | 1.4 | A row's amount |
 
 ### Font Stack
 
-- Primary: Geist, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif
-- Mono: Geist Mono, monospace (small figures only; large amounts use Geist with tabular figures)
-- Accent: the last word of a page title ("Good *morning*", "This *month*", `.accent-serif`) is the title's own Geist, at the title's weight and size, in `--title-accent` (Nexus Blue in light, the light blue `#8db6ff` in dark; 4.9:1 and 9.3:1 on the page). Never in body copy or figures. There is no serif in the app and Instrument Serif is not loaded.
+- Primary (`--font-ui`, new): "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif. UI and figures alike; a variable font covering 400 to 600, loaded in the token PR (Geist is not kept).
+- Mono (`--font-mono`, new): ui-monospace, SFMono-Regular, Menlo, monospace, only for an error's technical detail and identifiers a person may copy. Money is never mono.
+- No serif, no italic, no coloured accent word: a title is one weight, one colour. `.accent-serif` and `--title-accent` are removed in the component and token PRs.
 
 ### Rules
 
-- Use tabular figures for amounts and identifiers.
-- Keep labels sentence case and concise.
+- Every amount uses `font-variant-numeric: tabular-nums`, in rows, tables, the headline and chat: digits line up in a column, so a column of money can be read down.
+- A figure is right-aligned in its row; the currency code follows it (ISO, never a symbol) and is smaller and muted in the headline, plain in a row.
+- Labels in small capitals are 12px, uppercase, letter-spacing 0.07em, muted, and used for the date line, a row group's head and a table's column heads. Everything else is sentence case and concise.
+- 12px is the floor, and only for those labels. Every other text is 13px or more.
 - Body copy must remain readable at narrow widths; wrap long counterparties and notes.
 
 ## 4. Spacing & Layout
@@ -180,42 +196,42 @@ All spacing derives from a 4px base unit.
 
 ## 5. Components
 
-### Radius and surfaces (theme v2)
+### Surfaces and radius
 
-- Cards 20px (18px on phones), inner tiles and controls 12px, pills fully round. Every segment is its own white card with a soft shadow and room either side; where it helps scanning (Home, the Money overview) the title sits above the card, with its action (Details, Open, See all, Edit) on the right.
-- Home's overview is not a card: a hero on solid Nexus Blue (full-bleed at the top on phones, fading into the page; a rounded panel on desktop) with the day and greeting, this month's spending as the one big figure with an arrow, how it stands in words and the brief, plus round buttons for Log expense, Notifications (a bell) and Settings. The ask box and the one-tap questions are not on it: they are their own card further down (see Today).
-- Buttons are filled: primary Nexus Blue with white text, secondary `--bg-raised`; no outlines. In Travel the secondary is the soft button (`.btn-soft`, pale blue with blue text) and grey `--bg-raised` is only for cancel and back; see Travel parts.
+- Sections are not cards. A section is its heading (H2, sentence case, with its action, such as Details, Open, See all or Edit, as a text button at the right) over a 1px `--text-strong` rule, then rows divided by `--border-card` hairlines, with 24px (`--space-6`) between sections. No fill, no border, no shadow around a section. Only a sheet, a dialog, a menu or a photo is a card (`--bg-card`, radius 16px on a sheet, 12px on a photo or menu; `--radius` 12px and `--radius-inner` 8px replace today's 20px and 12px). A control's radius is 8px. Status is never a pill; a pill shape is for the chat bubble and a filter chip only.
+- Home has no hero panel: it opens on a date label, the month's headline figure, a thin progress bar and one line of numbers, all on the page (see Home headline). The ask bar is pinned above the bottom bar, not inside the page flow.
+- Buttons: the primary is a filled `--accent` rectangle (8px radius) with white text; the secondary is `--bg-raised`; a text button (the section actions, "Show all") is `--accent-text` with no fill. No outlines, no gradients, no glow or shadow. In Travel the secondary is `.btn-soft`, which becomes a `--bg-raised` button with ink text in the component PR (no pale-blue fill); grey `--bg-raised` is also cancel and back.
 - Department tabs are a rounded segmented control on one row, sharing the width on phones; keep a department to five tabs or fewer. Money has four (Overview, Ledger, Budgets, Cash flow) and Investment three (Portfolio, Watchlist, Trade plans); Travel's one tab means no bar. Setup that is done once (Receipts by email, Import a statement) is not a tab: it lives in Settings under Connections, and the Ledger's More menu links to the import.
-- The accent is for actions (the main button, the active tab, today) and status, not decoration: figures in the brief are white and bold, links in text keep the text's colour with an underline, and a section's heading actions (Details, Open, See all, Edit) are all small buttons.
+- Action blue is for what can be pressed (the primary button, links, text buttons, the focus ring, the selected pressable chart bar), not decoration: figures are ink, links in text keep the text's colour with an underline, and a section's heading actions are all text buttons. The current tab, the current place in the bottom bar and today are ink with a 2px ink bar, not blue.
 - Fresh on return and pull to refresh: when the app comes back to the front (Telegram's `activated`, `visibilitychange`, `focus`, a restored `pageshow`; one return refreshes once) what is on screen is refetched: money data always, other data once stale, and everything after more than 5 minutes away. Home, the Money overview, the Ledger and Budgets can also be pulled down at the top of the page (the page follows the finger with a 28px accent ring, letting go past 64px refreshes; "Refreshing…" and "Updated" are announced, and a "Refresh" button shows for keyboards while focused). The pull works because the Mini App has turned off swipe-to-close; in a Telegram without that call it stays off.
-- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, a page inside Settings), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header in the hero's blue on Home and the page colour elsewhere, its bottom bar Midnight like ours (all in Telegram's own light or dark theme), and no swipe-to-close while scrolling.
-- The phone's bottom bar is Midnight with rounded top corners: Home, Money, the blue Nexus button in the middle, showing the Nexus mark (it opens the chat), Invest (Investment), Travel. Each tab is its icon over a short label (Caption size, 0.8125rem; Home, Money, Invest, Travel; under 360px the bar tightens its side padding and the Nexus button narrows to 52px to keep them whole), at least 48px tall and 44px wide; the current one is Lime, bold, on a faint Lime pill with a Lime underline, the others the bar's light slate, so it reads without colour alone. A tab's accessible name keeps the full one where the label is shorter ("Money", "Invest (Investment)"); Nexus stays an icon named "Ask Nexus". The rail on a wide screen keeps the full names. Settings is the cog at the top of Home (and in the rail on a wide screen, under the indigo Ask Nexus button).
-- No floating chat bubble: Nexus lives in the bar. The only floating button is the labelled Add button (`.fab`: white on Nexus Blue, a plus and "Add"), 20px above the bottom bar on a phone, where it steps aside while the page scrolls down and comes back on the way up, and where it also steps aside while typing. A trip page always has it (and from 1024px has the trip header's Add beside Share instead); the Ledger shows it only once its header Add has scrolled out of view, named "Add a transaction" so it never doubles the header's "Add transaction", and there it stays put while scrolling down (`.fab-steady`), with room left under the list so it never covers the last row.
+- In Telegram the app behaves natively: Telegram's back button on a page inside a section (a trip, a stock, a plan, a page inside Settings), a light haptic tap on the main button and a tick when changing tab or day, Telegram's header, background and bottom bar in the page colour (all in Telegram's own light or dark theme), and no swipe-to-close while scrolling.
+- The phone's bottom bar is the page colour with a 1px `--border-card` rule on top and no shadow: four text labels, Home, Money, Invest, Travel, equal width, no icons and no middle button. Labels are Caption size (0.8125rem), at least 48px tall and 44px wide; the current one is `--bar-text-active` (ink), weight 600, with a 2px `--bar-indicator` bar over it, the others `--bar-text`, so it reads without colour alone. A tab's accessible name keeps the full one where the label is shorter ("Invest (Investment)"). The rail on a wide screen is the same: text names, the current one ink with a 2px bar at its left. Settings is the cog at the top of Home (and in the rail on a wide screen). Open question for the component PR: the chat is reached from the pinned ask bar on Home; how it is reached from Money, Invest and Travel (the old middle button goes) is not decided here.
+- No floating chat bubble. The only floating button is the labelled Add button (`.fab`: white text on `--accent`, a plus and "Add", no glow, at most `--shadow-drag`), 20px above the bottom bar on a phone (above the ask bar on Home, which has none), where it steps aside while the page scrolls down and comes back on the way up, and where it also steps aside while typing. A trip page always has it (and from 1024px has the trip header's Add beside Share instead); the Ledger shows it only once its header Add has scrolled out of view, named "Add a transaction" so it never doubles the header's "Add transaction", and there it stays put while scrolling down (`.fab-steady`), with room left under the list so it never covers the last row.
 - An amount never breaks inside its figure: tile figures size to their box and wrap, if they must, between the currency and the number. Differences are said in words, not with a minus sign in green.
-- Say a figure once per screen: Home's hero gives this month's spending and how it stands, so its Money this month card adds only the pace; the Money overview's Spending by month card shows the trend and adds what the tiles around it don't (a usual month; the biggest category is "Where it went", beside it).
+- Say a figure once per screen: Home's headline gives this month's left to spend and its Spent line gives what has gone, so Money this month adds only the pace; the Money overview's Spending by month shows the trend and adds what the tiles around it don't (a usual month; the biggest category is "Where it went", beside it).
 - Empty sections are one short line, left-aligned, with one action; a secondary way in (adding a holding by hand, recording a trade) stays behind a small button until asked for.
-- Charts say one thing: past months are quiet slate-grey bars, rose stripes only mark a month over budget, this month is solid blue over the dashed blue outline of a usual month, and the legend lists only what's drawn.
+- Charts say one thing: past months are quiet grey bars (`--pal-track`), rose stripes only mark a month over budget, this month is a solid ink bar over the dashed outline of a usual month, the selected month's bar is outlined in action blue, and the legend lists only what's drawn.
 - Ledger on a phone: no tick boxes until Select; dates are one select (All dates, This month, Last month, Custom) beside the search, with the date boxes on a row of their own only for Custom; each row names its category as a small caption under the merchant (the Category column is for wide screens).
 - Touch targets: on touch screens small buttons and chips are at least 40px tall and filter tabs 38px.
-- One heading style: sentence case, no emoji. Small capitals (eyebrow) are only for labels inside a section.
+- One heading style: sentence case, no emoji, no coloured word. Small capitals (the Label level) are only for the date line, a group's head and column heads.
 - Page padding 40px 48px on desktop, 16px on phones.
 - On phones a page's actions sit under its title and share the width (a primary action gets its own row); a section's note sits under its heading; form buttons fill the row.
 
-### Home hero
+### Home headline
 
-- **Structure**: the day and greeting with round Log expense, Notifications (a bell, to `/settings/notifications`) and Settings buttons (40px under 360px, and under the greeting if they still do not fit); this month's spending as the big figure (counting up) with an arrow (down when it's the better side); how it stands in words (budget left, or against last month by this date); the brief
-- **Content**: the brief is written in code from the user's own figures (`brief.ts`), never a model's words; figures in it are bold. It spans the areas in this order, each only when there is something to say: money (left to spend when it is the tighter figure), one market clause (the held stock that moved most in the latest US session, when it moved by 3% or more: "NVDA is down 5% today", "NVDA fell 5% in the last session"), the trip ("You're on day 3 of 6 in Tokyo", "Your Tokyo trip is in 12 days"), then "N things need you below", where N is the whole of Needs you, which is the next thing on the page
-- **Surface**: solid Nexus Blue from `--hero-top` to `--hero-mid`, fading into the page on phones
+- **Structure**: a Label with the date ("TUESDAY 24 NOVEMBER") with Settings (and Notifications, a bell) as quiet 44px icon buttons at its right; a Label "LEFT TO SPEND IN NOVEMBER"; the headline figure, 1,842.60 in the Headline style with "SGD" beside it in 1.25rem muted, counting up the first time it is seen (`--text-strong`; `--rose-accent` with the word "over" when the month is over budget); a progress bar, 4px high, `--text-strong` on `--border-card`, with the share of the budget spent as its fill (a `role="progressbar"`, named "Spent 1,357.40 of 3,200.00"); one line in Body, muted, "Spent 1,357.40 of 3,200.00 · 8 days left"; then one sentence, "about 230 a day" (left divided by the days remaining, rounded, in the home currency's units), under it. Everything sits on the page: no panel, no gradient, no round buttons.
+- **Rules**: the sentence is left out when there is no overall budget, when the month is over (the headline says it instead) or on the last day. With no budget the headline is the month's spending ("Spent in November") and there is no bar. The headline is never narrated ("You're doing great"); it is only figures and the words that say what they are. Figures in the line are tabular and `--text-primary`.
+- **Content**: the brief paragraph is not on Home. What it said is a row in Today: a market row (the held stock that moved most in the latest US session, when it moved by 3% or more: "NVDA", sub-line "Down 5% in the last session"), the trip row ("Tokyo, day 3 of 6", "Tokyo in 12 days"), and each thing that needs the person. Rows are written in code from the user's own figures (`brief.ts` is reworked to produce them), never a model's words, and none says how many things there are.
 
 ### Today (Home)
 
-- **Order on a phone**: the hero, the trip card while a trip is on, Needs you, Working on (only while research runs), Ask anything, Get set up (only while unfinished), then Money this month, Portfolio today and Next trip. From 1024px two columns (3 to 2): Needs you, Working on, Ask anything and Get set up on the left, the three cards at a glance on the right, and the trip card across the top of both
-- **Needs you**: a titled block of rows (icon tile, text, a caption naming the area: Money, Investment or Travel). The API sorts by `when`; the page keeps its order and shows the first five, then a ghost "Show all (n)" button under the list (`aria-expanded`; "Show fewer" once open) opens the rest in place. An item that needs the person now (`when: "now"`) has the alert icon in an amber tile and a small amber "Now" tag at the right; an item about today says "· Today" after its area, in caption text, with no other mark; the rest say neither. A row links to where it is settled, and its buttons (the first one primary) settle it in place. With nothing: "Nothing needs you right now."
-- **Working on**: a compact card under Needs you, up to three runs, each a title, its progress line and a thin bar, with Cancel while it runs
-- **Ask anything**: a card with the ask box (the input surface, a blue send button) and the suggested questions as chips; each opens the chat
+- **Order on a phone**: the headline block, the trip section while a trip is on, Today, Working on (only while research runs), Get set up (only while unfinished), then Money this month, Portfolio today and Next trip; the ask bar is pinned above the bottom bar throughout. From 1024px two columns (3 to 2): the headline block and Today on the left, the three sections at a glance on the right, and the trip section across the top of both
+- **Today**: a section ("Today", with a Show all text button at the right when there are more than five) of rows: the title, one muted sub-line naming the area (Money, Investment or Travel) and what it is, and at the right a figure or a plain word ("Review", "Now", "Pay"). No icon tile. The API sorts by `when`; the page keeps its order and shows the first five, then a text button "Show all (n)" (`aria-expanded`; "Show fewer" once open) opens the rest in place. An item that needs the person now (`when: "now"`) has the word "Now" in `--status-warning` at the right; an item about today says "Today" in its sub-line; the rest say neither. A row links to where it is settled, and a row that needs a decision has its word as the text button that settles it in place. With nothing: "Nothing today." (not a sentence about the app)
+- **Working on**: a section under Today, up to three runs, each a title, its progress line and a thin bar (ink on `--border-card`), with a Cancel text button while it runs
+- **Ask bar**: pinned above the bottom bar (above the safe area), full width on a phone, on the page colour with a 1px top rule: a text field (`--bg-input`, `--border-input` edge, 16px text) and a labelled **Ask** button (filled `--accent`, white text; no sparkle or magic icon). The field's placeholder is an example of a real request ("Spent 12.50 on lunch"), never "Ask anything". Send on Enter. Sending opens the chat with the message. The suggested questions are not on the bar; they appear in an empty chat
 - **Get set up**: shown while the server's checklist is not dismissed and has a step left; it goes by itself when every step is done. A line says how many steps are left; each step is a row, ticked with "Done" when done, else an empty ring and a soft "Set up" link to the page where it is done. "Get receipts in automatically" also has a quiet "Ask Nexus" button, since its sentence is a request for help; the other sentences (`ask`) carry example values (a payday, a stock, a budget) and are never sent as if they were the person's. "Hide" in the heading calls `POST /api/setup/dismiss` and the card goes; if that fails it says so under the list and stays
-- **At a glance**: three small titled cards, each with one link at the right. Money this month: spent (the figure the hero also shows, as a card needs it), then with an overall budget the share used against the share of the month gone as a meter with "Ahead of pace" (amber), "On pace" or "Under pace" (more than 5 points apart), without one "Last month by now: SGD 1,200.00"; Details opens Accounting. Portfolio today: the value in the home currency, the day's change in green or rose and the `PriceWhen` caption (live dot, close); with no holdings "No holdings yet. Add your stocks."; Open opens Investment. Next trip: "Tokyo in 12 days" (or "tomorrow") with its dates and any nights with no place to stay; with none "No trip coming up. Plan a trip."
-- **Trip mode**: while the next trip is on, a titled card ("Day 3 in Tokyo", Open trip at the right) leads above Needs you and Next trip gives way to it. It has up to three lines, each only when the trip's data has it: Next (the first plan today still to come, with its time; else one with no time; else "Nothing more planned today."), Spent today with what is left per day of the trip's budget, and Next booking (the next flight, train or stay after today). Nothing here asks the server for more than the trip page does
+- **At a glance**: three sections (headed like any other, each with one text button at the right), not cards. Money this month: spent (the figure the headline also shows, as the section needs it), then with an overall budget the share used against the share of the month gone as two thin bars with the word "Ahead of pace" (in `--status-warning`), "On pace" or "Under pace" (more than 5 points apart), without one "Last month by now: SGD 1,200.00"; Details opens Accounting. Portfolio today: the value in the home currency, the day's change in `--emerald-accent` or `--rose-accent` and the `PriceWhen` caption (live dot, close); with no holdings "No holdings yet."; Open opens Investment. Next trip: "Tokyo in 12 days" (or "tomorrow") with its dates and any nights with no place to stay; with none "No trip coming up."
+- **Trip mode**: while the next trip is on, a section ("Day 3 in Tokyo", Open trip at the right) leads above Today and Next trip gives way to it. It has up to three rows, each only when the trip's data has it: Next (the first plan today still to come, with its time; else one with no time; else "Nothing more planned today."), Spent today with what is left per day of the trip's budget, and Next booking (the next flight, train or stay after today). Nothing here asks the server for more than the trip page does
 - **Left out of Home**: the six-month chart (now on the Money overview), the Budgets card (on the Budgets page) and the Today investment card (Investment)
 
 ### Spending by month (Money overview)
@@ -234,8 +250,8 @@ All spacing derives from a 4px base unit.
 
 ### Rows
 
-- Icon tile (42px, `--bg-raised`), title and caption, value on the right; rows divided by `--border-card`
-- Used for what needs you, holdings, the latest transactions and budgets
+- Title and a muted sub-line on the left, a figure or a plain word right-aligned on the right (tabular, `--text-primary`; a word such as "Review" is a text button); rows divided by a 1px `--border-card` hairline, at least 56px tall, with no icon tile, no card and no badge
+- Used for Today, holdings, the latest transactions and budgets
 
 ### Investment
 
@@ -246,14 +262,20 @@ All spacing derives from a 4px base unit.
 - **Settings**: three groups, each a small section title over a grid of cards. **Notifications**: Telegram updates (with quiet hours and the investment fields), a Time zone card (below), Shared trips and a Notifications card (an Open button; "What Nexus sent you on Telegram in the last 30 days, and what is waiting.") that opens `/settings/notifications`, one more page inside Settings. **Connections**: Receipts by email and Import a statement, each a card with an Open button (Receipts by email shows the connected addresses and how many emails wait, or "Not connected"); they open `/settings/email` and `/settings/import`, which are pages inside Settings: a quiet "Back to Settings" link above the title, no department tabs, and Settings stays marked in the rail. **Your data**: Categories, Wallets, Category rules, What Nexus remembers and a Download or delete card. The **Download or delete** card has two rows. Download all my data ("Your ledger, budgets, trips, investments, memories and settings, as a zip.") has a small Download button (`GET /api/me/export`, fetched as a blob and saved as `nexus-export-YYYYMMDD.zip`; "Preparing…" while it runs, then "Downloaded."; a 429 says to try again in a few minutes, in rose; inside Telegram's iOS and Android apps the line goes on with "If the download doesn't start, open Nexus in your browser to download it."). Delete everything (what goes, that shared trips stop being shared, that it can't be undone and a new invite is needed to come back) has a quiet rose "Delete everything…" that opens a rose-tinted confirm box in place: a "Type DELETE to confirm" field (focused), a rose Delete everything that stays off until the field is exactly DELETE, and Cancel. Confirming (`POST /api/me/delete`) clears what the app holds and lands on the sign-in page; a refusal shows beneath in rose and stays put. The **Time zone** card is where Nexus counts your day: the current zone as "Madrid · UTC+2" (the city from the IANA name, the offset worked out in the browser), a caption under it for what put Nexus there ("from your phone", "you set it", "from your trip", "home") and "Home: Singapore" when home is a different zone. The phone's zone is reported once per page load after sign-in (`POST /api/me/timezone`, source `phone`), unless the person picked a zone themselves in the last 24 hours. Two small buttons: Change opens a picker (a search box over a list of every zone the browser knows, or a short common list) with Save and Cancel, which sends the zone as the person's own choice (source `manual`); Use home time, only while the zone isn't home, goes back to it. The result is said under the buttons ("Saved. Nexus now uses Tokyo time.") and a refusal shows beneath in rose. The investment fields sit in the Telegram updates card under their own "Investments" heading and each saves alone with only the field that changed: Quiet hours (two time inputs, From and To, default 23:00 to 08:00; "Nexus holds messages in these hours. A broken stop on a stock you hold still comes through."), Messages a day under it (a number input, 3 to 20, default 6, saved when the field is left or on Enter; a value outside the range or a fraction shows "Enter a whole number from 3 to 20" and sends nothing; "After this many (3 to 20), the rest go into your digest. Urgent messages, ones with buttons and your summaries don't count; they still come."), Big move alerts (a number input, 1 to 20%, saved when the field is left or on Enter; the server's refusal shows beneath and the saved value stays) and a Morning investment summary switch ("At 8am after each US trading day."). Captions are 13px, in sentence case.
 - **Voice notes in the chat** (`components/ChatDrawer.tsx`, `useVoiceRecorder.ts`; `POST /api/chat/voice`, multipart field `audio`): the message row's button is the mic (a blue icon button, 72px wide like Send, "Record a voice note") while the box is empty and Send once there is text. Tapping it asks for the microphone and records (MediaRecorder: webm/opus, else ogg/opus, else mp4, filed as `voice.webm`/`.ogg`/`.m4a`); the box is disabled and a line above the row shows a pulsing rose dot, "Recording" and the time as `0:07 / 2:00`; the mic turns into "Stop and send" (a stop icon) with a ghost "Cancel recording" (x) beside it. It stops and sends by itself at 2:00 and every track is stopped afterwards. While it uploads the person's bubble reads "🎙 Voice note…", then the reply list shows exactly as a typed message's (buttons, Undo). A refusal (413 too long, 415, 429, 503) removes that bubble and says the server's words in a quiet rose line above the row. With no microphone API or MediaRecorder, or permission refused, the mic stays but dimmed (`aria-disabled`) and a tap shows, once, the muted line "Mic isn't available here — send a voice note in the Telegram chat instead."
 - **How Nexus talks card** (Settings, in the Notifications group, across the grid's full width; `GET`/`PUT /api/settings/voice`): the title, then "Pick a vibe, then fine-tune. Only changes wording — never what Nexus can do." Five vibe buttons (Default first; a label and a one-line blurb; the chosen one in the soft blue with a blue border, `aria-pressed`; two across on a phone), three segmented dials (Emoji None/Some/Lots, Length Short/Normal/Detailed, Humour Off/Light/Playful; a white thumb on the input surface, 40px tall) and an "Anything else?" field (200 characters, a counter under it with "Your note applies in chat", saved when left or on Enter; an empty field clears it). Every tap saves at once: the screen changes first and is put back, with a rose line under the card, if the server refuses. Choosing a vibe takes that vibe's own dials. Under it a Preview of three made-up exchanges ("grab 12", "rent paid", "how's my food budget?") written in the browser (`voice.ts`) from the vibe and dials, so it follows each tap with no request: Emoji none strips them, some keeps one, lots adds more; Short drops the second clause and Detailed adds one; Humour off drops a vibe's joke and Playful adds a quip. The note is not previewed. The segmented buttons and vibe buttons give a selection tick in Telegram.
-- **Notifications page** (`/settings/notifications`, from the bell on Home's hero or the Notifications card in Settings; inside Settings like Receipts by email: a quiet "Back to Settings" link above the title, no department tabs, Settings marked in the rail, Telegram's back button to Settings): the title "Notifications" with one caption, "Urgent ones always come. The rest respect your quiet hours and daily limit, and what's left is gathered into one message." Under it the last 30 days (`GET /api/notifications/history`), a block per day in the user's timezone, newest first and titled Today, Yesterday, then "Tue, Oct 20" (with the year once it isn't this one). A day's card is rows (the usual icon tile, the message, a caption line under it): the tile is a bell, or the alert icon in an amber tile for an urgent message, which also says "Urgent" in amber caption text; the message is up to two lines of its own words (folded, it runs on as one paragraph so the clamp's single "…" never follows a full stop at a line break; opened, the line breaks are kept) with a small "Show more" / "Show less" button (`aria-expanded`) when there is more, and is a link to its `link` when it has one; the caption line holds the time and a status chip: "Sent" (green), "Held until 8:00am" (amber; "tomorrow 8:00am" or a date when it isn't today; "Held for the next digest" with no time), "In a digest" (blue) and "Not sent — Telegram not linked" (quiet grey), which wraps rather than spilling on a narrow phone. With nothing: "Nothing sent in the last 30 days."
+- **Notifications page** (`/settings/notifications`, from the bell on Home or the Notifications card in Settings; inside Settings like Receipts by email: a quiet "Back to Settings" link above the title, no department tabs, Settings marked in the rail, Telegram's back button to Settings): the title "Notifications" with one caption, "Urgent ones always come. The rest respect your quiet hours and daily limit, and what's left is gathered into one message." Under it the last 30 days (`GET /api/notifications/history`), a block per day in the user's timezone, newest first and titled Today, Yesterday, then "Tue, Oct 20" (with the year once it isn't this one). A day's card is rows (the usual icon tile, the message, a caption line under it): the tile is a bell, or the alert icon in an amber tile for an urgent message, which also says "Urgent" in amber caption text; the message is up to two lines of its own words (folded, it runs on as one paragraph so the clamp's single "…" never follows a full stop at a line break; opened, the line breaks are kept) with a small "Show more" / "Show less" button (`aria-expanded`) when there is more, and is a link to its `link` when it has one; the caption line holds the time and a status chip: "Sent" (green), "Held until 8:00am" (amber; "tomorrow 8:00am" or a date when it isn't today; "Held for the next digest" with no time), "In a digest" (blue) and "Not sent — Telegram not linked" (quiet grey), which wraps rather than spilling on a narrow phone. With nothing: "Nothing sent in the last 30 days."
 - **Model costs page** (`/settings/costs`, owner only: a Model costs card with an Open button sits last under Your data for the owner and for no one else, and the page says "Model costs aren't available." to anyone else, as does a 404 from `GET /api/ops/costs?days=`; inside Settings like the Notifications page): the title, one caption and a 7 / 30 / 90 days segmented control (the usual `.tabs`, `aria-pressed`, 30 by default; it refetches and keeps the old figures up meanwhile). Three tiles: This month so far (with "Day 28 of 31"), Projected for the month, Per active user per month. Then blocks titled Last N days (a bar per day, oldest first, zero days a hairline; hovering, focusing or tapping a bar names its day, cost and calls on the line above, the latest day until then; first and last date under it), By feature (friendly label, cost, a share meter and "61% · 900 calls"; an unknown key is shown as it is), By user and By model (name, cost, then calls, and tokens in and out for a model). Money is US dollars: cents ("US$0.41"), four decimals under a cent ("US$0.0042"). It ends with a caption: "Exact costs reported by OpenRouter. Search and Maps APIs are billed separately and aren't included."
+
+### Chat
+
+- **Assistant**: answers in prose (Body, `--text-primary`, no bubble, no avatar tile, full width of the column), then, when there are figures, a ruled table: a 1px `--text-strong` rule over a Label header row, `--border-card` hairlines between rows, labels left, figures right-aligned and tabular. No sparkle or magic icon anywhere on the assistant. Reply buttons are text buttons or the usual secondary buttons.
+- **User**: a plain light-grey bubble (`--bg-raised`, `--text-primary`, 12px radius, right-aligned, at most 80% wide). No tint, no tail, no accent colour.
+- **Chrome**: the chat is a sheet over the page (a panel from 1024px), with the ask field at the bottom in the same style as Home's ask bar and an **Ask** button; an empty chat offers four suggested questions as plain text rows (see Chat suggestions) with no "Ask anything" line above them.
 
 ### Transaction ledger
 
-- **Structure**: heading with a compact primary "Add" (a plus and the word; named "Add transaction") and a "More" menu button beside it, then one filter row: the type tabs (All, Money out, Money in, Transfers, Pending), search and a Dates select; then the transaction table/list. Import statement and Export CSV are in More. The Add button stays because the Ledger has no other way to add; Home and the Money overview have their own.
-- **Rows**: columns are select, Date, Merchant or source, Category and Amount; there is no Type column. The signed amount says money out, so a type badge appears only where it adds something: Money in, Transfer, Pending or Deleted, inline beside the merchant on wide screens (money in also stays green with a +). Plain money out has none.
-- **Dates**: the list comes newest first. On a phone it is grouped under day headings (real `h3`s in the user's timezone, 13px: Today, Yesterday, then "Mon, Nov 9", with the year for another year) and the rows do not repeat the date. On a wide screen the Date column says Today or Yesterday for those two days and "Nov 9, 2026" otherwise; there are no headings.
+- **Structure**: heading with a compact primary "Add" (a plus and the word; named "Add transaction") and a "More" menu button beside it, then underlined text tabs (All, Out, In, Pending: text on the page, the current one ink and semibold with a 2px ink bar, no tray) and a search field and a Dates select; then the rows. Transfers sit under All with the word "Transfer". Import statement and Export CSV are in More. The Add button stays because the Ledger has no other way to add; Home and the Money overview have their own.
+- **Rows**: merchant or source with a muted sub-line (category and the card that paid), the figure right-aligned and tabular, signed ("-12.50" out, "+3,200.00" in in `--emerald-accent`); there is no Type column or badge. Pending, Transfer and Deleted are a word in the muted sub-line, "Pending" in `--status-warning`. On wide screens the rows are columns of the same (select, merchant, category, amount), under a Label header row with a 1px ink rule.
+- **Dates**: the list comes newest first and is grouped by day on every width: a heading row (a real `h3` in the user's timezone: Today, Yesterday, then "Mon 9 Nov", with the year for another year) with the day's total right-aligned and tabular on the same line, then that day's rows, which do not repeat the date. A group is separated from the one before by space, not a card.
 - **More menu** (`components/Menu.tsx`): a button with `aria-haspopup="menu"` and `aria-expanded`; the list is `role="menu"` with links or buttons as `menuitem`s, 44px tall, under the button on its right edge. Opening focuses the first item; Arrow keys, Home and End move; Escape closes and returns focus to the button; Tab, a pick or a press outside closes it.
 - **Variants**: all, outgoing, incoming, IOU/pending
 - **Spacing**: `--space-4` card padding, `--space-2` control gaps
@@ -293,8 +315,8 @@ All spacing derives from a 4px base unit.
 
 ### Status badge
 
-- **Structure**: short text label with semantic color
-- **Variants**: outgoing, incoming, pending, paid, completed, error, now (the amber tag on a Needs you item that needs the person now)
+- **Structure**: a word in the status colour (`--emerald-accent`, `--status-warning`, `--rose-accent`) or muted text, set inline in a row's sub-line or beside a figure; never a pill, fill or border
+- **Variants**: outgoing, incoming, pending, paid, completed, error, now (the amber word "Now" on a Today row that needs the person now)
 - **Spacing**: `--space-1` vertical and `--space-2` horizontal padding
 - **States**: default, focus when interactive
 - **Accessibility**: text always names the state; contrast target is WCAG 2.2 AA
@@ -302,7 +324,7 @@ All spacing derives from a 4px base unit.
 - **Layout**: inline cluster item
 
 ### Trip page
-- **Structure**: on Plan, a cover (a photo with only light round buttons on it: a Trips back pill, Share, the Add button from 1024px and a ⋯ menu, and the photo credit behind a round info button), and under the photo, on white, the destination in the accent colour, a meta row with dates, a when-pill and companion initials, the Next up line and, on a shared trip, the latest change. On the other tabs, and on Plan once the photo has scrolled behind it, the cover is replaced by a slim sticky bar: a back arrow, a 36px thumbnail of the photo, the destination (the page's h1 there) with its dates, then the same actions. Under it a segmented tab bar, Plan, Ideas, Money and Prep (the open tab is in the address as `?tab=`, and the open day as `?day=`), which sticks under the slim bar, or to the top while the cover is showing; the tab's content; the Add button. The ⋯ menu holds Edit trip, Getting around and directions, the photo choices (Another photo, No photo or Show a photo) and Delete trip
+- **Structure**: on Plan, a cover (a photo with only light round buttons on it: a Trips back pill, Share, the Add button from 1024px and a ⋯ menu, and the photo credit behind a round info button), and under the photo, on white, the destination in ink, a meta row with dates, a when-pill and companion initials, the Next up line and, on a shared trip, the latest change. On the other tabs, and on Plan once the photo has scrolled behind it, the cover is replaced by a slim sticky bar: a back arrow, a 36px thumbnail of the photo, the destination (the page's h1 there) with its dates, then the same actions. Under it a segmented tab bar, Plan, Ideas, Money and Prep (the open tab is in the address as `?tab=`, and the open day as `?day=`), which sticks under the slim bar, or to the top while the cover is showing; the tab's content; the Add button. The ⋯ menu holds Edit trip, Getting around and directions, the photo choices (Another photo, No photo or Show a photo) and Delete trip
 - **Variants**: Plan (a stops row, each stop with its dates and nights and a travel marker between stops, with Edit stops beside it; the day pills and the day carousel in one card, a day at a time, swiped or picked, each day as tall as its plans, the pills one scrolling row on a phone (a fade at an edge with more days beyond it) and wrapped onto as many lines as they need from 1024px; a rail dot, the day's heading ("Today · Day 3 of 6 · Fri, Oct 23" on today), its weather on one line, the night's stay as a compact strip (hotel name, Maps and Copy address, with address, check-out and booking reference under a fold) and the day's plans, flights and trains, travel times between them, a name for the day and plans moved by their grip or onto a day pill; a tap on a plan, flight, train or stay opens it in place (address with Maps and Copy, Google Maps, link, note, booking reference and a quiet Change that opens the editor) and a second tap folds it, while a press that moves more than 8px or lands as the days scroll does nothing, so a swipe never opens an editor; the map beside it from 1024px when the trip has one (with no map the day takes the whole width), stuck in view while the day scrolls, and full screen on a phone when asked, showing one day or all, with an Ask Nexus about this trip button underneath; while the trip is on, Plan opens on today; the day is shown once, with no separate card above it), Ideas (saved places without a day as quiet rows: a name, one meta line, a cost when there is one and one action, Add to day or the day it is on; a row opens to its note, Google Maps link, rating, Change and Remove; the lists as chips once there are two, an Arrange button that shows the drag grips only while it is on, a List and Map switch where maps are set up, and the map beside the list from 1024px; a Find ideas button above them opens the finder in a sheet), Money (the page's full width; one summary card of what is spent, booked and planned against the budget, a To do card for costs to split and people to settle with, then Details, a list of sections of which one is open at a time: Where it goes, Planned costs, Setting money aside, Bookings paid, Expenses, Paid by others, Travellers; once the trip is over To do comes first, then what it cost), Prep (the same width; Getting ready, one list of what's still to sort, what Nexus suggests and the to-dos, then Cover and documents, the packing list as checkbox rows, the weather for the trip and the notes)
 - **Add sheet**: the Add button opens "Add to <place>" with a booking, a plan or an idea, and quick ways: Type it, Screenshot or photo, Find a place. Money has its own forms (a planned cost, someone else paid) instead of the sheet. On Prep the button is "Add to prep" and opens a small choice sheet of A to-do, Cover or a document and Something to pack; each takes you to its field or, for cover, to its own sheet
 - **Getting around and directions**: the owner's ⋯ menu item, on a trip with maps, opens a small sheet with Getting around (Public transport or Hire car, for hops with no mode picked) and the app directions open in, which is remembered on the device. A member sees no picker, only a quiet line under the map: "Getting around: public transport"
@@ -314,7 +336,7 @@ All spacing derives from a 4px base unit.
 - **Activity**: a trip with other people on it shows its latest change under Next up in the cover's text, on Plan only, in one quiet line ("Alex T. added Dinner at Sushi Ten · 5 min ago"), only when the change is from the last 7 days. Tapping it opens the Recent changes sheet, the last 20 changes, newest first, each with how long ago. Nothing shows on a trip nobody else is on
 - **Place photos**: a linked Google Maps place shows its photo, 240px wide with a credit line under it, in the place's Details on a stop. A 64px thumbnail with its credit (`PlaceThumb`) exists but no page shows it yet; its credit wraps to six lines at that width, so shorten the credit before using it
 - **Cover**: the destination photo on its own, 190px tall on a phone (full width) and 240px on a wide screen (a card with the page's radius), with no fade or text over it; the title and details sit below it on white. With no photo it is a gradient from the destination's name, 120px tall. Buttons on the photo are light glass (white at 94%, dark text, a soft shadow) so they read on any photo; the photo credit shows from the round info button and links to the photo's Commons page. Once the photo has scrolled behind the 56px slim bar, the slim bar takes over and the cover's buttons are hidden and inert
-- **Next up**: one quiet line of text in the cover's text on Plan only, a sparkle icon at its left and one ghost text button (the action, in accent text) at its right, 44px tall on touch; it is not on the other tabs, and once the trip is over it says who still owes
+- **Next up**: one quiet line of text in the cover's text on Plan only, one ghost text button (the action, in accent text) at its right, 44px tall on touch; it is not on the other tabs, and once the trip is over it says who still owes
 - **Spacing**: `--space-4` card padding and between cards, `--space-2` timeline gaps
 - **States**: loading, error, empty sections ("None yet", "No ideas yet", "Free day"), imported from a screenshot (a banner asking whether it looks right), adding, editing; after the trip there is no Add button, Money opens first and Next up (on Plan) is about settling up
 - **Accessibility**: the tabs are a labelled navigation with `aria-current`; Next up is one labelled region with one button; the cover's buttons are hidden from assistive tech while the slim bar stands in, and the page has one h1 (the cover's title, or the slim bar's); the day pills are buttons with `aria-current`, and each day is a labelled slide; the day rail is decorative; the Add button is named for what it adds ("Add to Day 2"); the info button and every icon-only button have names; sheets are `role="dialog"` and close on Escape or the backdrop; weather icons carry a text label
@@ -322,8 +344,8 @@ All spacing derives from a 4px base unit.
 - **Layout**: from 1024px Plan and Ideas put the day or the list on the left (60%) and the map on the right (40%, at least 300px), and the map sticks below the slim bar and tab bar (112px) with a canvas of at most 600px, so it stays in view; on phones they stack. With no map (no Google Maps key) Plan and Ideas are one column, not two with an empty one. The cover, the tab bar and every tab's content share one content width (the page's 1420px at most), so no wide cover sits over a narrow body; Money and Prep use all of it. The slim bar (56px) and the tab bar (56px) stick to the top of the scroll area (`--trip-sticky-top`, 112px); the day pills stick under them on a phone, where they scroll sideways, and scroll away with the page from 1024px, where they wrap. Under 1024px a day's pencil sits right beside its name (not at the far right), so the floating Add button never covers it; tap targets stay 44px From 1024px the Add button sits in the header beside Share; below that it floats at the right of the screen, and on phones 20px above the bottom bar, with room under the last item so it covers nothing
 
 ### Travel home
-- **Structure**: the heading "Your trips" with "trips" in the accent colour, one count line under it ("1 on now · 4 coming up", left out when there is nothing to count; a guest's reads "The trips you were invited to."), and one primary at the right, New trip with a plus
-- **Trip card**: a photo on top (140px; a gradient from the destination's name without one), then on white the destination in the accent colour at 26px (the link; the whole card is clickable) beside a pale-blue when-chip, one line of dates with days and nights, and the companions as small round initials at the right. A card on a trip the person was added to also says "Shared by <owner>" and shows no budget. Cards in a row are equally tall
+- **Structure**: the heading "Your trips", one count line under it ("1 on now · 4 coming up", left out when there is nothing to count; a guest's reads "The trips you were invited to."), and one primary at the right, New trip with a plus
+- **Trip card**: a photo on top (140px; a gradient from the destination's name without one), then on white the destination in ink at 26px (the link; the whole card is clickable) beside a pale-blue when-chip, one line of dates with days and nights, and the companions as small round initials at the right. A card on a trip the person was added to also says "Shared by <owner>" and shows no budget. Cards in a row are equally tall
 - **Grid**: one column on a phone, two from 720px, three from 1280px, with `--space-4` between cards
 - **Order**: On now, Coming up, Shared with you, Where to next, bookings not on a trip, Research, then Past trips, then the footer line. Groups with nothing in them are left out
 - **Where to next**: not a card: a title, a place-and-when field with Research it (handed to the chat), and example chips with Add a trip in one row that scrolls sideways (hidden scrollbar). With no trips it is the whole page body under the heading (no separate empty card repeating it)
@@ -335,13 +357,13 @@ All spacing derives from a 4px base unit.
 ### Shared trip page
 `/shared/<token>`, the read-only link, signed out. A centred column of at most 760px (a card from 720px, a full-width band on a phone).
 
-- **Cover**: the trip's photo (or gradient) with the credit button and a white glass chip, "Shared with you · read only"; under it the title in the accent colour (36px, 48px from 720px) and one line of dates and stops ("Nov 10 – Nov 14 · Tokyo and Kyoto") with the when-chip
-- **Days**: one card each: a meta line ("Day 2 · Wed, Nov 11"), the day's name in the accent colour (its label, else the stop), then rows divided by hairlines. A plan's row is a 48px time column, the title with one quiet line (address, or the kind and address) and a ghost Maps link; a flight or a stay has its line icon in place of the time, and a stay a Check in or Check out badge. A day with nothing says "Free day"; with bookings hidden, a day a hidden booking falls on says "Travel day"
+- **Cover**: the trip's photo (or gradient) with the credit button and a white glass chip, "Shared with you · read only"; under it the title in ink (36px, 48px from 720px) and one line of dates and stops ("Nov 10 – Nov 14 · Tokyo and Kyoto") with the when-chip
+- **Days**: one card each: a meta line ("Day 2 · Wed, Nov 11"), the day's name in ink (its label, else the stop), then rows divided by hairlines. A plan's row is a 48px time column, the title with one quiet line (address, or the kind and address) and a ghost Maps link; a flight or a stay has its line icon in place of the time, and a stay a Check in or Check out badge. A day with nothing says "Free day"; with bookings hidden, a day a hidden booking falls on says "Travel day"
 - **Bookings hidden**: a quiet note under the cover says "Bookings aren't shown on this link."
 - **Foot**: "Times are local." and a centred caption saying that no money, booking references, notes or travellers are shown. No buttons: nothing on the page can be changed
 
 ### Research page
-`/travel/research/<run>`: a back link to Trips, the place in the accent colour (36px, 48px from 900px) with one line ("Jan 10 to Jan 17 · 7 nights · 2 travellers").
+`/travel/research/<run>`: a back link to Trips, the place in ink (36px, 48px from 900px) with one line ("Jan 10 to Jan 17 · 7 nights · 2 travellers").
 
 - **One primary**: Make it a trip. Once a trip is made it is replaced by a soft Open the trip
 - **Estimated cost**: the first card, a label, the range large ("SGD 4,602–6,760"), "for 7 nights, 2 travellers", the budget line ("Fits your budget of SGD 6,800"), what makes it up, and the put-aside sentence with its cash-flow verdict
@@ -357,7 +379,7 @@ One component, `Sheet` (`components/Sheet.tsx`), is the dialog for every Travel 
 - **Forms**: a sheet can be the form itself (`as="form"`), with its primary button in the footer. It has at most one primary button in view, and fields are 16px on a phone.
 
 ### Travel parts
-These are the rules the Travel pages follow. New Travel screens keep to them.
+These are the rules the Travel pages follow. New Travel screens keep to them. Colour and shape follow sections 2 and 8: where a line below still names pale blue, a pill, an icon tile or a sparkle (the soft button, the day pill's on state, the `.way` icon tile, the Next up and suggestion sparkles), the component PR replaces it with the Statement equivalent (a `--bg-raised` button, ink with a 2px bar for the open state, no tile, no sparkle).
 
 - **Buttons**: one filled blue primary per view. A secondary button for a row or a card (Add to day, Find ideas, Open day) is `.btn-soft`: pale blue with blue text. Quiet ghost buttons (`.btn-ghost`) carry a 16px icon and text, at least 40px tall. Plain grey `.btn` is only for cancel and back. Destructive is a quiet rose button (`btn btn-ghost btn-danger`: transparent, rose text), never filled. A ghost button's hover is the faint `--bg-card-hover`, never a grey fill. A ghost button that starts a line (See costs, Details, Take off, Make a new link) is pulled 12px left so its words line up with the text above it. Icon-only buttons (a packing item's remove) are at least 40px, 44px on touch.
 - **One chip**: `.day-pill` is the only chip, for days, stops, lists, scopes and themes. It is white; on is pale blue (`--accent-soft`) with `--accent-text` and `--accent-border`. A stop's or list's colour shows only as a dot. 40px tall on touch. A choice with many options is one chip with a ▾ that opens the options, not a row of chips.
@@ -365,21 +387,21 @@ These are the rules the Travel pages follow. New Travel screens keep to them.
 - **Rows**: an Ideas row is quiet: a coloured list dot, the name (a button that opens the row) over one meta line of address, kind and "Near Day 2 · 1.2 km", the cost at the right when there is one, then the row's one action as a 44px button. Rows are divided by a hairline and carry no card, badge or chip. What a row opens to (note, Open in Google Maps, rating and Details, Change and Remove) sits under it, indented to the name. Drag grips show only while Arrange is on, with a line saying how; a row's own button keeps working then.
 - **Find ideas**: the Ideas tab has one Find ideas button (soft, with a search icon, 44px), beside the List and Map switch on a phone and on its own line from 1024px. It opens the finder in a Sheet titled "Find ideas": a search field with its Search button, then one scope chip, then the themes in one row that scrolls sideways, then the results. A result is a 56px tile (the place's photo, or an icon for its kind), the name, one meta line ("Rated 4.6 (2,310) · Jung-gu · Google Maps", or "From a guide" for an idea from an article, with the source linked) and one soft button, Save to Ideas (and Add to Day N when the search is near a day). A saved result turns into a disabled green "Saved" button and the sheet stays open, so several can be kept; closing it shows the ideas.
 - **Scope chip and menu**: the finder's scope is one chip, "In Tokyo ▾" (its name is "Look in: In Tokyo"), that opens a menu of Whole trip, each stop and Near Day N, with a tick on the one in use. The menu is a popover under the chip (`role="menu"` of radio items), closed by Escape, a choice or a tap elsewhere; Escape closes the menu first and the sheet on the next press. It is the pattern for any choice with many options, in place of a row of chips.
-- **Getting ready**: the first card on Prep, one list with hairlines between rows of 56px at least, in this order: what's still to sort (a warning icon, the text and one soft button, Add or Set, as Next up's), then Nexus's suggestions (a sparkle icon, the text over one quiet line, a soft Add and a ghost "Not needed" with an x; on a phone the two buttons sit on their own line under the text, in line with it), then the to-dos not done, then the done ones. The card's heading has "N to do" at the right; with nothing to do it says what is sorted. A to-do is a round 24px checkbox (accent when ticked) named by its text, an optional line under it ("By Tue 8 Dec", or "Overdue · Tue 8 Dec" in the warning colour and semibold once past and not done) and a quiet 40px (44px on touch) x that removes it. Ticking one sinks it to the bottom, muted and struck through. Under the list a hairline and the add form: a text field, a date field labelled "By (optional)" and a soft Add (disabled until there is text), with the note "With a date, Nexus reminds you the day before." Once the trip is over nothing is added, and the card is left out when there is nothing to show.
+- **Getting ready**: the first card on Prep, one list with hairlines between rows of 56px at least, in this order: what's still to sort (a warning icon, the text and one soft button, Add or Set, as Next up's), then Nexus's suggestions (the text over one quiet line, a soft Add and a ghost "Not needed" with an x; on a phone the two buttons sit on their own line under the text, in line with it), then the to-dos not done, then the done ones. The card's heading has "N to do" at the right; with nothing to do it says what is sorted. A to-do is a round 24px checkbox (accent when ticked) named by its text, an optional line under it ("By Tue 8 Dec", or "Overdue · Tue 8 Dec" in the warning colour and semibold once past and not done) and a quiet 40px (44px on touch) x that removes it. Ticking one sinks it to the bottom, muted and struck through. Under the list a hairline and the add form: a text field, a date field labelled "By (optional)" and a soft Add (disabled until there is text), with the note "With a date, Nexus reminds you the day before." Once the trip is over nothing is added, and the card is left out when there is nothing to show.
 - **Cover and documents**: the card under it, for insurance, visas and other documents. Each is a 56px row: a line icon (a shield for insurance, a stamp for a visa, a page for the rest), the name over one quiet line ("Insurance · TX-4471 · 2–9 Dec"; the name is the button that opens the cover) and, for the owner when it has a cost, the cost at the right with a soft Log it under it, or "Logged" with a tick. Under the row, in line with the name, are quiet Call +65 6123 4567 (a `tel:` link) and Copy (the reference) buttons; Log it opens a tinted confirm box in place, "Record SGD 89.00 as spent on Travel? Nexus only records it.", with a primary Log it and Not now (the same box on Money's Bookings paid). The card ends with a ghost "Add cover or a document" and, outside a guest's view, a caption that says it can be done by chat. A member sees no cost, Logged or Log it.
 - **Cover sheet**: a `Sheet` form titled "Add cover or a document" or "Change <name>": a Kind chip row (Insurance, Visa, Document, Other: one radio group of `.day-pill`s), the name (labelled Insurer for insurance), Policy or reference, Emergency phone, From and To, for the owner Cost and Currency (home currency to start with), and Note. Its footer holds Save, the one primary, at the right and, when changing, a quiet rose Delete at the left, in line with the fields; Delete asks first in a tinted box that says an expense already logged stays. A member's has no cost fields.
 - **Add to prep choice**: a `Sheet` titled "Add to prep" of three `.way` rows, each a 40px icon tile, the title and one caption: A to-do, Cover or a document and Something to pack.
 - **To do**: the card on Money that holds what needs doing with the people going, and only appears when there is something: "N costs to split" (the total and the names, a soft Split button and See costs to list them with Split and Keep as just mine on each) and one row per person to settle with ("You owe Ann SGD 45.00" or "Ann owes you SGD 135.00", a soft Settle up button and Details for what makes it up). Splitting and settling confirm in place, in a tinted box under the row, never a dialog: a sentence saying what will be recorded (and that Nexus doesn't move money), the choice where there is one ("Also record my share as spent"), one primary (Split evenly, Mark settled) and a ghost Not now. A line under the card's title says Nexus records what you say happened. The card is hidden when nobody else is going.
 - **Details accordion**: Money's sections are rows in one card, each a button with its title at the left, a one-line summary at the right ("2 categories", "None yet", "You and Ann") and a chevron, 56px tall, divided by hairlines. One is open at a time (opening one closes the other, with `aria-expanded` on the button and the content a labelled region), and all start closed. Sections with nothing to show (Setting money aside once the trip has started, Bookings paid with no costs, Paid by others with no payments) are left out. A section's form (a planned cost, someone else paid) opens inside its section; the Add button opens the section it belongs to.
 - **Money**: always the ISO code, through `formatMoney`, never a symbol. A range is "SGD 4,602–6,760". A foreign amount is followed by its home amount when known: "JPY 2,000 · SGD 18.00". A sentence that would show zero is left out.
-- **Type**: 13px (0.8125rem) is the floor everywhere in Travel. Headings and labels are sentence case, with no all-caps. The accent type (`.accent-serif`, Geist in the accent colour) is Travel's accent for a trip's title: the trip page's cover and slim bar, the trip cards, the shared page and the Research page use it.
-- **Warmth**: it comes from the trip's own photos and the serif. Travel adds no colours.
-- **The Add button**: white on Nexus Blue, with a plus and the word "Add", 52px tall, named for what it adds. Below 1024px it floats at the right; on phones it sits 20px above the bottom bar. From 1024px it moves to the trip's header, beside Share, and is the only Add on the page. Every tab has one except after the trip.
+- **Type**: 13px (0.8125rem) is the floor everywhere in Travel. Headings and labels are sentence case, with no all-caps. A trip's title is ink, one weight, like any title; the accent-coloured title (`.accent-serif`) is removed in the component PR.
+- **Warmth**: it comes from the trip's own photos. Travel adds no colours and no accent word.
+- **The Add button**: white on `--accent`, with a plus and the word "Add", 52px tall, named for what it adds. Below 1024px it floats at the right; on phones it sits 20px above the bottom bar. From 1024px it moves to the trip's header, beside Share, and is the only Add on the page. Every tab has one except after the trip.
 - **Trip invite page**: `/trip-invite/<token>` is a small centred card on the sign-in page's background. Signed out: "You've been invited to a trip" with "Sign in with Telegram to join." and the Telegram button (inside Telegram it signs in at once and the page only shows if that was refused, with a line saying the invite couldn't be used). Signed in: "Joining the trip…", then the trip opens with a short notice ("You've joined the trip to Kyoto."; their own link says "That's your own invite link. Send it to the person you want on the trip." and joins nothing; a trip they are already on opens with nothing said). A link that is used, cancelled, expired or unknown shows "This invite doesn't work any more" with "Ask the trip's owner for a new link." and one primary, Go to Home, or Go to Trips for a guest; any other failure shows "Couldn't join the trip", the reason and Try again
 - **Guest app**: someone brought in by an invite with no account of their own sees Travel only: Trips (titled with "The trips you were invited to.") and the trips they are on. A slim header holds the app name, linking to Trips, and at the right their name and Sign out. There is no rail, no bottom bar and no chat, so no Ask Nexus, no New trip, no Where to next, no loose bookings or research and no Type it in the add sheet. Every other address goes back to Trips. With no trips yet: "You're not on any trips yet. Open an invite link to join one."
 - **Sign-in page and the demo**: signed out, `/login` is a small centred card: "Nexus", one line ("An AI lifestyle manager you talk to, on Telegram and the web."), a primary **Try the live demo** link to `/demo`, then "Already using Nexus? Sign in with Telegram." and the Telegram button (an invite link keeps its own line and no demo button). `/demo` is the same card: "Setting up your demo…", then Home. It says "The demo is resting right now" with the Telegram button when demos are off, "Too many demos from this network — try again in a bit." on a 429, and "Couldn't set up the demo" with Try again on a network error. Someone already signed in goes straight to Home.
 - **Demo banner**: while `me.demo` is set, a slim bar in a row of its own over the rail and the page, in the soft accent: "Demo · made-up data · resets in 23 h · Sign in with Telegram to use your own" (the link signs the demo out and opens the sign-in page; under an hour it counts minutes). A × closes it for the browser session. The chat's header says "N messages left", and Settings leaves out Receipts by email and Shared trips; the rail leaves out Invite someone.
-- **Chat suggestions**: an empty chat offers four pill questions under its hint ("How's my dining budget?", "Plan Saturday in Kyoto", "I spent 12.50 on lunch at Kopi Corner", "What moved in my portfolio today?"); tapping one sends it, and they go once there is a conversation.
+- **Chat suggestions**: an empty chat offers four plain text-row questions under its hint ("How's my dining budget?", "Plan Saturday in Kyoto", "I spent 12.50 on lunch at Kopi Corner", "What moved in my portfolio today?"); tapping one sends it, and they go once there is a conversation.
 - **Sources under a web answer**: Nexus names the source in the reply's words ("per HardwareZone, 11 May") and the pages it used come as up to three small link chips under the text (`.src-chip`, from reply buttons whose data is `src:<https url>`; Telegram shows the same as inline URL buttons, two to a row). A chip is a pill on `--bg-card-hover` with a `--border-card` edge, 13px `--text-secondary` text, the site's name and a `↗` the screen reader skips (the link's name is the site alone); on hover the edge goes `--accent-border` and the text `--accent-text`. It is 32px tall with a 40px tap area around it, and it opens the page outside the app like other links. They are links, not actions, so they are never the big blue `url:` button, and one site shows once even if several of its pages were used. Reply buttons from before a reload are not kept, so the chips show on the live reply only.
 
 ## 6. Motion & Interaction
@@ -407,15 +429,34 @@ These are the rules the Travel pages follow. New Travel screens keep to them.
 
 ### Strategy
 
-Mixed: subtle borders define dense data regions, while tonal surfaces and tinted shadows define
-cards and sheets. Do not add a new shadow recipe to individual components.
+Flat. Structure comes from rules and space, not elevation. Do not add a new shadow recipe to individual components.
 
-- Application frame: existing prominent tinted shadow.
-- Cards: `--border-card` plus `--bg-card`.
-- Elevated dialogs: `--bg-card-hover` plus existing modal shadow.
-- Directional status: emerald and ember tint at low opacity, never as a full background.
+- Sections: a 1px `--text-strong` rule under the heading and `--border-card` hairlines between rows. No border, fill or shadow around a section.
+- Sheets, dialogs and menus (the genuinely separate objects): `--bg-card` with a `--border-card` edge and `--shadow-modal` (black at low opacity), over the `--overlay` dim.
+- A dragged item uses `--shadow-drag`; a button on a photo uses `--shadow-thumb`. Nothing else has a shadow.
+- Status colour (money green, attention amber, error red) is text or a thin mark, never a tinted background, and no shadow is coloured.
+- The app frame, card, tab, bar and slim-bar shadows (`--shadow-frame`, `-card`, `-tab`, `-bar`, `-slim`) go in the token PR.
 
-## 8. Accessibility Constraints & Accepted Debt
+## 8. Patterns we don't use
+
+These are the habits that make an interface look generated. Each one is out, with the reason. A review rejects them even when the contrast passes.
+
+| Pattern | Why not |
+|---------|---------|
+| Gradient heroes or washes | A gradient behind the headline is decoration that competes with the figure. The figure on the page, in ink, is clearer and has a known contrast |
+| An italic or coloured accent word in titles ("Good *morning*") | It is ornament, it makes the colour ambiguous (blue means you can press it), and it gives the title two voices |
+| Sparkle or magic icons for the assistant | They say "AI" instead of saying what the button does. A labelled **Ask** button does |
+| Icons in pastel tiles | The tile adds a coloured box per row with no information. A row's title and sub-line say what it is |
+| A card around every section | Boxes inside boxes lose the hierarchy and waste width on a phone. A heading with a rule and hairline rows scans faster and reads like a statement. Cards are for separate objects: a sheet, a dialog, a photo |
+| Tinted pill badges for status | Colour on a tinted fill is hard to hold at 4.5:1 and makes every row a row of pills. Write the word in the status colour ("Pending", "Now") |
+| Glow or coloured shadows | They are decoration that fails in dark and under Telegram's themes, and they suggest things are pressable when they are not |
+| Neon colours (Lime, Digital Teal) | They fail as text on light (1.2:1 and 1.7:1) and say "tech product", not "money". Marks and text use the one accent and the status colours |
+| Decorative emoji | They are not part of the type system, render differently per platform and read as filler. Use words, or the app's line icons where an icon carries meaning |
+| Proportional digits in money | Columns of figures do not line up and a count-up jitters. Money is always `tabular-nums` |
+| Filler copy that narrates the UI ("8 things need you below", "Ask anything") | It tells the person what they can already see. Show the rows; label a control with what it does, and write empty states as one plain fact ("Nothing today.") |
+| More than one accent colour | One blue means "you can press this". A second accent dilutes it. Status colours (green, amber, red) are for status, as text |
+
+## 9. Accessibility Constraints & Accepted Debt
 
 ### Constraints
 
