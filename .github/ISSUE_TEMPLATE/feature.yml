@@ -1,0 +1,34 @@
+name: Feature request
+description: Something Nexus should do, or do better.
+labels: ["needs-triage", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo is public. Use made-up names, merchants and amounts. Never paste real statements, emails or tokens.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you have
+      description: Describe the problem, not the solution. What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: better
+    attributes:
+      label: What would make it better
+      description: What would you like to be able to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Web
+        - Telegram bot
+        - Telegram Mini App
+        - iOS app
+        - Other
+    validations:
+      required: true

@@ -99,6 +99,10 @@ What it does and doesn't do:
 
 The **Server** workflow (Actions tab → Server → Run workflow) runs one of `health`, `status`, `telegram`, `deploy` or `restart` on the server over SSH. Its key can run only `deploy/remote.sh`, which is enforced on the server as a forced command. Workflow logs are public on a public repo, so the script prints statuses and counts only, never app logs or data.
 
+**Automatic deploy.** When CI passes on a push to `main`, the Server workflow runs `deploy` by itself. If the app doesn't answer `/healthz` afterwards, the script prints "rolling back to <commit>", resets the code to the commit it had before, rebuilds, checks again and exits with an error, so the run is red either way. After a good deploy, issues closed by the deployed pull request get a "Deployed in <commit>." comment and are closed (issues labelled `ops` are left to the ops job). A rollback restores the code, not the database: migrations already applied stay applied.
+
+**Migrations: expand, then contract. Every migration must work with the code before it.** For example, add a new nullable column in one release, with code that writes both; drop the old column in a later release, once nothing reads it.
+
 One-time setup, as root on the server:
 
 ```sh
