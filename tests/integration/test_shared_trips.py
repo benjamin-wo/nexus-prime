@@ -969,6 +969,9 @@ def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
         "/api/auth/telegram",
         "/api/auth/webapp",
         "/api/auth/telegram/callback",
+        # Signing in from the iOS app: before there is a session (application/device_signin.py).
+        "/api/auth/device",
+        "/api/auth/device/{poll_id}",
         "/api/shared/trips/{token}",
         "/api/shared/trips/{token}/photo",
         "/api/email/link",

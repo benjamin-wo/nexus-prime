@@ -694,6 +694,9 @@ PUBLIC = {
     ("POST", "/api/auth/webapp"),
     ("POST", "/api/demo"),  # starts a public demo (403 demo_off unless switched on)
     ("GET", "/api/auth/telegram/callback"),
+    # Signing in from the iOS app: a code to approve in Telegram, then a poll with its secret.
+    ("POST", "/api/auth/device"),
+    ("GET", "/api/auth/device/{poll_id}"),
     ("GET", "/api/shared/trips/{token}"),
     ("GET", "/api/shared/trips/{token}/photo"),
     ("GET", "/api/email/link"),
