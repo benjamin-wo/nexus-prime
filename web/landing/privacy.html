@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy · Nexus Prime</title>
+<meta name="description" content="How Nexus Prime handles your data: what it keeps, who helps run it, how long, and how to export or delete it.">
+<meta name="theme-color" content="#F3F1EC">
+<link rel="canonical" href="https://nexus-prime.app/privacy">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Nexus Prime">
+<meta property="og:title" content="Privacy · Nexus Prime">
+<meta property="og:description" content="How Nexus Prime handles your data: what it keeps, who helps run it, how long, and how to export or delete it.">
+<meta property="og:url" content="https://nexus-prime.app/privacy">
+<meta property="og:image" content="https://nexus-prime.app/icon-512.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Privacy · Nexus Prime">
+<meta name="twitter:description" content="How Nexus Prime handles your data: what it keeps, who helps run it, how long, and how to export or delete it.">
+<meta name="twitter:image" content="https://nexus-prime.app/icon-512.png">
+<link rel="stylesheet" href="./landing.css">
+</head>
+<body>
+<header class="wrap top ui">
+  <a href="/" class="logo d">nexus</a>
+  <nav aria-label="Main">
+    <a href="/#apps" class="hide-sm">Apps</a>
+    <a href="/#how" class="hide-sm">How it works</a>
+    <a href="/#trust" class="hide-sm">Privacy</a>
+    <a href="/login" class="signin">Sign in</a>
+  </nav>
+</header>
+
+<main class="wrap prose">
+<h1 class="d">Privacy</h1>
+<p class="draft">Draft, last updated 22 November 2026</p>
+<p>This explains what Nexus Prime keeps about you, who helps us run it, and what you can do about it. It is written in plain language. It is a draft and has not been reviewed by a lawyer yet.</p>
+
+<h2>What we keep</h2>
+<p>Nexus Prime stores what you give it or ask it to keep, and what it works out from that:</p>
+<ul>
+<li>Your account: display name, currency, time zones, pay schedule and settings. If you sign in with Telegram, your Telegram account id.</li>
+<li>Your money records: transactions, splits and settlements, categories and rules, wallets, budgets, bills, subscriptions, and statements you import. Receipt photos you upload are stored as files.</li>
+<li>Your investments: holdings, trades, dividends, watchlist, trade plans and research notes. Photos of broker screens you send are read to fill these in.</li>
+<li>Your trips: bookings, plans, stops, packing, documents you add as records, costs, and the people you share a trip with.</li>
+<li>Your conversations with Nexus: chat messages, voice messages you send (as audio for transcription, and the text), and the things Nexus remembers about you.</li>
+<li>Email you choose to connect: the address, and the sender, subject and outcome of the emails Nexus looked at. If you connect Gmail, the access grant is stored encrypted. If you forward receipts to your Nexus inbox, they arrive through AgentMail.</li>
+<li>Notifications and what the AI models cost to serve you (counts and sizes, never text).</li>
+</ul>
+
+<h2>Who helps us run it</h2>
+<p>We use these services, and send them only what the feature needs:</p>
+<ul>
+<li><b>AI models and speech (OpenRouter and the model providers behind it).</b> When you ask Nexus something, the relevant part of your data (your question, recent chat, and the records needed to answer) is sent to the AI provider to produce the answer. Numbers shown to you are computed by our code from your records. Voice messages are sent for transcription and spoken replies.</li>
+<li><b>Telegram,</b> if you use Nexus through Telegram: messages you send the bot and the replies pass through Telegram.</li>
+<li><b>AgentMail,</b> for the forwarding inbox that receives receipts you send us.</li>
+<li><b>Google,</b> for Maps and Places on trip pages, and for Gmail if you connect it.</li>
+<li><b>Market and reference data:</b> Tiingo and Finnhub for stock prices and company news, Frankfurter for exchange rates, Open-Meteo for weather, and Wikipedia and Wikivoyage for destination photos and guides. These are asked about a ticker, currency, place or date, not about you.</li>
+<li><b>Web search:</b> Tavily and SerpApi (and OpenRouter's web search) for live research such as flight and hotel prices. Searches carry a route, dates, a product name or similar, and are written not to include your personal details.</li>
+<li><b>Hosting:</b> our servers run on DigitalOcean, and receipt files are kept in a private cloud storage bucket that only Nexus can read.</li>
+</ul>
+<p>We do not show ads. We do not sell your data and we do not use it to sell to you.</p>
+
+<h2>How long we keep it</h2>
+<ul>
+<li>Your data is kept until you delete it.</li>
+<li>Demo accounts are made-up data only and are erased automatically after 24 hours.</li>
+<li>Sign-in sessions last up to 90 days, or 24 hours for a demo, and end when you sign out or delete your data.</li>
+<li>Our operational logs record kinds of events, timings and error types, never your messages, amounts, merchants or links. They identify people only by a keyed hash and are kept 30 days.</li>
+<li>Backups of the database are kept for 14 days.</li>
+</ul>
+
+<h2>Your choices</h2>
+<p>In the app, go to Settings, then Your data. You can export everything we hold about you as a zip file, and you can delete your account and all your data. Deleting removes your records, chat, memories and sessions, deletes your receipt files, revokes any Gmail connection and removes your forwarding inbox. It cannot be undone. Shared market data, which is not about anyone in particular, stays.</p>
+
+<h2>Singapore PDPA</h2>
+<p>If you are in Singapore, the Personal Data Protection Act gives you the right to ask for the personal data we hold about you and how it is used, to correct it, and to withdraw your consent. The export and delete tools above cover most requests; for anything else, or to ask a question or complain, write to <a href="mailto:hello@nexus-prime.app">hello@nexus-prime.app</a>. We will reply within a reasonable time.</p>
+
+<h2>Contact</h2>
+<p><a href="mailto:hello@nexus-prime.app">hello@nexus-prime.app</a></p>
+
+</main>
+
+<footer class="wrap foot ui">
+  <span>&copy; 2026 Nexus &middot; nexus-prime.app</span>
+  <nav aria-label="Footer"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav>
+</footer>
+</body>
+</html>

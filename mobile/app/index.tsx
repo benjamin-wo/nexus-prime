@@ -78,7 +78,7 @@ export default function Home() {
     <View style={[styles.fill, { paddingTop: insets.top, backgroundColor: dark ? "#000" : "#fff" }]}>
       <IosWebView
         ref={web}
-        source={{ uri: SITE_URL }}
+        source={{ uri: `${SITE_URL.replace(/\/+$/, "")}/app` }}
         style={[styles.fill, { backgroundColor: dark ? "#000" : "#fff" }]}
         sharedCookiesEnabled
         allowsBackForwardNavigationGestures

@@ -102,7 +102,7 @@ function useTelegramColours(home: boolean) {
 }
 
 /** The pages of money data that can be pulled down to refresh: Home, the Money overview, the Ledger and Budgets. */
-const PULLABLE = new Set(["/", "/accounting", "/accounting/ledger", "/accounting/budgets"]);
+const PULLABLE = new Set(["/app", "/accounting", "/accounting/ledger", "/accounting/budgets"]);
 
 /** The spinner that shows while a page is pulled down and refreshed, announced as "Refreshing…" and
  * "Updated". The button is for keyboards and screen readers (it shows only while focused). */
@@ -156,7 +156,7 @@ export function Shell({
 }) {
   const { pathname, key } = useLocation();
   useTelegramBack(pathname, key === "default");
-  useTelegramColours(pathname === "/");
+  useTelegramColours(pathname === "/app");
   const here = departmentFor(pathname);
   const content = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLElement>(null);
@@ -170,7 +170,7 @@ export function Shell({
   // The rail names each place in full; the bottom bar on a phone uses a short word under the icon,
   // and its accessible name keeps the full one ("Invest (Investment)").
   const links = (bar: boolean) => [
-    <NavLink key="home" to="/" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
+    <NavLink key="home" to="/app" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
       <span className="nav-glyph" aria-hidden="true">
         <Icon name="home" />
       </span>

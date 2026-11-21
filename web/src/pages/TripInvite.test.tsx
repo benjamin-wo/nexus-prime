@@ -85,7 +85,7 @@ describe("a trip invite for someone signed in", () => {
     open(member);
     expect(await screen.findByRole("heading", { name: "This invite doesn't work any more" })).toBeInTheDocument();
     expect(screen.getByText("Ask the trip's owner for a new link.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to Home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Go to Home" })).toHaveAttribute("href", "/app");
   });
 
   it("points a guest with a bad link to Trips, the only place they have", async () => {

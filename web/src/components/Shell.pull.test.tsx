@@ -48,14 +48,14 @@ describe("pull to refresh", () => {
     expect(await screen.findByText("Updated")).toBeInTheDocument();
   });
 
-  it.each(["/", "/accounting", "/accounting/ledger", "/accounting/budgets"])("works on %s", (path) => {
+  it.each(["/app", "/accounting", "/accounting/ledger", "/accounting/budgets"])("works on %s", (path) => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
     pull(page(path, onRefresh), 100, 260);
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("takes the gesture from the browser while pulling", () => {
-    const main = page("/", vi.fn().mockResolvedValue(undefined));
+    const main = page("/app", vi.fn().mockResolvedValue(undefined));
     fireEvent.touchStart(main, touch(100));
     const move = new Event("touchmove", { bubbles: true, cancelable: true });
     Object.assign(move, touch(200));
@@ -66,7 +66,7 @@ describe("pull to refresh", () => {
 
   it("leaves a touch that starts inside a dialog to the dialog, and still pulls from the page", () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
-    const main = page("/", onRefresh);
+    const main = page("/app", onRefresh);
     const inside = screen.getByText("Inside the dialog");
     fireEvent.touchStart(inside, touch(100));
     const move = new Event("touchmove", { bubbles: true, cancelable: true });
@@ -83,7 +83,7 @@ describe("pull to refresh", () => {
 
   it("does nothing for a short pull", () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
-    const main = page("/", onRefresh);
+    const main = page("/app", onRefresh);
     pull(main, 100, 150);
     expect(onRefresh).not.toHaveBeenCalled();
     expect(screen.queryByText("Refreshing…")).not.toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("pull to refresh", () => {
 
   it("leaves a page that is scrolled down alone", () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
-    const main = page("/", onRefresh);
+    const main = page("/app", onRefresh);
     main.scrollTop = 120;
     pull(main, 100, 300);
     expect(onRefresh).not.toHaveBeenCalled();
@@ -99,7 +99,7 @@ describe("pull to refresh", () => {
 
   it("leaves an upward or sideways move alone", () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
-    const main = page("/", onRefresh);
+    const main = page("/app", onRefresh);
     pull(main, 300, 100);
     fireEvent.touchStart(main, touch(100, 0));
     fireEvent.touchMove(main, touch(130, 150));
@@ -130,7 +130,7 @@ describe("pull to refresh", () => {
 
   it("has a Refresh button for the keyboard that does the same", async () => {
     const onRefresh = vi.fn().mockResolvedValue(undefined);
-    page("/", onRefresh);
+    page("/app", onRefresh);
     await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
     expect(onRefresh).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByText("Updated")).toBeInTheDocument());

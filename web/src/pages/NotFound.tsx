@@ -6,7 +6,7 @@ export function NotFound() {
     <section className="not-found" aria-labelledby="not-found-title">
       <h1 id="not-found-title">This page doesn't exist</h1>
       <p className="muted">It may have moved, or the link is old.</p>
-      <Link className="btn btn-primary" to="/">
+      <Link className="btn btn-primary" to="/app">
         Back to Home
       </Link>
     </section>

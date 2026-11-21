@@ -28,6 +28,11 @@ async function open(address: string, heading: string) {
 afterEach(() => window.history.pushState({}, "", "/"));
 
 describe("where pages live now", () => {
+  it("opens Home at /app and sends / there", async () => {
+    await open("/", "Home");
+    expect(window.location.pathname).toBe("/app");
+  });
+
   it("opens Budgets at /accounting/budgets", async () => {
     await open("/accounting/budgets", "Budgets");
     expect(window.location.pathname).toBe("/accounting/budgets");
@@ -99,14 +104,14 @@ describe("an address that matches no page", () => {
     await open("/no/such/page", "This page doesn't exist");
     expect(window.location.pathname).toBe("/no/such/page");
     expect(screen.getByText("It may have moved, or the link is old.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/app");
     expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
   });
 
   it("leaves for Home by its link", async () => {
     await open("/nope", "This page doesn't exist");
     fireEvent.click(screen.getByRole("link", { name: "Back to Home" }));
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/app");
     expect(screen.queryByRole("heading", { name: "This page doesn't exist" })).toBeNull();
   });
 });

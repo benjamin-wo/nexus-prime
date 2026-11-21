@@ -268,7 +268,7 @@ async def _open_app(runtime: TelegramRuntime, chat_id: int) -> None:
         chat_id,
         "Your dashboard and ledger. It opens here in Telegram, already signed in.",
         APP_LABEL,
-        f"{origin}/",
+        f"{origin}/app",
     )
 
 

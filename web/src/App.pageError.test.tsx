@@ -38,7 +38,7 @@ describe("a page that crashes", () => {
 
     fireEvent.click(within(rail).getByRole("link", { name: "Home" }));
     expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/app");
     expect(screen.queryByText("This page hit a problem.")).toBeNull();
   });
 });

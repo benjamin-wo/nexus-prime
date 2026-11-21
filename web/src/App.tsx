@@ -205,7 +205,8 @@ function Cockpit({ me }: { me: Me }) {
       <RoutedPage>
         <EditTransactionProvider onEdit={editTx}>
           <Routes>
-            <Route path="/" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
+            <Route path="/" element={<Navigate to="/app" replace />} />
+            <Route path="/app" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
             <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
             <Route
               path="/accounting/ledger"
@@ -336,7 +337,7 @@ export function savedMessage(tx: EditedTransaction, fresh: boolean): string {
  * joined a trip opens it. */
 function landing(me: Me): string {
   if (me.joined_trip) return `/travel/trips/${me.joined_trip}`;
-  return me.user.role === "guest" ? "/travel" : "/";
+  return me.user.role === "guest" ? "/travel" : "/app";
 }
 
 function Gate() {
