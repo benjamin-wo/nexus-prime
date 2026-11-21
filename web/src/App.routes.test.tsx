@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App, retryQuery } from "./App";
@@ -28,6 +28,14 @@ async function open(address: string, heading: string) {
 afterEach(() => window.history.pushState({}, "", "/"));
 
 describe("where pages live now", () => {
+  it("sends / to Home at /app", async () => {
+    // Only the address: Home itself needs more than this file's empty answers (Home.test.tsx).
+    signedIn();
+    window.history.pushState({}, "", "/");
+    render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    await waitFor(() => expect(window.location.pathname).toBe("/app"));
+  });
+
   it("opens Budgets at /accounting/budgets", async () => {
     await open("/accounting/budgets", "Budgets");
     expect(window.location.pathname).toBe("/accounting/budgets");
@@ -99,14 +107,14 @@ describe("an address that matches no page", () => {
     await open("/no/such/page", "This page doesn't exist");
     expect(window.location.pathname).toBe("/no/such/page");
     expect(screen.getByText("It may have moved, or the link is old.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Back to Home" })).toHaveAttribute("href", "/app");
     expect(screen.getByRole("navigation", { name: "Main" })).toBeInTheDocument();
   });
 
   it("leaves for Home by its link", async () => {
     await open("/nope", "This page doesn't exist");
     fireEvent.click(screen.getByRole("link", { name: "Back to Home" }));
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/app");
     expect(screen.queryByRole("heading", { name: "This page doesn't exist" })).toBeNull();
   });
 });

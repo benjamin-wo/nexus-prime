@@ -1,7 +1,9 @@
 """Serve the built React app (web/dist) with a strict Content-Security-Policy.
 
 Any path that isn't an API, webhook or health route gets index.html, so the
-client-side router can handle it.
+client-side router can handle it. The exceptions are the public pages (the landing page at
+``/`` for anyone without a session cookie, and /privacy, /terms and /support), which are
+prerendered HTML from the second Vite entry (dist/landing/).
 """
 
 from pathlib import Path
@@ -10,8 +12,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from nexus.channels.web.security import COOKIE
+
 DIST = Path(__file__).resolve().parents[4] / "web" / "dist"
 _BACKEND_PREFIXES = ("api/", "telegram/", "healthz")
+# Public pages built from web/landing/<name>.html, served at /<path> ("" is the landing page).
+_PUBLIC_PAGES = {"": "index", "privacy": "privacy", "terms": "terms", "support": "support"}
 
 # Google's map on the trip page loads its script from maps.googleapis.com, draws tiles
 # and icons from Google's image hosts, calls its own APIs and adds <style> elements of
@@ -24,7 +30,7 @@ CSP = "; ".join(
         "frame-src https://oauth.telegram.org",
         f"img-src 'self' data: blob: https://t.me https://*.telegram.org {_MAPS_IMAGES}",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src https://fonts.gstatic.com",
+        "font-src 'self' https://fonts.gstatic.com",
         "connect-src 'self' https://*.googleapis.com https://*.google.com https://*.gstatic.com",
         "worker-src blob:",
         "base-uri 'none'",
@@ -56,10 +62,21 @@ def mount_frontend(app: FastAPI, dist: Path = DIST) -> None:
     # Top-level files in the build (favicon etc.), fixed at startup: nothing else is served.
     top_level = {p.name: p for p in dist.iterdir() if p.is_file() and p.name != "index.html"}
 
+    public = {
+        path: dist / "landing" / f"{name}.html"
+        for path, name in _PUBLIC_PAGES.items()
+        if (dist / "landing" / f"{name}.html").is_file()
+    }
+
     @app.get("/{path:path}", include_in_schema=False)
-    async def spa(path: str) -> Response:
+    async def spa(path: str, request: Request) -> Response:
         if path.startswith(_BACKEND_PREFIXES):
             return Response(status_code=404)
+        page = public.get(path.rstrip("/"))
+        # The landing page is for visitors; a signed-in person at / gets the app (which sends
+        # them on to /app). The other public pages are the same for everyone.
+        if page is not None and (path.rstrip("/") != "" or COOKIE not in request.cookies):
+            return FileResponse(page, headers={"Cache-Control": "no-cache", "Vary": "Cookie"})
         if path in top_level:
             return FileResponse(top_level[path])
         headers = {"Cache-Control": "no-cache"}

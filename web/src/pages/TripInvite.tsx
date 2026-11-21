@@ -46,7 +46,7 @@ export function TripInvite({ me }: { me: Me }) {
     return <Navigate to={`/travel/trips/${opened.data.tripId}`} replace state={{ notice: opened.data.notice }} />;
   }
   const guest = me.user.role === "guest";
-  const where = guest ? { to: "/travel", label: "Go to Trips" } : { to: "/", label: "Go to Home" };
+  const where = guest ? { to: "/travel", label: "Go to Trips" } : { to: "/app", label: "Go to Home" };
 
   if (opened.isError) {
     const status = opened.error instanceof ApiError ? opened.error.status : 0;

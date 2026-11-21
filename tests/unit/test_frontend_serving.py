@@ -71,6 +71,8 @@ def test_the_trip_map_is_allowed_and_nothing_else_is(tmp_path: Path) -> None:
     assert rules["style-src"] == "'self' 'unsafe-inline' https://fonts.googleapis.com"
     assert "https://*.gstatic.com" in rules["img-src"]
     assert rules["frame-ancestors"] == "https://web.telegram.org"
+    # font-src overrides default-src: self-hosted fonts need 'self'; the app still loads Geist.
+    assert rules["font-src"] == "'self' https://fonts.gstatic.com"
 
 
 def test_the_page_never_gets_the_server_key() -> None:
@@ -84,3 +86,32 @@ def test_the_page_never_gets_the_server_key() -> None:
     key = "server-key-0001"
     assert map_key(settings(google_places_api_key=key, google_maps_browser_key=key)) is None
     assert map_key(settings(google_places_api_key=key)) is None
+
+
+def test_public_pages_and_the_landing_page(tmp_path: Path) -> None:
+    (tmp_path / "landing").mkdir()
+    for name, marker in (
+        ("index", "Say what you need."),
+        ("privacy", "Privacy page"),
+        ("terms", "Terms page"),
+        ("support", "Support page"),
+    ):
+        (tmp_path / "landing" / f"{name}.html").write_text(f"<html><h1>{marker}</h1></html>")
+    client = build(tmp_path)
+    # A visitor gets the landing page at /, someone with a session cookie gets the app.
+    visitor = client.get("/")
+    assert "Say what you need." in visitor.text
+    assert "default-src 'self'" in visitor.headers["content-security-policy"]
+    assert client.get("/", cookies={"nexus_session": "x"}).text == "<html>app</html>"
+    # The other public pages are the same either way.
+    for path, marker in (
+        ("/privacy", "Privacy page"),
+        ("/terms", "Terms page"),
+        ("/support", "Support page"),
+    ):
+        assert marker in client.get(path).text
+        assert marker in client.get(path, cookies={"nexus_session": "x"}).text
+        assert "default-src 'self'" in client.get(path).headers["content-security-policy"]
+    # Everything else still gets the app, and the landing file itself is not a route.
+    assert client.get("/app").text == "<html>app</html>"
+    assert client.get("/landing/index.html").text == "<html>app</html>"

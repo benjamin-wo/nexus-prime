@@ -19,7 +19,7 @@ test("a signed-out visitor sees the landing page and goes into the demo from it"
   expect(demoBox!.y).toBeLessThan(widgetBox!.y);
 
   await demo.click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(banner(page)).toContainText("Demo · made-up data · resets in 23 h · Sign in with Telegram to use your own");
   expect(state.demoStarts).toBe(1);
   // /demo isn't left behind in the history: back doesn't start another demo.
@@ -30,7 +30,7 @@ test("a signed-out visitor sees the landing page and goes into the demo from it"
 test("the /demo link goes straight in", async ({ page }) => {
   const state = await fakeApi(page, { signedIn: false });
   await page.goto("/demo");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(banner(page)).toBeVisible();
   expect(state.demoStarts).toBe(1);
 });
@@ -126,7 +126,7 @@ test("a network error offers a retry that works", async ({ page }) => {
   await page.goto("/demo");
   await expect(page.getByRole("heading", { name: "Couldn't set up the demo" })).toBeVisible();
   await page.getByRole("button", { name: "Try again" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(banner(page)).toBeVisible();
   expect(state.demoStarts).toBe(2);
 });
@@ -134,7 +134,7 @@ test("a network error offers a retry that works", async ({ page }) => {
 test("a signed-in real user opening /demo lands on Home without a demo", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/demo");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(banner(page)).toHaveCount(0);
   expect(state.demoStarts).toBe(0);

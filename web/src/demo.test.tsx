@@ -186,7 +186,7 @@ describe("the /demo page", () => {
     const calls = signedOut({ expires_at: after(23 * HOUR) });
     open();
     expect(await screen.findByRole("region", { name: "Demo account" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/app");
     expect(calls.filter((c) => c === "POST /demo")).toHaveLength(1);
   });
 
@@ -231,7 +231,7 @@ describe("the /demo page", () => {
     });
     open();
     expect((await screen.findAllByRole("link", { name: "Settings" })).length).toBeGreaterThan(0);
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/app");
     expect(calls).not.toContain("POST /demo");
     expect(screen.queryByRole("region", { name: "Demo account" })).toBeNull();
   });

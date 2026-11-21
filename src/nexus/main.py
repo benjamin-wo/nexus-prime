@@ -687,7 +687,7 @@ def _forward_address(
 async def _set_menu_button(client: TelegramClient, origin: str) -> None:
     """Point the bot's menu button at the web app. Best effort: the bot works without it."""
     try:
-        await client.set_menu_button(telegram_webhook.APP_LABEL, f"{origin}/")
+        await client.set_menu_button(telegram_webhook.APP_LABEL, f"{origin}/app")
     except Exception:
         log.warning("could not set the Telegram menu button", exc_info=True)
 

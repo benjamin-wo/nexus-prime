@@ -56,5 +56,5 @@ test("opening an expense on a phone keeps the keyboard down and the bottom bar t
   await expect(sheet).toBeHidden();
   await expect(bar).toBeVisible();
   await bar.getByRole("link", { name: /Home/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
 });

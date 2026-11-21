@@ -43,7 +43,7 @@ test("a trip invite that doesn't work says so and points the way back", async ({
   await expect(page.getByRole("heading", { name: "This invite doesn't work any more" })).toBeVisible();
   await expect(page.getByText("Ask the trip's owner for a new link.")).toBeVisible();
   await page.getByRole("link", { name: "Go to Home" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/app$/);
 });
 
 test("the owner opening their own invite link is told so", async ({ page }) => {

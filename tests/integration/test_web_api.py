@@ -291,7 +291,7 @@ async def test_mini_app_rejects_forged_expired_uninvited_and_cross_site(world: W
 
 async def test_bot_offers_the_mini_app(world: World) -> None:
     await asyncio.sleep(0)  # the menu button is set in the background at startup
-    assert world.telegram.menu_button == ("Open Nexus", f"{ORIGIN}/")
+    assert world.telegram.menu_button == ("Open Nexus", f"{ORIGIN}/app")
     async with AsyncClient(transport=ASGITransport(app=world.app), base_url=ORIGIN) as client:
         update = {
             "update_id": 1,
@@ -306,7 +306,7 @@ async def test_bot_offers_the_mini_app(world: World) -> None:
             "/telegram/webhook", json=update, headers={"X-Telegram-Bot-Api-Secret-Token": "hook"}
         )
     assert response.status_code == 200
-    assert world.telegram.app_buttons == [(OWNER, "Open Nexus", f"{ORIGIN}/")]
+    assert world.telegram.app_buttons == [(OWNER, "Open Nexus", f"{ORIGIN}/app")]
 
 
 async def test_login_rejects_forged_expired_and_cross_site(world: World) -> None:
