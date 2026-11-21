@@ -62,7 +62,9 @@ users = Table(
     "users",
     metadata,
     _uuid_pk(),
-    Column("telegram_user_id", BigInteger, nullable=False, unique=True),
+    # Null for an account that signed up another way (migration 0073); the person's ways of
+    # signing in are ``user_identities``. Demo accounts' made-up ids are negative.
+    Column("telegram_user_id", BigInteger, unique=True),
     Column("telegram_chat_id", BigInteger),
     Column("timezone", Text, nullable=False),
     Column("home_currency", CURRENCY, nullable=False),
@@ -105,6 +107,8 @@ users = Table(
     # until first used in chat. True: shown. False: switched off, never turned on by itself.
     Column("show_invest", Boolean),
     Column("show_travel", Boolean),
+    # Their address, lower-case, when they signed up with email (migration 0073); else null.
+    Column("email", Text),
     ForeignKeyConstraint(
         ["usual_card_wallet_id", "id"],
         ["wallets.id", "wallets.user_id"],
@@ -115,6 +119,8 @@ users = Table(
     CheckConstraint("timezone_source IN ('home', 'phone', 'chat', 'trip')", name="timezone_source"),
     CheckConstraint("home_currency ~ '^[A-Z]{3}$'", name="home_currency"),
     CheckConstraint("demo_expires_at IS NULL OR telegram_user_id < 0", name="demo_telegram_id"),
+    CheckConstraint("email IS NULL OR email = lower(email)", name="email_lower"),
+    Index("uq_users_email", "email", unique=True, postgresql_where=text("email IS NOT NULL")),
     CheckConstraint(
         "demo_messages >= 0 AND demo_voice >= 0 AND demo_photos >= 0", name="demo_counts"
     ),
@@ -444,6 +450,25 @@ invites = Table(
     Column("redeemed_by", UUID(as_uuid=True)),
     ForeignKeyConstraint(["created_by"], ["users.id"]),
     ForeignKeyConstraint(["redeemed_by"], ["users.id"]),
+)
+
+# The ways a person signs in (migration 0073): one row each, for Telegram, email or Apple. A
+# person can have several. ``subject`` is the provider's own id for them; ``email`` is the
+# lower-case address the provider vouched for, if any.
+user_identities = Table(
+    "user_identities",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")),
+    _user_fk(),
+    Column("provider", Text, nullable=False),
+    Column("subject", Text, nullable=False),
+    Column("email", Text),
+    Column("created_at", TZ, nullable=False, server_default=func.now()),
+    ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+    CheckConstraint("provider IN ('telegram', 'email', 'apple')", name="provider"),
+    CheckConstraint("email IS NULL OR email = lower(email)", name="email_lower"),
+    UniqueConstraint("provider", "subject"),
+    Index("ix_user_identities_user_id", "user_id"),
 )
 
 web_sessions = Table(

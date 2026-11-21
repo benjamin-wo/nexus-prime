@@ -312,7 +312,8 @@ def tx_out(
 
 
 class UserOut(Model):
-    telegram_user_id: int
+    # Null for an account that signed up another way (none yet: every account has one).
+    telegram_user_id: int | None
     role: str
     home_currency: str
     # Their CURRENT time zone: it follows where they are. Everything shown in their day

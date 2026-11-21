@@ -74,7 +74,8 @@ async def check_link(web: Runtime, t: Annotated[str, Query(max_length=100)]) -> 
     if owner is None:
         return LinkCheckOut(valid=False, account_hint=None)
     user = await get_user(web.uow(), owner)
-    return LinkCheckOut(valid=True, account_hint=str(user.telegram_user_id)[-4:])
+    hint = None if user.telegram_user_id is None else str(user.telegram_user_id)[-4:]
+    return LinkCheckOut(valid=True, account_hint=hint)
 
 
 @router.get("/gmail/start", include_in_schema=False)

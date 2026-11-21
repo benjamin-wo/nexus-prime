@@ -23,8 +23,10 @@ class Area:
 
 
 AREAS: tuple[Area, ...] = (
-    Area("profile.json", "Your account: time zones, currency, display name, pay schedule.",
-         ("users", "salary_schedules")),
+    Area("profile.json",
+         "Your account: time zones, currency, display name, pay schedule, and the ways you "
+         "sign in (Telegram, email, Apple).",
+         ("users", "salary_schedules", "user_identities")),
     Area("transactions.json",
          "Every transaction (deleted ones too), its splits and settlements, its history, "
          "receipt details and pairs you said are not duplicates.",

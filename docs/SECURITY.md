@@ -10,7 +10,7 @@ A small number of invited people's money records: transactions, budgets, bills, 
 
 | Area | How |
 |---|---|
-| Who can use it | Telegram: only user ids on the allowlist (`TELEGRAM_ALLOWED_USER_IDS`) and the owner. Web: Telegram Login or Mini App signatures (HMAC with the bot token, checked in constant time, at most 24 hours old), and new people only through the owner's single-use, 24-hour invite links |
+| Who can use it | Telegram: only user ids on the allowlist (`TELEGRAM_ALLOWED_USER_IDS`) and the owner. Web: Telegram Login or Mini App signatures (HMAC with the bot token, checked in constant time, at most 24 hours old), and new people only through the owner's single-use, 24-hour invite links; each account's sign-in methods are rows in `user_identities` (Telegram today), under row-level security and in the data export and delete |
 | Telegram webhook | Telegram's secret token header, compared in constant time; each update id is handled once |
 | Sessions | Random tokens stored only as hashes; cookies `HttpOnly`, `Secure`, `SameSite=Lax` (`None; Partitioned` only inside the Telegram Mini App) |
 | Cross-site requests | Every state-changing request must come from our origin and carry the session's CSRF token |

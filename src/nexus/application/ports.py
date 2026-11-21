@@ -27,6 +27,7 @@ from nexus.domain.email import (
     InboundEmail,
     Screening,
 )
+from nexus.domain.identity import Identity, Provider
 from nexus.domain.investments import (
     Dividend,
     DraftStatus,
@@ -153,6 +154,11 @@ class LedgerRepository(Protocol):
     # users
     async def insert_user_if_absent(self, user: User) -> bool: ...
     async def get_user_by_telegram_id(self, telegram_user_id: int) -> User | None: ...
+    async def get_user_by_identity(self, provider: Provider, subject: str) -> User | None: ...
+    async def add_identity(
+        self, user_id: UserId, provider: Provider, subject: str, email: str | None = None
+    ) -> Identity: ...
+    async def list_identities(self, user_id: UserId) -> list[Identity]: ...
     async def get_user(self, user_id: UserId, *, for_update: bool = False) -> User | None: ...
     async def set_timezone(
         self, user_id: UserId, timezone: str, source: ZoneSource, set_at: datetime | None
