@@ -632,6 +632,14 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             created_at=now,
             expires_at=now,
         )
+        # Signing in made their Telegram identity; this is a second way in.
+        await add(
+            t["user_identities"],
+            user_id=user,
+            provider="apple",
+            subject=f"apple-sub-{tag}",
+            email=f"{tag}@example.com",
+        )
         await add(
             t["web_sessions"],
             token_hash=secrets[6],

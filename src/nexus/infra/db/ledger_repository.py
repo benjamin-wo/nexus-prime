@@ -27,6 +27,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from nexus.application.clock import utcnow
 from nexus.application.ports import (
     CategoryTotal,
     DayTotal,
@@ -38,6 +39,7 @@ from nexus.application.ports import (
 )
 from nexus.domain.access import Invite, Session
 from nexus.domain.errors import Conflict, DuplicateSource
+from nexus.domain.identity import Identity, Provider
 from nexus.domain.ledger import (
     CardNetwork,
     Category,
@@ -81,6 +83,7 @@ from nexus.infra.db.tables import (
     transaction_revisions,
     transaction_sources,
     transactions,
+    user_identities,
     users,
     wallets,
     web_sessions,
@@ -120,6 +123,7 @@ def _user(row: Row[Any]) -> User:
         card_tracking_asked=row.card_tracking_asked,
         show_invest=row.show_invest,
         show_travel=row.show_travel,
+        email=row.email,
     )
 
 
@@ -288,6 +292,7 @@ class SqlLedgerRepository:
                 role=user.role.value,
                 created_at=user.created_at,
                 demo_expires_at=user.demo_expires_at,
+                email=user.email,
             )
             .on_conflict_do_nothing(index_elements=[users.c.telegram_user_id])
             .returning(users.c.id)
@@ -301,6 +306,70 @@ class SqlLedgerRepository:
             )
         ).first()
         return _user(row) if row else None
+
+    async def get_user_by_identity(self, provider: Provider, subject: str) -> User | None:
+        row = (
+            await self._db.execute(
+                select(users)
+                .join(user_identities, user_identities.c.user_id == users.c.id)
+                .where(
+                    user_identities.c.provider == provider.value,
+                    user_identities.c.subject == subject,
+                )
+            )
+        ).first()
+        return _user(row) if row else None
+
+    async def add_identity(
+        self, user_id: UserId, provider: Provider, subject: str, email: str | None = None
+    ) -> Identity:
+        """Give a user another way to sign in. A (provider, subject) belongs to one user:
+        Conflict if it is already taken, by them or anyone."""
+        row = Identity(
+            id=uuid4(),
+            user_id=user_id,
+            provider=provider,
+            subject=subject,
+            email=email.strip().lower() if email else None,
+            created_at=utcnow(),
+        )
+        try:
+            async with self._db.begin_nested():
+                await self._db.execute(
+                    insert(user_identities).values(
+                        id=row.id,
+                        user_id=row.user_id,
+                        provider=row.provider.value,
+                        subject=row.subject,
+                        email=row.email,
+                        created_at=row.created_at,
+                    )
+                )
+        except IntegrityError as exc:
+            if "uq_user_identities_provider_subject" in str(exc.orig):
+                raise Conflict("that sign-in already belongs to an account") from exc
+            raise
+        return row
+
+    async def list_identities(self, user_id: UserId) -> list[Identity]:
+        rows = (
+            await self._db.execute(
+                select(user_identities)
+                .where(user_identities.c.user_id == user_id)
+                .order_by(user_identities.c.created_at, user_identities.c.id)
+            )
+        ).all()
+        return [
+            Identity(
+                id=r.id,
+                user_id=UserId(r.user_id),
+                provider=Provider(r.provider),
+                subject=r.subject,
+                email=r.email,
+                created_at=r.created_at,
+            )
+            for r in rows
+        ]
 
     async def get_user(self, user_id: UserId, *, for_update: bool = False) -> User | None:
         stmt = select(users).where(users.c.id == user_id)

@@ -83,7 +83,8 @@ class RevisionKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class User:
     id: UserId
-    telegram_user_id: int
+    # None for an account that signed up another way (see ``domain.identity``).
+    telegram_user_id: int | None
     telegram_chat_id: int | None
     # The CURRENT time zone: everything that reads "their day" reads this. It follows
     # where they are (see domain/whereabouts.py); ``home_timezone`` is kept to go back to.
@@ -119,6 +120,8 @@ class User:
     # it off (hidden, never turned on by itself). Chat and the API work whatever they say.
     show_invest: bool | None = None
     show_travel: bool | None = None
+    # The lower-case address they signed up with, if they did that; None otherwise.
+    email: str | None = None
 
     def __post_init__(self) -> None:
         if not self.home_timezone:

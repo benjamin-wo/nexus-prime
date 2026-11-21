@@ -133,6 +133,7 @@ CHANGE_COLUMNS: dict[str, tuple[str, ...]] = {
     "trip_paid_by_others": ("created_at", "settled_at"),
     "trip_reminders": ("sent_at",),
     "trip_shares": ("created_at",),
+    "user_identities": ("created_at",),
     "trips": ("created_at", "updated_at", "photo_tried_at", "activity_digest_at"),
     "users": ("created_at", "web_access_granted_at", "setup_dismissed_at", "timezone_set_at"),
     "voice_settings": ("updated_at",),

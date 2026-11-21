@@ -589,7 +589,8 @@ async def test_nothing_connects_a_demo_to_telegram_or_a_mailbox(world: Demo) -> 
             world.uow, forwarding.forwarding, forwarding.cipher, user, now=NOW
         )
     # No chat, and a negative id no Telegram account has: the bot can never reach it.
-    assert user.telegram_chat_id is None and user.telegram_user_id < 0
+    assert user.telegram_chat_id is None
+    assert user.telegram_user_id is not None and user.telegram_user_id < 0
     async with world.engine.begin() as db:
         with pytest.raises(IntegrityError):  # the database refuses a demo with a real-looking id
             await db.execute(

@@ -7,6 +7,7 @@ from nexus.application.clock import utcnow
 from nexus.application.ports import LedgerRepository, UnitOfWork
 from nexus.application.wallets import new_cash_wallet, new_spending_wallet
 from nexus.domain.errors import InvalidInput, NotFound
+from nexus.domain.identity import Provider
 from nexus.domain.ledger import Category, MenuSection, Role, User, UserId
 from nexus.domain.money import Money
 
@@ -73,6 +74,9 @@ async def ensure_user(repo: LedgerRepository, cmd: RegisterUser) -> Registration
     )
     created = await repo.insert_user_if_absent(candidate)
     if created:
+        # A real Telegram id is also an identity (a demo's made-up, negative one is not).
+        if cmd.telegram_user_id > 0:
+            await repo.add_identity(candidate.id, Provider.TELEGRAM, str(cmd.telegram_user_id))
         for name in DEFAULT_CATEGORIES:
             await repo.insert_category(Category(id=uuid4(), user_id=candidate.id, name=name))
         await repo.insert_wallet(new_spending_wallet(candidate.id))
@@ -143,6 +147,11 @@ async def turn_on_menu(uow: UnitOfWork, actor: UserId, section: MenuSection) -> 
         turned = await uow.ledger.turn_on_menu(actor, section)
         await uow.commit()
     return turned
+
+
+async def find_user_by_identity(uow: UnitOfWork, provider: Provider, subject: str) -> User | None:
+    async with uow:
+        return await uow.ledger.get_user_by_identity(provider, subject)
 
 
 async def find_telegram_user(uow: UnitOfWork, telegram_user_id: int) -> User | None:

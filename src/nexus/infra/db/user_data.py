@@ -95,6 +95,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "web_sessions",
     "login_links",
     "invites",
+    "user_identities",
     "users",
 )
 
