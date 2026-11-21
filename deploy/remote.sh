@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The only thing the GitHub Actions key may run on this server (a forced command in
 # root's authorized_keys). It takes one word, from the "Server" workflow:
-#   deploy   pull main, rebuild and restart Nexus, then check it answers
+#   deploy   pull main, rebuild and restart Nexus, check it answers; if not, roll back the code
 #   health   is Nexus answering?
 #   status   containers, memory, disk, last backup
 #   telegram is Telegram delivering messages to Nexus, and how did the app fare today?
@@ -31,10 +31,18 @@ health() {
 
 case "${SSH_ORIGINAL_COMMAND:-}" in
   deploy)
+    prev=$(git -C "$DIR" rev-parse HEAD)
     git -C "$DIR" pull --ff-only --quiet
+    now=$(git -C "$DIR" rev-parse HEAD)
+    if [ "$now" = "$prev" ]; then echo "already up to date"; fi
     echo "code at $(git -C "$DIR" log -1 --format='%h %s')"
     docker compose up -d --build --quiet-pull 2>&1 | grep -E 'Built|Started|Running|Error' || true
-    health ;;
+    if health; then exit 0; fi
+    echo "rolling back to $(git -C "$DIR" rev-parse --short "$prev")"
+    git -C "$DIR" reset --hard --quiet "$prev"
+    docker compose up -d --build --quiet-pull 2>&1 | grep -E 'Built|Started|Running|Error' || true
+    if health; then echo "rolled back; the previous version is answering"; else echo "rollback is not answering either"; fi
+    exit 1 ;;
   health) health ;;
   status)
     docker compose ps --format '{{.Service}}: {{.Status}}'

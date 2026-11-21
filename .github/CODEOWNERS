@@ -1,0 +1,13 @@
+/migrations/ @benjamin-wo
+/src/nexus/channels/web/security.py @benjamin-wo
+/src/nexus/application/erasure.py @benjamin-wo
+/src/nexus/application/export.py @benjamin-wo
+/src/nexus/application/user_data.py @benjamin-wo
+/src/nexus/domain/calc.py @benjamin-wo
+/deploy/ @benjamin-wo
+/.github/ @benjamin-wo
+# Agent system prompt, tools and skills
+/src/nexus/agent/graph.py @benjamin-wo
+/src/nexus/agent/tools.py @benjamin-wo
+/src/nexus/agent/skills.py @benjamin-wo
+/src/nexus/skills/ @benjamin-wo

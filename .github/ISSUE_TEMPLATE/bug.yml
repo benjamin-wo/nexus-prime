@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Nexus does not work as it should.
+labels: ["needs-triage", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repo is public. Use made-up names, merchants and amounts. Never paste real statements, emails or tokens.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Say what you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Web
+        - Telegram bot
+        - Telegram Mini App
+        - iOS app
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the ledger.
+        2. Add an expense of 12.50 at "Example Cafe".
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: when
+    attributes:
+      label: When it happened
+      description: Optional. A date and rough time helps us find it in the logs.
+    validations:
+      required: false

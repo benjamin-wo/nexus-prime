@@ -2,6 +2,8 @@
 
 How Nexus is configured, secured and deployed. For the product and architecture overview, see the [README](../README.md). When something breaks, see the [runbook](RUNBOOK.md).
 
+Deploys to the server run by themselves after green CI on `main`, with a rollback of the code if the app does not answer; migrations must be expand-then-contract. See [`deploy/README.md`](../deploy/README.md).
+
 ## Local development
 
 Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/), Node 22 and Docker.

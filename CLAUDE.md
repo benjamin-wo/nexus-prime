@@ -23,3 +23,7 @@ The five defaults: needs-triage, needs-info, ready-for-agent, ready-for-human, w
 ### Domain docs
 
 Single-context: `CONTEXT.md` at the root, ADRs in `docs/adr/`. See `docs/agents/domain.md`.
+
+### Software factory
+
+Issue-to-deploy automation with two human gates. See `docs/agents/factory.md`.

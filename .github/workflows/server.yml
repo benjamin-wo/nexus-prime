@@ -2,8 +2,13 @@ name: Server
 
 # Run one fixed action on the Nexus server over SSH, by hand (Actions tab → Server →
 # Run workflow) or from a tool. The key can only run deploy/remote.sh (a forced
-# command), so this workflow can't run anything else there. See deploy/README.md.
+# command), so this workflow can't run anything else there. It also deploys by itself
+# after CI passes on main. See deploy/README.md.
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -12,26 +17,53 @@ on:
         options: [health, status, telegram, deploy, restart]
         default: health
 
-permissions:
-  contents: read
-
 concurrency:
   group: server
   cancel-in-progress: false
 
 jobs:
   run:
+    # After CI: only a green push run on main. By hand: always.
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
     steps:
-      - name: ${{ inputs.action }}
+      - name: ${{ inputs.action || 'deploy' }}
+        id: ssh
         env:
           HOST: ${{ secrets.DROPLET_HOST }}
           KEY: ${{ secrets.DROPLET_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
-          ACTION: ${{ inputs.action }}
+          ACTION: ${{ inputs.action || 'deploy' }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "root@$HOST" "$ACTION"
+
+      - name: Mark fixed issues as deployed
+        if: github.event_name == 'workflow_run' && steps.ssh.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          short="${SHA:0:7}"
+          for pr in $(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[].number'); do
+            for issue in $(gh pr view "$pr" --repo "$REPO" --json closingIssuesReferences --jq '.closingIssuesReferences[].number'); do
+              if gh issue view "$issue" --repo "$REPO" --json labels --jq '.labels[].name' | grep -qx ops; then
+                continue
+              fi
+              if ! gh api "repos/$REPO/issues/$issue/comments" --paginate --jq '.[].body' | grep -q "^Deployed in $short"; then
+                gh issue comment "$issue" --repo "$REPO" --body "Deployed in $short."
+              fi
+              if [ "$(gh issue view "$issue" --repo "$REPO" --json state --jq .state)" = OPEN ]; then
+                gh issue close "$issue" --repo "$REPO"
+              fi
+              echo "issue #$issue marked deployed in $short"
+            done
+          done
