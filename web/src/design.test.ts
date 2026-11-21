@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
  *   `rgba(var(--accent-rgb), 0.16)` is fine: the colour is still a token.
  * - No linear-gradient / radial-gradient / conic-gradient, anywhere.
  * - A box-shadow is `none` or built only from `var(--shadow-*)` tokens: no coloured or glow shadows.
- * - font-family is `inherit`, a `var(--font-*)` token, or one of the two stacks named in DESIGN.md.
+ * - font-family is `inherit`, a `var(--font-*)` token, or one of the stacks named in DESIGN.md.
  *
  * styles.css still breaks these rules in places the token and component PRs have not reached. Each one is
  * listed in KNOWN_OFFENDERS as "selector :: kind". The test fails on a violation that is not listed, and also
@@ -25,7 +25,9 @@ type Kind = "colour" | "gradient" | "shadow" | "font";
 const CSS_PATH = join(dirname(fileURLToPath(import.meta.url)), "styles.css");
 
 const FONT_STACKS = [
-  '"Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  // Paper: Bricolage Grotesque (headings, figures, UI) and Newsreader (body), plus mono.
+  '"Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  '"Newsreader", Georgia, "Times New Roman", serif',
   "ui-monospace, SFMono-Regular, Menlo, monospace",
 ];
 
