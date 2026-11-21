@@ -34,4 +34,16 @@ describe("LoginPage", () => {
     expect(await screen.findByRole("link", { name: "Try the live demo" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("hides the Telegram widget inside the iOS app and says why", async () => {
+    window.NexusNative = { v: 1, platform: "ios" };
+    try {
+      mockApi({ "GET /config": () => ({ bot_username: "made_up_bot" }) });
+      const { container } = renderAt("/login");
+      expect(await screen.findByText(/Sign-in from the app is coming/)).toBeInTheDocument();
+      expect(container.querySelector("script[data-telegram-login]")).toBeNull();
+    } finally {
+      delete window.NexusNative;
+    }
+  });
 });

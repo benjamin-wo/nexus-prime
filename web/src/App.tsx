@@ -10,6 +10,7 @@ import { Shell } from "./components/Shell";
 import { Toast } from "./components/Toast";
 import { DEPARTMENTS } from "./departments";
 import { EditTransactionProvider } from "./editTransaction";
+import { nativeHaptic } from "./native";
 import { isWaiting, outboxUser, useOnline, useOutbox, useOutboxSync } from "./outbox";
 import { refetchActive, useRefreshOnReturn } from "./refreshOnReturn";
 import { DemoPage } from "./pages/DemoPage";
@@ -267,6 +268,7 @@ function Cockpit({ me }: { me: Me }) {
             setNotice(null);
             setDeleted(null);
             setSaved({ tx, fresh });
+            nativeHaptic("success");
           }}
         />
       )}

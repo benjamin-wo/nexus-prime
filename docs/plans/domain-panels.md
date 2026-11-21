@@ -379,9 +379,9 @@ Parallel plan: 6.1 first; 6.2, 6.3 and 6.4 then run in parallel.
 - **Files:** `web/src/components/GetStarted.tsx`, `web/src/components/GetStarted.test.tsx`, `docs/SECURITY.md`.
 - **Verify:** `cd web && npx vitest run src/components/GetStarted.test.tsx`; the wording reviewed by the owner.
 
-### 6.5 Capacitor or Expo (decision, not build)
+### 6.5 Capacitor or Expo (decided: [ADR 0003](../adr/0003-ios-app-shell.md))
 
-A short spike and an ADR 0002, not part of this plan's build. Capacitor is the faster route to a store, but risks rejection as a repackaged website unless it adds native depth (push, biometric unlock, offline read cache, share sheet). Expo gives a native-feeling sheet and chat but means a new UI layer on top of `packages/nexus-core`. Needs the owner.
+**Decided: ADR 0003** (an Expo shell around the live web app, native depth added in steps). The original framing follows. Not part of this plan's build. Capacitor is the faster route to a store, but risks rejection as a repackaged website unless it adds native depth (push, biometric unlock, offline read cache, share sheet). Expo gives a native-feeling sheet and chat but means a new UI layer on top of `packages/nexus-core`. Needs the owner.
 
 ### Phase 6 exit criteria
 
@@ -432,4 +432,4 @@ Phase 1 may overlap 0.4 to 0.7. Nothing user-visible (Phase 2 onward) starts bef
 9. **Are the proposed targets right?** Precision 0.95, recall 0.85, silence 0.95, carry-over 0.85, at most 5% over-surfacing, at most 3 points lost per distractor domain. Set them after seeing the baseline, and say which are gates and which are reported.
 10. **Telegram.** The plan adds nothing to Telegram in v1 and a deep-link button only later. Agree, or add the link in Phase 2?
 11. **Legal review.** Who arranges the Singapore review of the MAS advice line (before `finance.plan` ever opens by itself), HSA wellness scope (before Health) and the PDPA breach runbook covering the new panel table?
-12. **Capacitor or Expo,** when Phase 6 nears (6.5).
+12. **Capacitor or Expo.** Decided: ADR 0003.

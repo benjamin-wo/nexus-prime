@@ -5,6 +5,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { NexusMark, NexusWordmark } from "../components/NexusMark";
 import { TelegramLogin } from "../components/TelegramLogin";
+import { inNativeApp } from "../native";
 import { initData, miniApp } from "../telegram";
 
 const ERRORS: Record<string, string> = {
@@ -98,7 +99,11 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
             {error}
           </p>
         )}
-        {initData ? null : config.data ? (
+        {inNativeApp() ? (
+          <p className="secondary">
+            Sign-in from the app is coming. For now, sign in to Nexus in your browser, or use Nexus in Telegram.
+          </p>
+        ) : initData ? null : config.data ? (
           <TelegramLogin bot={config.data.bot_username} invite={trip ? undefined : token} tripInvite={trip ? token : undefined} />
         ) : config.isError ? (
           <p className="error-text">Sign-in isn't available right now.</p>

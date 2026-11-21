@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Nexus",
+    "slug": "nexus",
+    "scheme": "nexus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.benjaminwo.nexus",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Nexus uses Face ID to keep your finances private when you return to the app."
+      }
+    },
+    "plugins": ["expo-router", "expo-web-browser"]
+  }
+}
