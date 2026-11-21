@@ -20,8 +20,9 @@ from nexus.agent.service import UNDO, AgentService, Button, Picture, Reply
 from nexus.agent.tools import UowFactory
 from nexus.application import acting, ops
 from nexus.application import speech as speech_rules
-from nexus.application.access import NO_WEB_ACCESS, create_invite, issue_login_link
+from nexus.application.access import NO_WEB_ACCESS, create_invite, has_web_access, issue_login_link
 from nexus.application.clock import utcnow
+from nexus.application.device_signin import DeviceSignin, display_code
 from nexus.application.inbound import claim_event
 from nexus.application.limits import RateLimited, RateLimiter
 from nexus.application.users import RegisterUser, register_user
@@ -68,6 +69,7 @@ class TelegramRuntime:
     client: TelegramClient
     clock: Callable[[], datetime] = field(default=utcnow)
     limits: RateLimiter = field(default_factory=RateLimiter)  # per user: the /web command
+    devices: DeviceSignin = field(default_factory=lambda: DeviceSignin(utcnow))
 
 
 def _runtime(request: Request) -> TelegramRuntime:
@@ -239,6 +241,14 @@ async def _message(
         await _images(runtime, actor, chat_id, [replied], text, ref)
         return
     command = text.split()[0].split("@")[0]
+    args = text.split()[1:]
+    sender = int((message.get("from") or {}).get("id") or 0)
+    if command == "/app" and args:  # "/app XXXX-XXXX": approve an app sign-in
+        await _device_request(runtime, actor, chat_id, sender, " ".join(args))
+        return
+    if command == "/start" and args and args[0].lower().startswith("app-"):
+        await _device_request(runtime, actor, chat_id, sender, args[0][4:])
+        return
     if command == "/app":
         await _open_app(runtime, chat_id)
         return
@@ -304,6 +314,64 @@ async def _web_link(runtime: TelegramRuntime, actor: UserId) -> str:
         "Sign-in link for the web app (single use, expires in 5 minutes). "
         "Open it in the browser you want to sign in on:\n"
         f"{origin}/login/link/{token}"
+    )
+
+
+DEVICE_REFUSED = "That code didn't work. Check it and try again, or ask the app for a new one."
+DEVICE_TOO_OFTEN = "That's a few codes already. Try again in a while."
+DEVICE_PREFIX = ("devy:", "devn:")
+
+
+async def _device_request(
+    runtime: TelegramRuntime, actor: UserId, chat_id: int, sender: int, raw_code: str
+) -> None:
+    """Someone says they're signing in to the app with this code. Nothing is approved yet:
+    they are asked, with a warning, and only their own Yes (see ``_device_answer``) counts.
+    An unknown, expired, used or malformed code all get the same refusal."""
+    if not runtime.limits.allow("device_claim", actor):
+        await runtime.client.send_message(chat_id, DEVICE_TOO_OFTEN)
+        return
+    if not await has_web_access(runtime.uow(), actor):
+        await runtime.client.send_message(
+            chat_id, f"{NO_WEB_ACCESS.capitalize()}. Ask the owner for a link."
+        )
+        return
+    code = runtime.devices.claim(raw_code, sender)
+    ops.emit("access", "device_claim", ok=code is not None)
+    if code is None:
+        await runtime.client.send_message(chat_id, DEVICE_REFUSED)
+        return
+    shown = display_code(code)
+    await runtime.client.send_message(
+        chat_id,
+        f"Someone asked to sign in to Nexus with code {shown}. "
+        "Only say yes if you're signing in on your own phone right now.",
+        [[Button("Yes, sign in", f"devy:{code}"), Button("No", f"devn:{code}")]],
+    )
+
+
+async def _device_answer(
+    runtime: TelegramRuntime, actor: UserId, chat_id: int, sender: int, data: str, message_id: Any
+) -> None:
+    """The Yes / No under the question above. Approval needs the very Telegram user who sent
+    the code, and still web access."""
+    code = data[5:]
+    if isinstance(message_id, int):
+        try:
+            await runtime.client.clear_buttons(chat_id, message_id)
+        except TelegramError as exc:  # already cleared, or too old to edit
+            log.info("telegram: couldn't clear buttons: %s", exc)
+    if data.startswith("devn:"):
+        runtime.devices.deny(code, sender)
+        await runtime.client.send_message(chat_id, "Cancelled. Nobody was signed in.")
+        return
+    approved = await has_web_access(runtime.uow(), actor) and runtime.devices.approve(
+        code, sender, actor
+    )
+    ops.emit("access", "device_approve", ok=approved)
+    await runtime.client.send_message(
+        chat_id,
+        "Done. You can go back to the app." if approved else DEVICE_REFUSED,
     )
 
 
@@ -452,6 +520,11 @@ async def _callback(runtime: TelegramRuntime, query: dict[str, Any]) -> None:
     ops.set_user(actor)
     acting.set_acting_user(actor)
     data = str(query.get("data") or "")
+    if data.startswith(DEVICE_PREFIX):
+        sender = (query.get("from") or {}).get("id")
+        if isinstance(sender, int):
+            await _device_answer(runtime, actor, chat_id, sender, data, message.get("message_id"))
+        return
     # One-shot buttons: take them off the message once pressed, Undo included, and
     # drop the job that would later put the rest back without Undo.
     if data.startswith(ONE_SHOT) and message.get("message_id") is not None:

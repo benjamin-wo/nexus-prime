@@ -141,6 +141,12 @@ async def issue_login_link(uow: UnitOfWork, actor: UserId, *, now: datetime) -> 
     return token
 
 
+async def has_web_access(uow: UnitOfWork, actor: UserId) -> bool:
+    async with uow:
+        user = await uow.ledger.get_user(actor)
+    return user is not None and user.has_web_access
+
+
 async def redeem_login_link(uow: UnitOfWork, token: str, *, now: datetime) -> LoggedIn:
     """Open a standard (renewable) session for whoever a sign-in link was made for. The link is
     spent by one conditional update, so of two requests at once only one gets in; an unknown,

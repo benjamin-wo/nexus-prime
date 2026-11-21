@@ -36,6 +36,7 @@ from nexus.application import email as email_cases
 from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
 from nexus.application.destination_photos import PhotoFinder
+from nexus.application.device_signin import DeviceSignin
 from nexus.application.email import EmailRuntime
 from nexus.application.external_cache import KeptAnswers
 from nexus.application.fx import RateSource
@@ -458,6 +459,7 @@ async def _telegram_runtime(
         settings=settings,
         uow=uow,
         clock=clock,
+        devices=DeviceSignin(clock),
         service=AgentService(
             graph,
             uow,
@@ -838,6 +840,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
                         weather=weather,
                         scans=_statement_pages(resolved, extra, models),
                         demo=demo,
+                        devices=telegram.devices,
                     )
                     menu = asyncio.create_task(_set_menu_button(telegram.client, origin))
                     stack.push_async_callback(_finish, menu)

@@ -54,7 +54,8 @@ export default function Home() {
   const onShouldStart = (req: ShouldStartLoadRequest): boolean => {
     const url = req.url;
     if (url === "about:blank") return true;
-    if (/^(tel|mailto|sms):/i.test(url)) {
+    // Telegram's own links open the Telegram app, which is how a sign-in code gets approved.
+    if (/^(tel|mailto|sms|tg):/i.test(url) || /^https:\/\/(t\.me|telegram\.me)\//i.test(url)) {
       void Linking.openURL(url);
       return false;
     }

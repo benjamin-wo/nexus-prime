@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
+import { AppSignIn } from "../components/AppSignIn";
 import { NexusMark, NexusWordmark } from "../components/NexusMark";
 import { TelegramLogin } from "../components/TelegramLogin";
 import { inNativeApp } from "../native";
@@ -100,9 +101,7 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
           </p>
         )}
         {inNativeApp() ? (
-          <p className="secondary">
-            Sign-in from the app is coming. For now, sign in to Nexus in your browser, or use Nexus in Telegram.
-          </p>
+          <AppSignIn />
         ) : initData ? null : config.data ? (
           <TelegramLogin bot={config.data.bot_username} invite={trip ? undefined : token} tripInvite={trip ? token : undefined} />
         ) : config.isError ? (

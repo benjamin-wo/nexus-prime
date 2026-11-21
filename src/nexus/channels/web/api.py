@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import binascii
+import hashlib
 import re
 from collections.abc import Callable
 from collections.abc import Mapping as MappingType
@@ -13,7 +14,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.datastructures import UploadFile
 
@@ -27,6 +28,7 @@ from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import demo as demo_cases
 from nexus.application import departments as department_cases
+from nexus.application import device_signin as device_cases
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import home as home_cases
 from nexus.application import memory as memory_cases
@@ -608,6 +610,65 @@ async def login_with_link(token: str, request: Request, web: Runtime) -> Respons
     response = RedirectResponse("/", status_code=303, headers=_NO_STORE)
     set_session_cookie(response, web, logged_in.token, lifetime=logged_in.session.span)
     return response
+
+
+# --- signing in from the iOS app (see application/device_signin.py) ------------------------
+
+
+class DeviceStartOut(Model):
+    code: str  # shown as XXXX-XXXX
+    poll_id: str
+    expires_in: int
+    bot_username: str
+
+
+@router.post("/auth/device")
+async def start_device_signin(request: Request, web: Runtime) -> DeviceStartOut:
+    """The app asks for a code to approve in Telegram. No session yet, so no CSRF token (as for
+    the Telegram sign-in), but the origin must be our own. 429 past 10 an hour-ish per address."""
+    check_origin(request, web)
+    if not web.limits.allow("device_start", client_ip(request, web), demo=False):
+        raise HTTPException(status_code=429, detail="Too many sign-in codes. Try again later.")
+    try:
+        started = web.devices.start()
+    except device_cases.StoreFull as exc:
+        raise HTTPException(status_code=503, detail="Try again in a few minutes.") from exc
+    ops.emit("access", "device_code", ok=True, pending=len(web.devices))
+    return DeviceStartOut(
+        code=device_cases.display_code(started.code),
+        poll_id=started.poll_id,
+        expires_in=started.expires_in,
+        bot_username=await web.bot_username(),
+    )
+
+
+@router.get("/auth/device/{poll_id}")
+async def poll_device_signin(poll_id: str, request: Request, web: Runtime) -> Response:
+    """Pending, or approved with the one-time login path (then the request is gone). 404 for an
+    unknown or expired one. Never cached, and nothing here logs the poll id."""
+    headers = {"Cache-Control": "no-store"}
+    if not web.limits.allow("device_poll_ip", client_ip(request, web), demo=False):
+        raise HTTPException(status_code=429, detail="Too many requests.")
+    if not web.devices.knows_poll(poll_id):
+        raise HTTPException(status_code=404)
+    # Keyed by a hash so the limiter, like the store, never holds the secret itself.
+    key = hashlib.sha256(poll_id.encode()).hexdigest()
+    if not web.limits.allow("device_poll", key, demo=False):
+        raise HTTPException(status_code=429, detail="Too many requests.")
+    state = web.devices.poll(poll_id)
+    if state is None:
+        raise HTTPException(status_code=404)
+    if isinstance(state, device_cases.Pending):
+        return JSONResponse({"status": "pending"}, headers=headers)
+    try:
+        token = await access.issue_login_link(web.uow(), state.user_id, now=web.clock())
+    except Forbidden as exc:  # lost web access since approving
+        ops.emit("access", "device_signin", ok=False, reason="refused")
+        raise HTTPException(status_code=404) from exc
+    ops.emit("access", "device_signin", ok=True)
+    return JSONResponse(
+        {"status": "approved", "login_path": f"/login/link/{token}"}, headers=headers
+    )
 
 
 @router.post("/auth/logout", status_code=204)

@@ -35,12 +35,16 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("hides the Telegram widget inside the iOS app and says why", async () => {
+  it("hides the Telegram widget inside the iOS app and shows a code to approve", async () => {
     window.NexusNative = { v: 1, platform: "ios" };
     try {
-      mockApi({ "GET /config": () => ({ bot_username: "made_up_bot" }) });
+      mockApi({
+        "GET /config": () => ({ bot_username: "made_up_bot" }),
+        "POST /auth/device": () => ({ code: "ABCD-2345", poll_id: "p", expires_in: 300, bot_username: "made_up_bot" }),
+        "GET /auth/device/p": () => ({ status: "pending" }),
+      });
       const { container } = renderAt("/login");
-      expect(await screen.findByText(/Sign-in from the app is coming/)).toBeInTheDocument();
+      expect(await screen.findByText("ABCD-2345")).toBeInTheDocument();
       expect(container.querySelector("script[data-telegram-login]")).toBeNull();
     } finally {
       delete window.NexusNative;

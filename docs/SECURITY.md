@@ -34,6 +34,22 @@ A small number of invited people's money records: transactions, budgets, bills, 
 | Ops events and the report | Only kinds, names (tools, models, jobs, route templates, outside hosts, loggers), timings, status codes, error types, code locations and message templates; never message text, amounts, merchants, exception messages, log arguments, URL paths or queries. Users are a keyed hash. Kept 30 days. The report is the owner's, signed in, or a script's with `OPS_TOKEN` (constant-time compare); anyone else gets a 404. Ops tickets (GitHub issues, which can be public) carry only the report's contents; their token needs only Issues read and write on one repository |
 | Dependencies | `pip-audit` (272 locked packages) and `npm audit` (production): no known vulnerabilities |
 
+## Signing in from the iOS app
+
+The app's WebView can't use the Telegram login widget or the bot's `/web` link (both open outside it), so it signs in with a device code (`application/device_signin.py`, `POST /api/auth/device`, `GET /api/auth/device/{poll_id}`). The app shows `XXXX-XXXX`; the person sends it to the bot (`/app XXXX-XXXX`, or the Open Telegram button, which arrives as `/start app-XXXXXXXX`); the bot asks "Yes, sign in / No"; on Yes the poll hands the app a normal one-time `/login/link/<token>`, which the WebView loads, so sessions, cookies and CSRF are unchanged.
+
+The risk is device-code phishing: an attacker starts a flow in their own app and talks a victim into approving the code, which would sign the attacker in as the victim. Mitigations:
+
+- The bot never approves on receiving the code. It asks, with the warning "Someone asked to sign in to Nexus with code XXXX-XXXX. Only say yes if you're signing in on your own phone right now."
+- Only a Yes from the same Telegram user who sent the code counts; a code claimed by one user can't be claimed by another.
+- Only people with web access can approve (the same check as `/web`), and it is checked again when the Yes is pressed and when the link is issued.
+- A code lasts 5 minutes, works once, and the poll hands the login link over once (the request is deleted as it is read). The link itself is the existing single-use, 5-minute one.
+- Rate limits: 10 new codes per 10 minutes per client address, 8 `/app` tries per 10 minutes per Telegram user (to stop guessing: 31^8 codes, about 40 bits), polls about one a second per request and 120 a minute per address. An unknown, expired, used or malformed code gets one identical refusal.
+- Only SHA-256 hashes of the code and the poll id are stored, in memory, bounded to 10,000 pending requests (expired ones go first; when full, no new code is issued). Nothing is logged except counts and outcomes through `ops.emit` (`device_code`, `device_claim`, `device_approve`, `device_signin`): never a code, a poll id or a token.
+- `POST /api/auth/device` checks the request's origin, and needs no CSRF token because there is no session yet (as for the Telegram sign-in). Poll answers are `Cache-Control: no-store`.
+
+Single-process assumption: the store is in memory and shared by the bot's webhook and the web API, so it works only while the app runs as one process (the Dockerfile starts one uvicorn worker). With more than one worker or instance it must move to the database first. A restart forgets pending codes; the app just asks for a new one.
+
 ## Fixed in this review
 
 1. **No rate limits on what costs money.** A runaway client or a hijacked account could send messages to the model without limit. Now each user gets 20 messages a minute and 400 a day across Telegram and web chat (beyond that, a "give me a minute" reply that never reaches the model), and 30 statement previews or imports per 10 minutes (HTTP 429).
