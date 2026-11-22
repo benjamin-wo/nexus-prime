@@ -16,11 +16,11 @@ import {
 } from "../api";
 import { Block } from "../components/Block";
 import { CategoryBars } from "../components/CategoryBars";
-import { Icon } from "../components/Icon";
 import { LoadError } from "../components/LoadError";
 import { MonthPicker } from "../components/MonthPicker";
 import { PastBudgets, usePastBudgets } from "../components/PastBudgets";
 import { StatTile } from "../components/StatTile";
+import { Button, ButtonLink, Chip, ChipGroup, Figure, Row, RowList } from "../components/ui";
 import {
   formatChange,
   formatDate,
@@ -29,8 +29,9 @@ import {
   moveLabel,
 } from "../format";
 import { type MonthKey, monthLabel, monthName, monthRange, shiftMonth } from "../months";
-import { AccentTitle } from "../motion";
 import { useMonthParam } from "../useMonthParam";
+
+import "./money.css";
 
 type Total = Summary["totals"][number];
 
@@ -215,33 +216,29 @@ function SpendingByMonth({
       )}
       <div className={`mini-tiles${past ? " single" : ""}`}>
         {past ? null : overall ? (
-          <div className="mini-tile">
-            <span className="caption">Budget left</span>
-            <span className="mini-value">{formatMoney(overall.remaining)}</span>
-            <span className="caption">{overall.percent}% used</span>
-          </div>
+          <Figure size="sm" label="Budget left" value={formatMoney(overall.remaining)} extra={`${overall.percent}% used`} />
         ) : (
-          <div className="mini-tile">
-            <span className="caption">Received</span>
-            <span className="mini-value">{received ? formatMoney(received.total) : summaryFailed ? "–" : "…"}</span>
-            <span className="caption">This month</span>
-          </div>
+          <Figure
+            size="sm"
+            label="Received"
+            value={received ? formatMoney(received.total) : summaryFailed ? "–" : "…"}
+            extra="This month"
+          />
         )}
-        <div className="mini-tile">
-          <span className="caption">A usual month</span>
-          <span className="mini-value">
-            {!now
+        <Figure
+          size="sm"
+          label="A usual month"
+          value={
+            !now
               ? query.isError
                 ? "–"
                 : "…"
               : usual === null
                 ? "Not yet"
-                : formatMoney({ amount: usual.toFixed(2), currency: now.spent.currency })}
-          </span>
-          <span className="caption">
-            {usual === null ? "Needs a full month" : `Average of the last ${count === 1 ? "month" : `${count} months`}`}
-          </span>
-        </div>
+                : formatMoney({ amount: usual.toFixed(2), currency: now.spent.currency })
+          }
+          extra={usual === null ? "Needs a full month" : `Average of the last ${count === 1 ? "month" : `${count} months`}`}
+        />
       </div>
     </Block>
   );
@@ -256,8 +253,7 @@ function daysLeft(timezone: string): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate() - d;
 }
 
-/** One line from Nexus about the budget closest to running out, with questions
- * worth one tap. Without budgets there is nothing to say: the headline offers to set one. */
+/** One line about the budget closest to running out, with the two things worth a tap. Without budgets there is nothing to say: the headline offers to set one. */
 function Nudge({
   budgets,
   timezone,
@@ -273,18 +269,12 @@ function Nudge({
   const what = tightest.category_id === null ? "your overall budget" : tightest.name;
   return (
     <section className="nudge" aria-label="From Nexus">
-      <span className="assistant-mark" aria-hidden="true">
-        <Icon name="sparkle" size={18} />
-      </span>
       <p>
         You've used <span className="hl">{tightest.percent}%</span> of {what}{" "}
-        with {left} {left === 1 ? "day" : "days"} to go. Want me to look at
-        where it went?
+        with {left} {left === 1 ? "day" : "days"} to go.
       </p>
-      <div className="chips">
-        <button
-          type="button"
-          className="ask-chip"
+      <ChipGroup aria-label="Budget actions">
+        <Chip
           onClick={() =>
             onAsk(
               tightest.category_id === null
@@ -294,11 +284,9 @@ function Nudge({
           }
         >
           Show me
-        </button>
-        <Link className="ask-chip" to="/accounting/budgets">
-          Change budgets
-        </Link>
-      </div>
+        </Chip>
+        <Chip to="/accounting/budgets">Change budgets</Chip>
+      </ChipGroup>
     </section>
   );
 }
@@ -355,9 +343,9 @@ function Latest({ page, query, timezone }: { page?: Page; query: Query; timezone
       id="latest"
       title="Latest"
       action={
-        <Link className="btn btn-small" to="/accounting/ledger">
+        <ButtonLink variant="text" size="sm" to="/accounting/ledger">
           See all
-        </Link>
+        </ButtonLink>
       }
     >
       {!page ? (
@@ -365,7 +353,7 @@ function Latest({ page, query, timezone }: { page?: Page; query: Query; timezone
       ) : page.items.length === 0 ? (
         <p className="state">Nothing logged yet.</p>
       ) : (
-        <ul className="rows">
+        <RowList>
           {page.items.map((t) => {
             const move = t.direction === "move";
             const name =
@@ -378,27 +366,29 @@ function Latest({ page, query, timezone }: { page?: Page; query: Query; timezone
                 t.direction === "out" ? `-${t.amount.amount}` : t.amount.amount,
             };
             return (
-              <li key={t.id} className="row">
-                <span
-                  className={`row-icon${t.direction === "in" ? " in" : ""}`}
-                  aria-hidden="true"
-                >
-                  {name.slice(0, 1).toUpperCase()}
-                </span>
-                <span className="row-main">
-                  <span className="wrap">{name}</span>
-                  <span className="caption">
+              <Row
+                key={t.id}
+                title={name}
+                sub={
+                  <>
                     {formatShortDate(t.occurred_at, timezone)}
-                    {t.status === "pending" ? " · pending" : ""}
+                    {t.status === "pending" && (
+                      <>
+                        {" · "}
+                        <span className="badge badge-pending">pending</span>
+                      </>
+                    )}
+                  </>
+                }
+                trailing={
+                  <span className={t.direction === "in" ? "up" : undefined}>
+                    {move ? formatMoney(t.amount) : formatChange(signed)}
                   </span>
-                </span>
-                <span className={`num${t.direction === "in" ? " up" : ""}`}>
-                  {move ? formatMoney(t.amount) : formatChange(signed)}
-                </span>
-              </li>
+                }
+              />
             );
           })}
-        </ul>
+        </RowList>
       )}
     </Block>
   );
@@ -510,9 +500,7 @@ export function Dashboard({
     <>
       <div className="page-head">
         <div>
-          <h1>
-            <AccentTitle text={past ? "Looking back" : "This month"} />
-          </h1>
+          <h1>{past ? "Looking back" : "This month"}</h1>
           {past ? (
             spent &&
             beforeSpent && <p className="muted">{compare(spent.total, beforeSpent, before)}</p>
@@ -628,32 +616,33 @@ export function Dashboard({
             {ious.data?.length === 0 && (
               <p className="state">Nobody owes you anything.</p>
             )}
-            {ious.data?.map((iou) => (
-              <div key={iou.split_id} className="iou">
-                <span className="wrap">
-                  {iou.participant_name}
-                  <br />
-                  <span className="caption">
-                    since{" "}
-                    {formatDate(iou.expense_occurred_at, me.user.timezone)}
-                  </span>
-                </span>
-                <span className="iou-end">
-                  <span className="num">
-                    {formatMoney(iou.outstanding)}
-                    <span className="sr-only"> still owed</span>
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    aria-label={`${iou.participant_name} paid back ${formatMoney(iou.outstanding)}`}
-                    onClick={() => void paidBack(iou)}
-                  >
-                    Paid back
-                  </button>
-                </span>
-              </div>
-            ))}
+            {ious.data && ious.data.length > 0 && (
+              <RowList>
+                {ious.data.map((iou) => (
+                  <Row
+                    key={iou.split_id}
+                    title={iou.participant_name}
+                    sub={`since ${formatDate(iou.expense_occurred_at, me.user.timezone)}`}
+                    trailing={
+                      <>
+                        {formatMoney(iou.outstanding)}
+                        <span className="sr-only"> still owed</span>
+                      </>
+                    }
+                    actions={
+                      <Button
+                        variant="text"
+                        size="sm"
+                        aria-label={`${iou.participant_name} paid back ${formatMoney(iou.outstanding)}`}
+                        onClick={() => void paidBack(iou)}
+                      >
+                        Paid back
+                      </Button>
+                    }
+                  />
+                ))}
+              </RowList>
+            )}
             {repayError && <p className="error-text">{repayError}</p>}
               </Block>
             </>

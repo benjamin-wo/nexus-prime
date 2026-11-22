@@ -1,5 +1,6 @@
 import { api, type Transaction } from "../api";
 import { formatDate, formatMoney } from "../format";
+import { Button } from "./ui";
 
 /** How money moved around a transaction: who shared a bill and who has paid back,
  * or which bill a repayment paid. Each link opens the transaction on the other side. */
@@ -22,9 +23,9 @@ export function MoneyTrail({
 
   function link(id: string, text: string, label: string) {
     return (
-      <button
-        type="button"
-        className="btn btn-ghost trail-link"
+      <Button
+        variant="text"
+        className="trail-link"
         aria-label={label}
         onClick={(e) => {
           e.stopPropagation();
@@ -32,7 +33,7 @@ export function MoneyTrail({
         }}
       >
         {text}
-      </button>
+      </Button>
     );
   }
 

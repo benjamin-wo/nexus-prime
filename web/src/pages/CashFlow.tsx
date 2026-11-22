@@ -5,7 +5,9 @@ import { api, type CashDay, type CashFlow, type Money } from "../api";
 import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
 import { monthLabel, shiftMonth } from "../months";
-import { AccentTitle } from "../motion";
+
+import "./money.css";
+import { Button, Figure, Row, RowList, Section } from "../components/ui";
 
 const EXPECTED_KINDS: Record<string, string> = {
   bill: "Scheduled payment",
@@ -125,36 +127,33 @@ function DayDetail({ day, today }: { day: CashDay; today: string }) {
   }).format(new Date(`${day.day}T00:00:00Z`));
   const past = day.day <= today;
   return (
-    <section className="card" aria-labelledby="day-detail">
-      <div className="card-head">
-        <h2 id="day-detail">{heading}</h2>
-      </div>
+    <Section id="day-detail" title={heading}>
       {past && (
         <p className="secondary">
           Logged: in {formatMoney(day.money_in)}, out {formatMoney(day.money_out)}, net {formatMoney(day.net)}
         </p>
       )}
       {day.expected.length > 0 ? (
-        <ul className="budgets" aria-label="Expected">
+        <RowList aria-label="Expected">
           {day.expected.map((e, n) => (
-            <li key={n} className="budget">
-              <div className="budget-head">
-                <h3 className="wrap">{e.name}</h3>
-                <span className={`num cal-item-amount ${e.direction}`}>
+            <Row
+              key={n}
+              title={e.name}
+              sub={`${EXPECTED_KINDS[e.kind] ?? "Payday"}${
+                e.amount && e.home && e.amount.currency !== e.home.currency ? ` · about ${formatMoney(e.home)}` : ""
+              }`}
+              trailing={
+                <span className={`cal-item-amount ${e.direction}`}>
                   {e.amount ? `${e.direction === "in" ? "+" : "-"}${formatMoney(e.amount)}` : "Amount not set"}
                 </span>
-              </div>
-              <p className="caption">
-                {EXPECTED_KINDS[e.kind] ?? "Payday"}
-                {e.amount && e.home && e.amount.currency !== e.home.currency ? ` · about ${formatMoney(e.home)}` : ""}
-              </p>
-            </li>
+              }
+            />
           ))}
-        </ul>
+        </RowList>
       ) : (
         !past && <p className="state">Nothing expected.</p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -182,43 +181,41 @@ export function CashFlowPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>
-            <AccentTitle text="Cash flow" />
-          </h1>
+          <h1>Cash flow</h1>
           <p className="muted">
             Money in and out by day, plus what's coming.
           </p>
         </div>
       </div>
-      <section className="card" aria-labelledby="month">
-        <div className="card-head">
-          <h2 id="month">{key ? monthLabel(key) : "This month"}</h2>
+      <Section
+        id="month"
+        title={key ? monthLabel(key) : "This month"}
+        action={
           <span className="month-nav">
-            <button type="button" className="btn btn-ghost" onClick={() => go(-1)} aria-label="Previous month">
+            <Button variant="text" onClick={() => go(-1)} aria-label="Previous month">
               ‹
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => go(1)} aria-label="Next month">
+            </Button>
+            <Button variant="text" onClick={() => go(1)} aria-label="Next month">
               ›
-            </button>
+            </Button>
           </span>
-        </div>
+        }
+      >
         {flow.isLoading && <p className="state">Loading…</p>}
         {flow.isError && <LoadError message="Couldn't load cash flow." query={flow} />}
         {data && (
           <>
             <div className="flow-totals">
-              <div>
-                <p className="caption">Logged in / out</p>
-                <p className="num">
-                  {formatMoney(data.logged_in)} / {formatMoney(data.logged_out)}
-                </p>
-              </div>
-              <div>
-                <p className="caption">Expected in / out</p>
-                <p className="num">
-                  {formatMoney(data.expected_in)} / {formatMoney(data.expected_out)}
-                </p>
-              </div>
+              <Figure
+                size="sm"
+                label="Logged in / out"
+                value={`${formatMoney(data.logged_in)} / ${formatMoney(data.logged_out)}`}
+              />
+              <Figure
+                size="sm"
+                label="Expected in / out"
+                value={`${formatMoney(data.expected_in)} / ${formatMoney(data.expected_out)}`}
+              />
             </div>
             <div className="cal" role="group" aria-label="Days">
               {WEEKDAYS.map((w) => (
@@ -254,7 +251,7 @@ export function CashFlowPage() {
             )}
           </>
         )}
-      </section>
+      </Section>
       {chosen && data && <DayDetail day={chosen} today={data.today} />}
     </>
   );

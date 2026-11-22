@@ -30,6 +30,8 @@ const OTHER_CSS = [
   join(SRC, "components/overlay/overlay.css"),
   join(SRC, "components/shell.css"),
   join(SRC, "pages/home.css"),
+  join(SRC, "pages/invest.css"),
+  join(SRC, "pages/money.css"),
   ...readdirSync(UI_DIR).filter((f) => f.endsWith(".css")).sort().map((f) => join(UI_DIR, f)),
 ];
 
@@ -192,7 +194,7 @@ describe("styles.css follows DESIGN.md", () => {
  * ternary's `"btn-primary"`) and a "day-pill" or "ask-chip" class anywhere in a class string.
  * RAW_CONTROLS MUST ONLY SHRINK: a new control uses the component; when a page moves to them, lower the number.
  */
-const RAW_CONTROLS = 279;
+const RAW_CONTROLS = 235;
 const RAW_CONTROL = /["'`]btn\b|["'`\s]day-pill\b|["'`\s]ask-chip\b/g;
 
 function tsxFiles(dir: string): string[] {

@@ -5,6 +5,7 @@ import { api, type Budget } from "../api";
 import { formatMoney } from "../format";
 import { type MonthKey, monthRange } from "../months";
 import { CategoryTransactions } from "./CategoryTransactions";
+import { Button } from "./ui";
 
 /** How full a budget is: used up (over), nearly (warn) or comfortable. */
 export function level(percent: number): "ok" | "warn" | "over" {
@@ -45,15 +46,14 @@ function Row({ budget, month, timezone }: { budget: Budget; month: MonthKey; tim
           {budget.percent}% used · {verdict}
         </span>
         <span className="quick">
-          <button
-            type="button"
-            className="btn btn-ghost"
+          <Button
+            variant="text"
             aria-expanded={showing}
             aria-controls={`budget-tx-${budget.id}`}
             onClick={() => setShowing(!showing)}
           >
             {showing ? "Hide transactions" : "Transactions"}
-          </button>
+          </Button>
         </span>
       </div>
       {showing && (

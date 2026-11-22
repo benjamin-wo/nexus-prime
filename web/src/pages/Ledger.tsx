@@ -16,7 +16,6 @@ import {
 } from "../api";
 import { Icon } from "../components/Icon";
 import { LoadError } from "../components/LoadError";
-import { NexusMark } from "../components/NexusMark";
 import { Menu } from "../components/Menu";
 import { MoneyTrail } from "../components/MoneyTrail";
 import { PendingEntries } from "../components/PendingEntries";
@@ -24,12 +23,14 @@ import { Sheet } from "../components/Sheet";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
-import { Chip, ChipGroup } from "../components/ui";
+import { Button, Chip, ChipGroup } from "../components/ui";
 import { dayHeading, formatDate, formatMoney, isoDay, moveLabel, relativeDay, txName } from "../format";
 import { outboxUser, useOutbox } from "../outbox";
 import { hapticImpact, hapticSelection } from "../telegram";
 import { useLongPress } from "../useLongPress";
 import { payingWallets, tracksCards, walletLabel } from "../wallets";
+
+import "./money.css";
 
 const PAGE = 50;
 type View = "all" | "out" | "in" | "move" | "pending";
@@ -320,10 +321,10 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
       <div className="page-head page-head-row">
         <h1>Ledger</h1>
         <div className="quick">
-          <button type="button" className="btn btn-primary" aria-label="Add transaction" ref={headerAdd} onClick={onAdd}>
+          <Button variant="primary" aria-label="Add transaction" ref={headerAdd} onClick={onAdd}>
             <Icon name="plus" size={18} />
             Add
-          </button>
+          </Button>
           <Menu
             label="More"
             items={[
@@ -343,12 +344,10 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           <span className="bulkbar-count" aria-live="polite" aria-atomic="true">
             {selected.size} selected
           </span>
-          <button type="button" className="btn btn-danger" disabled={selected.size === 0} onClick={() => void bulkDelete()}>
+          <Button variant="danger" disabled={selected.size === 0} onClick={() => void bulkDelete()}>
             Delete
-          </button>
-          <button type="button" className="btn" onClick={stopSelecting}>
-            Cancel
-          </button>
+          </Button>
+          <Button onClick={stopSelecting}>Cancel</Button>
         </div>
       )}
 
@@ -365,9 +364,8 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
-            <button
-              type="button"
-              className="btn filter-btn"
+            <Button
+              className="filter-btn"
               aria-haspopup="dialog"
               aria-label={activeCount > 0 ? `Filter, ${activeCount} active` : undefined}
               onClick={() => setSheetOpen(true)}
@@ -379,7 +377,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                   {activeCount}
                 </span>
               )}
-            </button>
+            </Button>
           </div>
           {activeCount > 0 && (
             <div className="filter-chips" role="group" aria-label="Active filters">
@@ -431,9 +429,9 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
             <span className="caption">
               {page.data?.total} {page.data?.total === 1 ? "transaction" : "transactions"}
             </span>
-            <button
-              type="button"
-              className="btn btn-small select-toggle"
+            <Button
+              size="sm"
+              className="select-toggle"
               aria-pressed={selecting}
               onClick={() => {
                 if (selecting) stopSelecting();
@@ -441,7 +439,7 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               }}
             >
               {selecting ? "Done" : "Select"}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -453,10 +451,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           filtered ? (
             <p className="state">Nothing matches these filters.</p>
           ) : pendingHere.length > 0 ? null : (
-            <p className="state state-mark">
-              <NexusMark size={44} />
-              <span>No transactions yet. Just ask Nexus to log one, e.g. "kopi 4.20".</span>
-            </p>
+            <div className="empty-state">
+              <p className="empty-line">No transactions yet.</p>
+              <Button variant="text" onClick={onAdd}>
+                Add a transaction
+              </Button>
+            </div>
           )
         )}
         {items.length > 0 && (
@@ -505,16 +505,16 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                       </td>
                       <td className="num date">{dateCell(tx.occurred_at)}</td>
                       <td className="wrap merchant">
-                        <button
-                          type="button"
-                          className="btn btn-ghost tx-name"
+                        <Button
+                          variant="text"
+                          className="tx-name"
                           onClick={(e) => {
                             e.stopPropagation();
                             tap(tx);
                           }}
                         >
                           {txName(tx)}
-                        </button>
+                        </Button>
                         {/* The signed amount already says money out, so only what adds something gets a badge:
                             money in, a transfer, and a pending or deleted entry. Wide screens only, as before. */}
                         {(tx.direction !== "out" || tx.deleted || tx.status === "pending") && (
@@ -553,12 +553,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
                               {formatDate(tx.duplicate.occurred_at, me.user.timezone)}
                             </span>
                             <span className="quick">
-                              <button type="button" className="btn btn-small" onClick={() => void mergeTwins(tx)}>
+                              <Button size="sm" onClick={() => void mergeTwins(tx)}>
                                 Merge
-                              </button>
-                              <button type="button" className="btn btn-small" onClick={() => void notDuplicate(tx)}>
+                              </Button>
+                              <Button size="sm" onClick={() => void notDuplicate(tx)}>
                                 Not a duplicate
-                              </button>
+                              </Button>
                             </span>
                           </div>
                         )}
@@ -585,17 +585,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
               {offset + 1}–{Math.min(offset + PAGE, page.data.total)} of {page.data.total}
             </span>
             <span className="quick">
-              <button type="button" className="btn" disabled={offset === 0} onClick={() => setOffset(offset - PAGE)}>
+              <Button disabled={offset === 0} onClick={() => setOffset(offset - PAGE)}>
                 Previous
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={offset + PAGE >= page.data.total}
-                onClick={() => setOffset(offset + PAGE)}
-              >
+              </Button>
+              <Button disabled={offset + PAGE >= page.data.total} onClick={() => setOffset(offset + PAGE)}>
                 Next
-              </button>
+              </Button>
             </span>
           </div>
         )}
@@ -607,12 +602,12 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
           onClose={() => setSheetOpen(false)}
           footer={
             <div className="filter-sheet-foot">
-              <button type="button" className="btn" disabled={activeCount === 0} onClick={clearAll}>
+              <Button disabled={activeCount === 0} onClick={clearAll}>
                 Clear
-              </button>
-              <button type="button" className="btn btn-primary" onClick={() => setSheetOpen(false)}>
+              </Button>
+              <Button variant="primary" onClick={() => setSheetOpen(false)}>
                 {total === undefined ? "Done" : `Show ${total} ${total === 1 ? "transaction" : "transactions"}`}
-              </button>
+              </Button>
             </div>
           }
         >

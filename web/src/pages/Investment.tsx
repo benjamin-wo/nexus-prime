@@ -11,6 +11,9 @@ import { Foldaway } from "../components/Foldaway";
 import { PriceWhen } from "../components/PriceWhen";
 import { TodayCard } from "../components/TodayCard";
 import { Toast } from "../components/Toast";
+import { Button, buttonClass, Row, RowList, Section } from "../components/ui";
+
+import "./invest.css";
 
 const shares = (quantity: string) => Number(quantity).toLocaleString("en-US", { maximumFractionDigits: 8 });
 
@@ -27,43 +30,41 @@ function DraftCard({ draft, onDone }: { draft: HoldingsDraft; onDone: (message: 
   }
   const nothing = !draft.first && draft.changes.length === 0;
   return (
-    <section className="card" aria-labelledby="from-screenshot">
-      <div className="card-head">
-        <h2 id="from-screenshot">From your screenshot</h2>
-      </div>
+    <Section id="from-screenshot" title="From your screenshot">
       {draft.first ? (
-        <ul className="feed" aria-label="Positions read">
+        <RowList aria-label="Positions read">
           {draft.positions.map((p) => (
-            <li key={p.symbol} className="run-row">
-              <span>
-                <strong>{p.symbol}</strong> · {shares(p.quantity)} at {formatMoney(p.average_cost)}
-              </span>
-              <span className="caption num">{formatMoney(p.cost)}</span>
-            </li>
+            <Row
+              key={p.symbol}
+              title={
+                <>
+                  <strong>{p.symbol}</strong> · {shares(p.quantity)} at {formatMoney(p.average_cost)}
+                </>
+              }
+              trailing={formatMoney(p.cost)}
+            />
           ))}
-        </ul>
+        </RowList>
       ) : nothing ? (
         <p className="muted">It matches the holdings you already have.</p>
       ) : (
-        <ul className="feed" aria-label="Changes">
+        <RowList aria-label="Changes">
           {draft.changes.map((line) => (
-            <li key={line}>{line}</li>
+            <Row key={line} title={line} />
           ))}
-        </ul>
+        </RowList>
       )}
       <p className="caption">Check the numbers against your broker before saving. Stocks the screenshot doesn't show are removed.</p>
       <span className="quick">
         {!nothing && (
-          <button type="button" className="btn btn-primary" onClick={() => void act("save")}>
+          <Button variant="primary" onClick={() => void act("save")}>
             {draft.first ? "Save holdings" : "Update holdings"}
-          </button>
+          </Button>
         )}
-        <button type="button" className="btn" onClick={() => void act("discard")}>
-          {nothing ? "OK" : "Discard"}
-        </button>
+        <Button onClick={() => void act("discard")}>{nothing ? "OK" : "Discard"}</Button>
       </span>
       {error && <p className="error-text" role="alert">{error}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -153,34 +154,29 @@ function Trades({ onChanged }: { onChanged: (message: string) => void }) {
 
   const list = trades.data ?? [];
   return (
-    <section className="card" aria-labelledby="trades">
-      <div className="card-head">
-        <h2 id="trades">Trades</h2>
-        <span className="caption">What you bought and sold at your broker. Sales show what they locked in at your average cost.</span>
-      </div>
-      {list.length === 0 && !trades.isLoading && <p className="state">No trades recorded yet. Tell the bot ("sold 5 AAPL at 230") or record one here.</p>}
+    <Section id="trades" title="Trades">
+      <p className="caption">What you bought and sold at your broker. Sales show what they locked in at your average cost.</p>
+      {list.length === 0 && !trades.isLoading && <p className="empty-line">No trades recorded yet.</p>}
       {list.length > 0 && (
-        <ul className="feed" aria-label="Trade history">
+        <RowList aria-label="Trade history">
           {list.map((t) => (
-            <li key={t.id} className="run-row">
-              <span className="wrap">
+            <Row
+              key={t.id}
+              title={
                 <strong>
                   {t.side === "buy" ? "Bought" : "Sold"} {t.quantity} {t.symbol}
                 </strong>
-                <br />
-                <span className="caption">
+              }
+              sub={
+                <>
                   {formatShortDate(t.traded_on, "UTC")}
                   {t.price && ` · at ${formatMoney(t.price)}`}
-                </span>
-              </span>
-              {t.realised && (
-                <span className="num">
-                  <Change amount={t.realised} percent={null} />
-                </span>
-              )}
-            </li>
+                </>
+              }
+              trailing={t.realised && <Change amount={t.realised} percent={null} />}
+            />
           ))}
-        </ul>
+        </RowList>
       )}
       <Foldaway label="Record a trade">
         <form className="quick add-holding" onSubmit={record} aria-label="Record a trade">
@@ -207,9 +203,9 @@ function Trades({ onChanged }: { onChanged: (message: string) => void }) {
             Date
             <input className="input" type="date" value={form.day} onChange={set("day")} />
           </label>
-          <button type="submit" className="btn">
+          <Button type="submit" variant="secondary">
             Record
-          </button>
+          </Button>
         </form>
       </Foldaway>
       {error && (
@@ -217,7 +213,7 @@ function Trades({ onChanged }: { onChanged: (message: string) => void }) {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -226,11 +222,8 @@ function DividendsCard() {
   const data = useQuery({ queryKey: ["dividends"], queryFn: () => api<Dividends>("/investments/dividends") }).data;
   if (!data || (data.received.length === 0 && data.expected.length === 0)) return null;
   return (
-    <section className="card" aria-labelledby="dividends">
-      <div className="card-head">
-        <h2 id="dividends">Dividends</h2>
-        <span className="caption">After tax withheld: 30% on US dividends for Singapore residents</span>
-      </div>
+    <Section id="dividends" title="Dividends">
+      <p className="caption">After tax withheld: 30% on US dividends for Singapore residents</p>
       <dl className="totals" aria-label="Dividend totals">
         {data.this_year_home && (
           <div>
@@ -252,40 +245,36 @@ function DividendsCard() {
         )}
       </dl>
       {data.expected.length > 0 && (
-        <ul className="feed" aria-label="Expected dividends">
+        <RowList aria-label="Expected dividends">
           {data.expected.map((e) => (
-            <li key={e.symbol} className="run-row">
-              <span className="wrap">
-                <strong>{e.symbol}</strong>
-                <br />
-                <span className="caption">
+            <Row
+              key={e.symbol}
+              title={<strong>{e.symbol}</strong>}
+              sub={
+                <>
                   {formatMoney(e.per_share)} a share over {e.payments} payment{e.payments === 1 ? "" : "s"} in the last year
                   {e.yield_on_value && ` · yield ${e.yield_on_value}%`}
                   {e.yield_on_cost && ` · ${e.yield_on_cost}% on cost`}
-                </span>
-              </span>
-              <span className="num">≈ {formatMoney(e.net)}/yr</span>
-            </li>
+                </>
+              }
+              trailing={`≈ ${formatMoney(e.net)}/yr`}
+            />
           ))}
-        </ul>
+        </RowList>
       )}
       {data.received.length > 0 && (
-        <ul className="feed" aria-label="Dividends received">
+        <RowList aria-label="Dividends received">
           {data.received.map((d) => (
-            <li key={`${d.symbol}:${d.ex_date}`} className="run-row">
-              <span className="wrap">
-                <strong>{d.symbol}</strong>
-                <br />
-                <span className="caption">
-                  Ex {formatShortDate(d.ex_date, "UTC")} · {formatMoney(d.per_share)} on {d.shares} shares · {formatMoney(d.withheld)} withheld
-                </span>
-              </span>
-              <span className="num">{formatMoney(d.net)}</span>
-            </li>
+            <Row
+              key={`${d.symbol}:${d.ex_date}`}
+              title={<strong>{d.symbol}</strong>}
+              sub={`Ex ${formatShortDate(d.ex_date, "UTC")} · ${formatMoney(d.per_share)} on ${d.shares} shares · ${formatMoney(d.withheld)} withheld`}
+              trailing={formatMoney(d.net)}
+            />
           ))}
-        </ul>
+        </RowList>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -347,8 +336,8 @@ export function HoldingRow({ position, kind, onChanged }: { position: Holding; k
               Avg cost ({position.average_cost.currency})
               <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} />
             </label>
-            <button type="submit" className="btn btn-primary">Save</button>
-            <button type="button" className="btn" onClick={() => setEditing(false)}>Cancel</button>
+            <Button type="submit" variant="primary">Save</Button>
+            <Button onClick={() => setEditing(false)}>Cancel</Button>
             {error && <span className="error-text" role="alert">{error}</span>}
           </form>
         </td>
@@ -378,12 +367,12 @@ export function HoldingRow({ position, kind, onChanged }: { position: Holding; k
       <td className="quick">
         {!editing && !confirming && (
           <>
-            <button type="button" className="btn btn-small" onClick={() => setEditing(true)} aria-label={`Edit ${position.symbol}`}>
+            <Button size="sm" onClick={() => setEditing(true)} aria-label={`Edit ${position.symbol}`}>
               Edit
-            </button>
-            <button type="button" className="btn btn-ghost btn-danger btn-small holding-remove" onClick={() => setConfirming(true)} aria-label={`Remove ${position.symbol}`}>
+            </Button>
+            <Button variant="danger" size="sm" className="holding-remove" onClick={() => setConfirming(true)} aria-label={`Remove ${position.symbol}`}>
               Remove
-            </button>
+            </Button>
           </>
         )}
       </td>
@@ -497,7 +486,7 @@ export function InvestmentPage() {
           <p className="muted">What you hold, at the latest price. Nexus never trades.</p>
         </div>
         {portfolio.data?.screenshots && (
-          <label className="btn btn-primary">
+          <label className={buttonClass({ variant: "primary" })}>
             {reading ? "Reading…" : "Upload screenshot"}
             <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e)} disabled={reading} />
           </label>
@@ -517,16 +506,12 @@ export function InvestmentPage() {
 
       <TodayCard />
 
-      <section className="card" aria-labelledby="holdings">
-        <div className="card-head">
-          <h2 id="holdings">Holdings</h2>
-          <PriceNote data={portfolio.data} />
-        </div>
+      <Section id="holdings" title="Holdings" action={<PriceNote data={portfolio.data} />}>
         {portfolio.data && <Totals totals={portfolio.data.totals} />}
         {portfolio.isLoading && <p className="state">Loading…</p>}
         {portfolio.data && holdings.length === 0 && (
-          <p className="state">
-            No holdings yet. Upload a screenshot of your broker's Portfolio screen (IBKR first), or send it to the bot.
+          <p className="empty-line">
+            No holdings yet. Upload a screenshot of your broker's Portfolio screen, or send it to the bot.
           </p>
         )}
         {holdings.length > 0 && (
@@ -565,10 +550,10 @@ export function InvestmentPage() {
               Avg cost (USD)
               <input className="input" inputMode="decimal" value={adding.cost} onChange={(e) => setAdding({ ...adding, cost: e.target.value })} required />
             </label>
-            <button type="submit" className="btn">Add</button>
+            <Button type="submit" variant="secondary">Add</Button>
           </form>
         </Foldaway>
-      </section>
+      </Section>
       <DividendsCard />
       <Trades onChanged={changed} />
       {done && <Toast message={done} onClose={closeDone} />}
