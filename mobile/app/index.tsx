@@ -15,6 +15,10 @@ import { OfflineScreen } from "../src/offline";
 // React 19 typings; this app only runs on iOS, so type it as the iOS props.
 const IosWebView = WebView as unknown as ComponentType<IOSWebViewProps & { ref?: Ref<WebView> }>;
 
+// The page's ground (DESIGN.md, Paper), behind the status bar and while the page loads.
+const GROUND_LIGHT = "#F3F1EC";
+const GROUND_DARK = "#161512";
+
 const SITE_URL = process.env.EXPO_PUBLIC_SITE_URL?.trim();
 
 const HAPTICS: Record<HapticKind, () => Promise<void>> = {
@@ -76,12 +80,13 @@ export default function Home() {
 
   const offline = net.isConnected === false || net.isInternetReachable === false || failed;
   return (
-    <View style={[styles.fill, { paddingTop: insets.top, backgroundColor: dark ? "#000" : "#fff" }]}>
+    <View style={[styles.fill, { paddingTop: insets.top, backgroundColor: dark ? GROUND_DARK : GROUND_LIGHT }]}>
       <IosWebView
         ref={web}
         source={{ uri: `${SITE_URL.replace(/\/+$/, "")}/app` }}
-        style={[styles.fill, { backgroundColor: dark ? "#000" : "#fff" }]}
+        style={[styles.fill, { backgroundColor: dark ? GROUND_DARK : GROUND_LIGHT }]}
         sharedCookiesEnabled
+        hideKeyboardAccessoryView
         allowsBackForwardNavigationGestures
         pullToRefreshEnabled
         injectedJavaScriptBeforeContentLoaded={INJECTED_BEFORE_LOAD}

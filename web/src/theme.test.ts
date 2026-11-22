@@ -42,7 +42,7 @@ describe("the colour scheme", () => {
   });
 
   it("has colours for Telegram's header and bar in both schemes", () => {
-    expect(CHROME.light.shell).toBe("#f8fafc");
-    expect(CHROME.dark.shell).toBe("#0b1020");
+    expect(CHROME.light.shell).toBe("#F3F1EC");
+    expect(CHROME.dark.shell).toBe("#161512");
   });
 });

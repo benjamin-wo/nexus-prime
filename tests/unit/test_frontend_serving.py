@@ -68,11 +68,12 @@ def test_the_trip_map_is_allowed_and_nothing_else_is(tmp_path: Path) -> None:
     rules = dict(rule.split(" ", 1) for rule in csp.split("; "))
     assert rules["script-src"] == "'self' https://telegram.org https://maps.googleapis.com"
     assert "'unsafe-inline'" not in rules["script-src"] and "'unsafe-eval'" not in csp
-    assert rules["style-src"] == "'self' 'unsafe-inline' https://fonts.googleapis.com"
+    assert rules["style-src"] == "'self' 'unsafe-inline'"
     assert "https://*.gstatic.com" in rules["img-src"]
     assert rules["frame-ancestors"] == "https://web.telegram.org"
-    # font-src overrides default-src: self-hosted fonts need 'self'; the app still loads Geist.
-    assert rules["font-src"] == "'self' https://fonts.gstatic.com"
+    # font-src overrides default-src: self-hosted fonts need 'self'; no Google Fonts.
+    assert rules["font-src"] == "'self'"
+    assert "fonts.g" not in csp
 
 
 def test_the_page_never_gets_the_server_key() -> None:

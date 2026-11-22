@@ -5,6 +5,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Fonts must stay files: the CSP (font-src 'self') blocks data: URIs.
+    assetsInlineLimit: (file) => (/\.woff2?$/.test(file) ? false : undefined),
     rollupOptions: {
       // Two entries: the app, and the public pages (landing, privacy, terms, support), which are
       // plain prerendered HTML that the server serves at / (for visitors), /privacy, /terms and /support.

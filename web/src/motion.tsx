@@ -48,6 +48,11 @@ export function useReveal(root: React.RefObject<HTMLElement | null>) {
       cancelAnimationFrame(frame);
       changes.disconnect();
       seen.disconnect();
+      // Cards still waiting would stay hidden: the next run skips anything already marked
+      // (React runs this effect twice in development).
+      host.querySelectorAll<HTMLElement>('[data-reveal="pending"]').forEach((el) => {
+        delete el.dataset.reveal;
+      });
     };
   }, [root]);
 }

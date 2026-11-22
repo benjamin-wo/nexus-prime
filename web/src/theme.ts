@@ -12,10 +12,10 @@ export type Scheme = "light" | "dark";
 export const THEME_EVENT = "nexus:theme";
 
 /** The page colours Telegram's own chrome is painted with (the same values as the tokens in styles.css):
- * the page (`--bg-shell`), the top of the Home hero (`--hero-top`) and the bottom bar (`--bar-bg`). */
-export const CHROME: Record<Scheme, { shell: string; hero: string; bar: string }> = {
-  light: { shell: "#f8fafc", hero: "#2563eb", bar: "#0b1020" },
-  dark: { shell: "#0b1020", hero: "#1d4ed8", bar: "#131a2e" },
+ * the page (`--bg-shell`, also the header) and the bottom bar (Paper: the ground, no hero). */
+export const CHROME: Record<Scheme, { shell: string; bar: string }> = {
+  light: { shell: "#F3F1EC", bar: "#F3F1EC" },
+  dark: { shell: "#161512", bar: "#161512" },
 };
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
