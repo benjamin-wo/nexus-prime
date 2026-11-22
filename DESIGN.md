@@ -169,9 +169,9 @@ Weights for Bricolage are 400 to 700 (600 for figures and headings, 500 for row 
 
 ### Loading the fonts
 
-Self-hosted, no runtime Google Fonts request. Two woff2 variable files per face family are enough (`BricolageGrotesque[opsz,wdth,wght]` trimmed to Latin; `Newsreader[opsz,wght]` and its italic, Latin), put in `web/public/fonts/` (or taken from the `@fontsource-variable/bricolage-grotesque` and `@fontsource-variable/newsreader` packages, whichever the token PR finds smaller to bundle) and declared with `@font-face` (`font-display: swap`, `unicode-range` for Latin) in `styles.css`; preload the Bricolage file in `index.html`. Fallback metrics (`size-adjust`) are set so the swap does not move the headline.
+Self-hosted, no runtime Google Fonts request. Two woff2 variable files per face family are enough (`BricolageGrotesque[opsz,wdth,wght]` trimmed to Latin; `Newsreader[opsz,wght]` and its italic, Latin), taken from the `@fontsource-variable/bricolage-grotesque` and `@fontsource-variable/newsreader` packages (imported in `main.tsx`) and declared with `@font-face` (`font-display: swap`, `unicode-range` for Latin) in `styles.css`; preload the Bricolage file in `index.html`. Fallback metrics (`size-adjust`) are set so the swap does not move the headline.
 
-**CSP: needs a change.** `src/nexus/channels/web/frontend.py` sets `font-src https://fonts.gstatic.com` and, because `font-src` is given, it overrides `default-src 'self'`, so self-hosted fonts would be blocked. The token PR must change it to `font-src 'self'` (and may drop `https://fonts.gstatic.com`, and `https://fonts.googleapis.com` from `style-src`, if nothing else uses them). A font small enough for Vite to inline as a `data:` URI would also be blocked, so keep them as files (set `build.assetsInlineLimit` below the files' size, or keep them in `public/`).
+**CSP**: `src/nexus/channels/web/frontend.py` sets `font-src 'self'` (and no Google Fonts hosts in `style-src`), so the self-hosted fonts load. A font small enough for Vite to inline as a `data:` URI would also be blocked, so `vite.config.ts` keeps fonts as files (`assetsInlineLimit` returns false for woff and woff2).
 
 ### Rules
 
