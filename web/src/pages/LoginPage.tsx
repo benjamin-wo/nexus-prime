@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
 import { AppSignIn } from "../components/AppSignIn";
@@ -8,6 +8,9 @@ import { NexusMark, NexusWordmark } from "../components/NexusMark";
 import { TelegramLogin } from "../components/TelegramLogin";
 import { inNativeApp } from "../native";
 import { initData, miniApp } from "../telegram";
+import { ButtonLink } from "../components/ui";
+
+import "./settings.css";
 
 const ERRORS: Record<string, string> = {
   signin: "That sign-in couldn't be verified. Please try again.",
@@ -62,7 +65,7 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
   }
   return (
     <div className="login">
-      <section className="card">
+      <section className="login-panel">
         <div className="brand-hero">
           <NexusMark big size={134} />
           <NexusWordmark height={26} alt="Nexus" />
@@ -86,9 +89,9 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
                   An AI lifestyle manager you talk to, on Telegram and the web.
                 </p>
                 {!initData && (
-                  <Link className="btn btn-primary landing-cta" to="/demo">
+                  <ButtonLink variant="primary" className="landing-cta" to="/demo">
                     Try the live demo
-                  </Link>
+                  </ButtonLink>
                 )}
                 <p className="muted">Already using Nexus? Sign in with Telegram.</p>
               </>

@@ -44,7 +44,7 @@ function renderSettings(who: Me, at = "/settings", onLogout: () => void = () => 
   return client;
 }
 
-const rowNames = () => screen.getAllByRole("link").map((l) => l.querySelector(".set-row-title")?.textContent);
+const rowNames = () => screen.getAllByRole("link").map((l) => l.querySelector(".row-title")?.textContent);
 const row = (name: string) => screen.getByRole("link", { name: new RegExp(`^${name}`) });
 
 describe("Settings", () => {
@@ -136,7 +136,7 @@ describe("Settings", () => {
     expect(await within(row("Receipts by email")).findByText("me@example.com · 1 waiting")).toBeInTheDocument();
     expect(within(row("Time zone")).getByText("Singapore · UTC+8")).toBeInTheDocument();
     // The rows with nothing cheap to say stay bare, and only four reads are made.
-    expect(row("Category rules").querySelector(".set-row-value")).toBeNull();
+    expect(row("Category rules").querySelector(".row-trailing")).toBeNull();
     expect(calls.map((c) => c.path).sort()).toEqual(["/email", "/notifications", "/trip-alerts", "/wallets"]);
   });
 
@@ -144,7 +144,7 @@ describe("Settings", () => {
     const calls = mockApi({ "GET /wallets": () => new Response("{}", { status: 500 }) });
     renderSettings(me());
     await waitFor(() => expect(calls.some((c) => c.path === "/wallets")).toBe(true));
-    expect(row("Wallets").querySelector(".set-row-value")).toBeNull();
+    expect(row("Wallets").querySelector(".row-trailing")).toBeNull();
   });
 
   it("skips the reads that are not for a demo account", async () => {
@@ -389,7 +389,7 @@ describe("Settings: Account", () => {
     renderSettings(me());
     const groups = [...document.querySelectorAll("section.set-group")];
     expect(groups.at(-1)).toBe(screen.getByRole("region", { name: "Account" }));
-    expect(account().getAllByRole("button").map((b) => b.querySelector(".set-row-title")?.textContent)).toEqual([
+    expect(account().getAllByRole("button").map((b) => b.querySelector(".row-title")?.textContent)).toEqual([
       "Invite someone",
       "Sign out",
     ]);

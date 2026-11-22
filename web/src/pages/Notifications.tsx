@@ -5,8 +5,10 @@ import { Link } from "react-router-dom";
 import { api, type Me, type NotificationEntry } from "../api";
 import { BackLink } from "../components/BackLink";
 import { Block } from "../components/Block";
-import { Icon } from "../components/Icon";
+import { Button, RowList } from "../components/ui";
 import { formatClock, isoDay } from "../format";
+
+import "./settings.css";
 
 /** How many lines of a message show before "Show more". */
 const LINES = 2;
@@ -101,15 +103,16 @@ function MessageText({ entry }: { entry: NotificationEntry }) {
         {words}
       </p>
       {long && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-small note-toggle"
+        <Button
+          variant="text"
+          size="sm"
+          className="note-toggle"
           aria-expanded={open}
           aria-controls={id}
           onClick={() => setOpen(!open)}
         >
           {open ? "Show less" : "Show more"}
-        </button>
+        </Button>
       )}
     </>
   );
@@ -118,16 +121,15 @@ function MessageText({ entry }: { entry: NotificationEntry }) {
 function NotificationRow({ entry, timeZone }: { entry: NotificationEntry; timeZone: string }) {
   const urgent = entry.level === "urgent";
   return (
-    <li className={`row note${urgent ? " urgent" : ""}`}>
-      <span className="row-icon" aria-hidden="true">
-        <Icon name={urgent ? "alert" : "bell"} size={18} />
-      </span>
-      <div className="row-main">
-        <MessageText entry={entry} />
-        <div className="note-meta">
-          <span className="caption">{formatClock(entry.created_at, timeZone)}</span>
-          {urgent && <span className="caption note-urgent">Urgent</span>}
-          <span className={`badge note-status note-${entry.status}`}>{statusLabel(entry, timeZone)}</span>
+    <li className={`row-item note${urgent ? " urgent" : ""}`}>
+      <div className="row-line note-line">
+        <div className="row-text">
+          <MessageText entry={entry} />
+          <div className="note-meta">
+            <span className="caption">{formatClock(entry.created_at, timeZone)}</span>
+            {urgent && <span className="caption note-urgent">Urgent</span>}
+            <span className={`badge note-status note-${entry.status}`}>{statusLabel(entry, timeZone)}</span>
+          </div>
         </div>
       </div>
     </li>
@@ -158,11 +160,11 @@ export function NotificationsPage({ me }: { me: Me }) {
       {history.data && days.length === 0 && <p className="state">Nothing sent in the last 30 days.</p>}
       {days.map((d) => (
         <Block key={d.day} id={`notes-${d.day}`} title={d.label}>
-          <ul className="rows">
+          <RowList>
             {d.entries.map((entry) => (
               <NotificationRow key={entry.id} entry={entry} timeZone={timeZone} />
             ))}
-          </ul>
+          </RowList>
         </Block>
       ))}
     </>

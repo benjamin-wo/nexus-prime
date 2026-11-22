@@ -614,8 +614,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
   display: flex; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-4);
   background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 10px; box-shadow: var(--shadow-modal);
 }
-.login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: var(--space-4); }
-.login .card { width: min(420px, 100%); padding: var(--space-8); display: grid; gap: var(--space-4); text-align: center; }
 .app-signin { display: grid; gap: var(--space-3); justify-items: center; }
 .app-signin-code { margin: 0; font-size: 2.25rem; font-weight: 700; letter-spacing: 0.08em; font-variant-numeric: tabular-nums lining-nums; color: var(--text-strong); }
 .login .landing-cta { min-height: 48px; text-decoration: none; }
@@ -646,7 +644,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
   .bar-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--space-1); }
   .bar-row > .wrap { grid-column: 1 / -1; }
   .bar-toggle { grid-template-columns: minmax(0, 1fr) auto 12px; }
-  .login .card { padding: var(--space-6) var(--space-4); }
   .filter-row .search { max-width: none; }
   .filter-sheet { width: 100%; }
   .page-head.page-head-row > :not(:first-child) { flex: 0 0 auto; }
@@ -1162,7 +1159,7 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 /* Entry form: merchant suggestions */
 .merchant-field { position: relative; display: grid; gap: var(--space-1); min-width: 0; font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
 .merchant-chips { margin: var(--space-1) 0; }
-.merchant-chips .ask-chip { min-height: 34px; font-size: 0.8125rem; }
+.merchant-chips .chip-btn { min-height: 34px; font-size: 0.8125rem; }
 .merchant-chips .caption { margin-left: var(--space-1); }
 .merchant-list {
   position: absolute; left: 0; right: 0; top: 100%; z-index: 30; list-style: none; margin: var(--space-1) 0 0; padding: var(--space-1);
@@ -1248,16 +1245,6 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 .category-fold[open] > summary { margin-top: 0; margin-bottom: var(--space-3); }
 .move-ask, .card-ask { display: grid; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: 10px; }
 .move-ask-open { justify-self: start; }
-.wallet-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.wallet-note { flex: 1 1 100%; margin: 0; }
-.wallet-usual { display: grid; gap: var(--space-2); margin-top: var(--space-4); max-width: 420px; }
-.wallet-spend { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
-.wallet-spend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.wallet-spend-head h3 { margin: 0; }
-.wallet-spend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-.wallet-spend-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); padding: var(--space-3); border-radius: 12px; background: var(--bg-card-hover); }
-.wallet-spend-name { font-weight: 600; flex: 1 1 10rem; min-width: 0; }
-.wallet-spend-figure { font-variant-numeric: tabular-nums lining-nums; }
 
 /* Adding: the ways to add (the sheet itself is under Sheets, at the end). */
 .ways { display: grid; gap: var(--space-2); }
@@ -2327,43 +2314,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .mover-why { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: var(--bg-raised); }
 .mover-why p { margin: 0; font-size: 0.9375rem; }
 
-/* Settings: the investment fields inside the Telegram updates card. */
-.settings-group { display: grid; gap: var(--space-4); margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--border-card); }
-.quiet-times { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-.quiet-times .field { flex: 1 1 140px; }
-.setting { display: grid; gap: var(--space-1); }
-.setting > p { margin: 0; }
-.setting .share-switch { min-height: 44px; }
 
-/* --- Settings: a short list of rows, each opening its own page --- */
-.set-page { width: 100%; max-width: 720px; margin: 0 auto; display: grid; gap: var(--space-6); align-content: start; }
-.set-group { display: grid; gap: var(--space-2); }
-.set-group > .section-title { margin: 0 var(--space-4); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
-.set-list {
-  display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; overflow: hidden;
-  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius);
-}
-.set-list > li + li { border-top: 1px solid var(--border-card); }
-.set-list > li { min-width: 0; }
-.set-row {
-  display: flex; align-items: center; gap: var(--space-3); min-height: 56px; padding: var(--space-3) var(--space-4);
-  color: var(--text-primary); text-decoration: none; transition: background var(--t-micro);
-}
-a.set-row:hover { background: var(--bg-card-hover); }
-a.set-row:active { background: var(--bg-raised); }
-a.set-row:focus-visible { outline-offset: -2px; }
-.set-row-title { font-weight: 500; color: var(--text-strong); }
-.set-row-value {
-  flex: 1 1 0; min-width: 0; text-align: right; font-size: 0.875rem; color: var(--text-muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.set-row > .set-row-title { flex: none; }
-.set-row > svg { flex: none; margin-left: auto; color: var(--text-muted); }
-.set-row-value + svg { margin-left: 0; }
-.set-switch-row { cursor: pointer; justify-content: space-between; padding-block: var(--space-4); }
-.set-switch-row:has(.switch:disabled) { cursor: default; }
-.set-text { display: grid; gap: 2px; min-width: 0; }
-.set-error { margin: 0; padding: 0 var(--space-4) var(--space-3); }
 /* An iOS-style switch on a checkbox: the box is the track, its ::before the knob. */
 .switch {
   -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 48px; height: 28px; margin: 0;
@@ -2378,94 +2329,10 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .switch:disabled { opacity: 0.6; }
 @media (prefers-reduced-motion: reduce) { .switch, .switch::before { transition: none; } }
 
-/* --- Notifications: what was sent on Telegram, a day at a time --- */
-.note { align-items: flex-start; }
-.note-text {
-  font-family: var(--font-body); margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-weight: 500; color: var(--text-strong);
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
-}
-.note-text.open { display: block; overflow: visible; }
-.note-text a { color: inherit; text-decoration: none; }
-.note-text a:hover, .note-text a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
-.note-toggle { justify-self: start; margin-left: -12px; color: var(--accent-text); }
-.note-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
-.note-urgent { color: var(--status-warning); }
-.note-status { max-width: 100%; border-radius: 12px; line-height: 1.3; }
-.note-sent { color: var(--emerald-accent); background: var(--emerald-soft); border-color: var(--emerald-border); }
-.note-held { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
-.note-digested { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-border); }
-.note-dropped { color: var(--text-muted); border-color: var(--border-card); }
 
 
-/* Settings: the Time zone card. */
-.tz-now strong { font-size: 1.0625rem; font-variant-numeric: tabular-nums lining-nums; color: var(--text-strong); }
-.tz-now p { margin: 0; }
-.tz-actions, .tz-picker .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
-.tz-picker { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
-.tz-picker select { min-height: 9.5rem; }
-.tz-picker .actions { margin-top: 0; }
 
-/* Settings: the How Nexus talks card. */
-.voice-card { grid-column: 1 / -1; }
-.voice-card .card-head { margin-bottom: var(--space-1); }
-.voice-lead { margin: 0 0 var(--space-4); }
-.voice-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--space-2); }
-.voice-preset { display: grid; gap: 2px; align-content: start; min-width: 0; min-height: 44px; padding: var(--space-3); border-radius: 12px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-micro), border-color var(--t-micro); }
-.voice-preset:hover, .voice-preset:focus-visible { background: var(--bg-card-hover); }
-.voice-preset[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
-.voice-preset-label { font-weight: 600; }
-.voice-preset[aria-pressed="true"] .voice-preset-label { color: var(--accent-text); }
-.voice-preset-blurb { font-size: 0.8125rem; line-height: 1.35; color: var(--text-muted); overflow-wrap: anywhere; }
-.voice-dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--space-3) var(--space-4); margin-top: var(--space-4); }
-.voice-dial { display: grid; gap: var(--space-1); min-width: 0; }
-.voice-dial-label { font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
-.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: 12px; background: var(--bg-input); border: 1px solid var(--border-card); }
-.seg-btn { min-width: 0; min-height: 40px; padding: 0 var(--space-2); border-radius: 8px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; transition: background var(--t-micro), color var(--t-micro); }
-.seg-btn:hover, .seg-btn:focus-visible { background: var(--bg-card-hover); }
-.seg-btn[aria-pressed="true"] { background: var(--bg-card); color: var(--accent-text); box-shadow: 0 0 0 1px var(--accent-border); }
-.voice-note { margin-top: var(--space-4); }
-.voice-note-count { margin: var(--space-1) 0 0; }
-.voice-preview { margin-top: var(--space-4); }
-.voice-preview-title { margin: 0 0 var(--space-2); font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); }
-.voice-replies { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.voice-reply { display: grid; gap: 2px; min-width: 0; padding: var(--space-3); border-radius: 12px; background: var(--bg-card-hover); }
-.voice-said, .voice-text { overflow-wrap: anywhere; }
-.voice-error { margin: var(--space-3) 0 0; }
-@media (max-width: 560px) {
-  .voice-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .voice-preset { padding: var(--space-2) var(--space-3); }
-  .voice-preset-blurb { font-size: 0.8125rem; }
-}
 
-/* --- Model costs (owner only): a day-by-day bar chart and lists with a share bar --- */
-.cost-chart { display: grid; gap: var(--space-3); }
-.cost-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0; min-height: 1.5em; }
-.cost-bars {
-  height: 180px; margin: 0; padding: 0; list-style: none; border-bottom: 1px dashed var(--border-card);
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1px; align-items: stretch;
-}
-.cost-bars li { min-width: 0; }
-.cost-hit {
-  display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 100%; margin: 0; padding: 0;
-  border: 0; background: none; cursor: pointer;
-}
-.cost-hit:focus-visible { outline: 2px solid var(--sky-text); outline-offset: 1px; border-radius: 4px; }
-.cost-bar { display: block; width: 100%; max-width: 18px; border-radius: 3px 3px 0 0; background: var(--pal-teal); transition: background var(--t-micro); }
-.cost-hit.on .cost-bar { background: var(--accent); }
-.cost-axis { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 0.8125rem; color: var(--text-muted); }
-.cost-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
-.cost-list li { display: grid; gap: var(--space-2); min-width: 0; }
-.cost-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
-.cost-name { min-width: 0; overflow-wrap: anywhere; color: var(--text-strong); font-weight: 500; }
-.cost-line .num { white-space: nowrap; }
-/* A section page already titles itself with its h1; the card's own heading stays for screen readers only. */
-.set-page > .card > .card-head h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-/* A page that failed to render, and an address that matches no page. */
-.page-error, .not-found { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; }
-.page-error p, .not-found p { margin: 0; }
-.page-error-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.page-error .page-error-detail { font-size: 0.8125rem; color: var(--text-muted); overflow-wrap: anywhere; font-family: var(--font-mono); }
 /* What Nexus is doing while a turn runs: one line a step, a spinner then a check. */
 .steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .steps-list li { display: flex; align-items: center; gap: var(--space-2); }
@@ -2511,30 +2378,8 @@ a.set-row:focus-visible { outline-offset: -2px; }
   .bulkbar { animation: none; }
 }
 
-/* A failed load, with its Retry (LoadError). Inside a card it is a row; the page variant is a card. */
-.load-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) 0 var(--space-4); }
-.load-error-text { flex: 1 1 12rem; min-width: 0; margin: 0; font-size: 0.9375rem; }
-.load-error-page { padding: var(--space-4); background: var(--bg-glass); border: 1px solid var(--border-card); border-radius: var(--radius); }
 
-/* Settings: a time field that saves when left (the status sits on the label's line, so nothing moves). */
-.time-field { position: relative; display: grid; gap: var(--space-1); min-width: 0; }
-.time-field .error-text { margin: 0; }
-.time-status { position: absolute; top: 0; right: 0; }
-.quiet-times .time-field { flex: 1 1 140px; }
 
-/* Settings: the Account group (a button as a row) and the invite link card, here and in the desktop rail. */
-button.set-row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
-button.set-row:hover { background: var(--bg-card-hover); }
-button.set-row:active { background: var(--bg-raised); }
-button.set-row:focus-visible { outline-offset: -2px; }
-button.set-row:disabled { cursor: default; opacity: 0.6; }
-.invite-card { display: grid; gap: var(--space-3); padding: var(--space-3) var(--space-4) var(--space-4); border-top: 1px solid var(--border-card); background: var(--bg-raised); }
-.rail .invite-card { padding: var(--space-3) 0 0; border-top: 0; background: none; }
-.invite-note { margin: 0; font-size: 0.875rem; }
-.invite-actions { display: flex; align-items: center; gap: var(--space-3); }
-.invite-actions p { margin: 0; }
-.invite-card .btn { width: auto; }
-.invite-row .error-text { margin: 0; padding: 0 var(--space-4) var(--space-3); }
 /* Saves confirm with Undo; removals confirm in the page */
 .toast-two { flex-wrap: wrap; }
 .toast-two > span { flex: 1 1 100%; min-width: 0; }
@@ -2542,8 +2387,6 @@ button.set-row:disabled { cursor: default; opacity: 0.6; }
 .toast-two > .btn-ghost { margin-left: auto; }
 .holdings td.quick .holding-remove { margin-left: auto; }
 @media (min-width: 901px) { .holdings td.quick .holding-remove { margin-left: var(--space-4); } }
-.memory-row { flex-wrap: wrap; }
-.memory-row > .confirm-box, .memory-row > .error-text { flex: 1 1 100%; margin-top: 0; }
 .trip-menu-sep { width: 100%; height: 0; margin: var(--space-1) 0; border: 0; border-top: 1px solid var(--border-subtle); }
 .trip-menu-list > .confirm-box { margin: 0; width: min(280px, calc(100vw - 48px)); }
 .toast .btn { flex: 0 0 auto; white-space: nowrap; }
@@ -2567,7 +2410,7 @@ button.set-row:disabled { cursor: default; opacity: 0.6; }
   .trip-page.trip-v2 { --trip-tabbar-h: 60px; }
   /* Smaller ones set later or more specifically: the new-entry suggestions, a budget's footer buttons, the
      merchant in a ledger row (a text-only button), the labels of tick boxes, the rows of the trip's plan. */
-  .merchant-chips .ask-chip, .budget-foot .btn-ghost, .ledger .btn-ghost, .reservation-chip, .place-links .entry-link,
+  .merchant-chips .chip-btn, .budget-foot .btn-ghost, .ledger .btn-ghost, .reservation-chip, .place-links .entry-link,
   .toggle, .import-actions .check, .entry-row { min-height: 44px; }
   .import-actions .check { display: inline-flex; align-items: center; gap: var(--space-2); }
   .ledger .btn-ghost { align-self: center; }

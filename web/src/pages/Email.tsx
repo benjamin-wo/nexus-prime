@@ -12,6 +12,9 @@ import {
 } from "../api";
 import { BackLink } from "../components/BackLink";
 import { formatDate } from "../format";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 const LABELS: Record<EmailStatus, string> = {
   pending: "Waiting for you",
@@ -83,22 +86,22 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
         {email.actionable && !needsAmount && (
           <span className="quick">
             {twin && (
-              <button type="button" className="btn btn-primary" onClick={() => act("same")}>
+              <Button variant="primary" onClick={() => act("same")}>
                 Same one
-              </button>
+              </Button>
             )}
             {wallet && (
-              <button type="button" className="btn btn-primary" onClick={() => move()}>
+              <Button variant="primary" onClick={() => move()}>
                 Transfer
-              </button>
+              </Button>
             )}
-            <button type="button" className={twin || wallet ? "btn" : "btn btn-primary"} onClick={() => act("log")}>
+            <Button variant={twin || wallet ? undefined : "primary"} onClick={() => act("log")}>
               {twin ? "It's another" : wallet ? (email.received ? "Income" : "Expense") : "Log it"}
-            </button>
+            </Button>
             {skippable && (
-              <button type="button" className="btn" onClick={() => act("skip")}>
+              <Button onClick={() => act("skip")}>
                 Skip
-              </button>
+              </Button>
             )}
           </span>
         )}
@@ -121,17 +124,17 @@ function EmailRow({ email, me, onChanged }: { email: InboundEmail; me: Me; onCha
             />
           </label>
           {wallet && (
-            <button type="button" className="btn btn-primary" disabled={!amount.trim()} onClick={() => move(amount.trim())}>
+            <Button variant="primary" disabled={!amount.trim()} onClick={() => move(amount.trim())}>
               Transfer
-            </button>
+            </Button>
           )}
-          <button type="submit" className="btn" disabled={!amount.trim()}>
+          <Button type="submit" disabled={!amount.trim()}>
             {wallet ? (email.received ? "Income" : "Expense") : "Log it"}
-          </button>
+          </Button>
           {skippable && (
-            <button type="button" className="btn" onClick={() => act("skip")}>
+            <Button onClick={() => act("skip")}>
               Skip
-            </button>
+            </Button>
           )}
         </form>
       )}
@@ -191,9 +194,9 @@ function ConnectionRow({
       {forward && (
         <p className="caption">
           Your forwarding address: forward receipts here.{" "}
-          <button type="button" className="btn btn-ghost" onClick={copy}>
+          <Button variant="text" onClick={copy}>
             {copied ? "Copied" : "Copy address"}
-          </button>
+          </Button>
         </p>
       )}
       <div className="budget-foot">
@@ -201,17 +204,17 @@ function ConnectionRow({
         {confirming ? (
           <span className="quick">
             <span>{forward ? "Stop using this address?" : "Stop reading this mailbox?"}</span>
-            <button type="button" className="btn btn-danger" onClick={onDisconnect}>
+            <Button variant="danger" onClick={onDisconnect}>
               Disconnect
-            </button>
-            <button type="button" className="btn" onClick={onCancel}>
+            </Button>
+            <Button onClick={onCancel}>
               Keep
-            </button>
+            </Button>
           </span>
         ) : (
-          <button type="button" className="btn btn-ghost" onClick={onConfirm}>
+          <Button variant="text" onClick={onConfirm}>
             Disconnect
-          </button>
+          </Button>
         )}
       </div>
       {error && (
@@ -260,19 +263,14 @@ export function EmailPage({ me }: { me: Me }) {
       {overview.isLoading && <p className="state">Loading…</p>}
       {overview.isError && <p className="state error-text">Couldn't load your email.</p>}
       {data && data.connections.length === 0 && (
-        <section className="card">
-          <p className="state">
-            No email is connected. To log receipts from email automatically, ask Nexus in chat: "how can I log my
-            expenses automatically?"
-          </p>
-        </section>
+        <p className="empty-line">
+          No email is connected. To log receipts from email automatically, ask Nexus in chat: "how can I log my
+          expenses automatically?"
+        </p>
       )}
       {data && data.connections.length > 0 && (
         <div className="plan-grid">
-          <section className="card" aria-labelledby="mailboxes">
-            <div className="card-head">
-              <h2 id="mailboxes">Connected</h2>
-            </div>
+          <Section id="mailboxes" title="Connected">
             <ul className="budgets">
               {data.connections.map((c) => (
                 <ConnectionRow
@@ -291,12 +289,9 @@ export function EmailPage({ me }: { me: Me }) {
               Disconnecting removes Nexus's access (a forwarding address stops working). Expenses already logged
               stay.
             </p>
-          </section>
-          <section className="card" aria-labelledby="checked">
-            <div className="card-head">
-              <h2 id="checked">Checked emails</h2>
-              <span className="caption">{waiting > 0 ? `${waiting} waiting for you` : "Last 30 days"}</span>
-            </div>
+          </Section>
+          <Section id="checked" title="Checked emails">
+            <p className="caption set-intro">{waiting > 0 ? `${waiting} waiting for you` : "Last 30 days"}</p>
             {data.emails.length === 0 ? (
               <p className="state">No receipt-like emails yet. New ones are checked every 15 minutes.</p>
             ) : (
@@ -306,7 +301,7 @@ export function EmailPage({ me }: { me: Me }) {
                 ))}
               </ul>
             )}
-          </section>
+          </Section>
         </div>
       )}
     </>

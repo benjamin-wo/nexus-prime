@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, type Category, type CategoryRule } from "../api";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 function RuleRow({ rule, onChanged }: { rule: CategoryRule; onChanged: () => void }) {
   const [confirming, setConfirming] = useState(false);
@@ -29,17 +32,17 @@ function RuleRow({ rule, onChanged }: { rule: CategoryRule; onChanged: () => voi
         {confirming ? (
           <span className="quick">
             <span>Remove this rule?</span>
-            <button type="button" className="btn btn-danger" onClick={remove}>
+            <Button variant="danger" onClick={remove}>
               Remove
-            </button>
-            <button type="button" className="btn" onClick={() => setConfirming(false)}>
+            </Button>
+            <Button onClick={() => setConfirming(false)}>
               Keep
-            </button>
+            </Button>
           </span>
         ) : (
-          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+          <Button variant="text" onClick={() => setConfirming(true)}>
             Remove
-          </button>
+          </Button>
         )}
       </div>
       {error && (
@@ -78,11 +81,8 @@ export function RulesSection() {
   }
 
   return (
-    <section className="card" aria-labelledby="rules">
-      <div className="card-head">
-        <h2 id="rules">Category rules</h2>
-        <span className="caption">File new expenses by merchant or notes</span>
-      </div>
+    <Section id="rules" title="Category rules">
+      <p className="caption set-intro">File new expenses by merchant or notes</p>
       {rules.isLoading && <p className="state">Loading…</p>}
       {rules.isError && <p className="state error-text">Couldn't load rules.</p>}
       {rules.data?.length === 0 && (
@@ -116,9 +116,9 @@ export function RulesSection() {
             ))}
           </select>
         </label>
-        <button type="submit" className="btn btn-primary" disabled={!pattern.trim() || !chosen}>
+        <Button type="submit" variant="primary" disabled={!pattern.trim() || !chosen}>
           Save rule
-        </button>
+        </Button>
         <p className="caption">Existing expenses stay as they are; a rule only files new ones.</p>
       </form>
       {error && (
@@ -126,6 +126,6 @@ export function RulesSection() {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }

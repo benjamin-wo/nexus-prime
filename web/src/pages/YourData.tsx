@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiError, deleteEverything, exportAll, setCsrf } from "../api";
 import { downloadNote, inPhoneWebview } from "../telegram";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 /** The word to type before everything is deleted; anything else, even a different case, keeps the button off. */
 export function canConfirmDelete(typed: string): boolean {
@@ -74,20 +77,17 @@ export function YourDataSection() {
 
   const note = exported ? downloadNote(inPhoneWebview()) : null;
   return (
-    <section className="card" aria-labelledby="your-data">
-      <div className="card-head">
-        <h2 id="your-data">Download or delete</h2>
-        <span className="caption">Everything Nexus keeps for you</span>
-      </div>
+    <Section id="your-data" title="Download or delete">
+      <p className="caption set-intro">Everything Nexus keeps for you</p>
       <div className="setting">
         <p>
           <strong>Download all my data</strong>
         </p>
         <p className="caption">Your ledger, budgets, trips, investments, memories and settings, as a zip.</p>
         <div className="actions tz-actions">
-          <button type="button" className="btn btn-small" disabled={exporting} aria-busy={exporting} onClick={() => void download()}>
+          <Button size="sm" disabled={exporting} aria-busy={exporting} onClick={() => void download()}>
             {exporting ? "Preparing…" : "Download"}
-          </button>
+          </Button>
         </div>
         {exported && (
           <p className="caption" role="status">
@@ -111,9 +111,9 @@ export function YourDataSection() {
         </p>
         {!confirming && (
           <div className="actions tz-actions">
-            <button ref={opener} type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setConfirming(true)}>
+            <Button ref={opener} variant="danger" size="sm" onClick={() => setConfirming(true)}>
               Delete everything…
-            </button>
+            </Button>
           </div>
         )}
         {confirming && (
@@ -138,12 +138,12 @@ export function YourDataSection() {
               />
             </label>
             <div className="people-actions">
-              <button type="submit" className="btn btn-danger" disabled={!canConfirmDelete(typed) || deleting}>
+              <Button type="submit" variant="danger" disabled={!canConfirmDelete(typed) || deleting}>
                 {deleting ? "Deleting…" : "Delete everything"}
-              </button>
-              <button type="button" className="btn" disabled={deleting} onClick={cancel}>
+              </Button>
+              <Button disabled={deleting} onClick={cancel}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </form>
         )}
@@ -153,6 +153,6 @@ export function YourDataSection() {
           </p>
         )}
       </div>
-    </section>
+    </Section>
   );
 }

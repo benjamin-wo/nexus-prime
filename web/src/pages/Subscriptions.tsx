@@ -4,6 +4,9 @@ import { useState } from "react";
 import { api, type Subscription, type Subscriptions } from "../api";
 import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 const PER = { weekly: "week", monthly: "month", yearly: "year" } as const;
 
@@ -54,27 +57,27 @@ function SubscriptionRow({
         </span>
         {proposed ? (
           <span className="quick">
-            <button type="button" className="btn btn-primary" onClick={() => act("track")}>
+            <Button variant="primary" onClick={() => act("track")}>
               Track it
-            </button>
-            <button type="button" className="btn" onClick={() => act("dismiss")}>
+            </Button>
+            <Button onClick={() => act("dismiss")}>
               No
-            </button>
+            </Button>
           </span>
         ) : confirming ? (
           <span className="quick">
             <span>Stop tracking?</span>
-            <button type="button" className="btn btn-danger" onClick={() => act("dismiss")}>
+            <Button variant="danger" onClick={() => act("dismiss")}>
               Stop
-            </button>
-            <button type="button" className="btn" onClick={() => setConfirming(false)}>
+            </Button>
+            <Button onClick={() => setConfirming(false)}>
               Keep
-            </button>
+            </Button>
           </span>
         ) : (
-          <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+          <Button variant="text" onClick={() => setConfirming(true)}>
             Stop tracking
-          </button>
+          </Button>
         )}
       </div>
       {error && (
@@ -98,11 +101,8 @@ export function SubscriptionsSection() {
   const data = subs.data;
   const total = data?.monthly_totals.map(formatMoney).join(" + ");
   return (
-    <section className="card" aria-labelledby="subscriptions">
-      <div className="card-head">
-        <h2 id="subscriptions">Subscriptions</h2>
-        {total && <span className="caption">About {total} a month</span>}
-      </div>
+    <Section id="subscriptions" title="Subscriptions">
+      {total && <p className="caption set-intro">About {total} a month</p>}
       {subs.isLoading && <p className="state">Loading…</p>}
       {subs.isError && <LoadError message="Couldn't load subscriptions." query={subs} />}
       {data && data.proposed.length > 0 && (
@@ -128,6 +128,6 @@ export function SubscriptionsSection() {
           I'll offer to track it.
         </p>
       )}
-    </section>
+    </Section>
   );
 }

@@ -3,6 +3,9 @@ import { useState } from "react";
 
 import { api, type VoiceSettings, type VoiceUpdate } from "../api";
 import { previewReplies } from "../voice";
+import { Section } from "../components/ui";
+
+import "./settings.css";
 
 const KEY = ["settings", "voice"];
 /** The longest a note can be. */
@@ -101,10 +104,7 @@ export function VoiceCard() {
   const replies = data ? previewReplies(data.preset, data) : [];
 
   return (
-    <section className="card voice-card" aria-labelledby="voice-title">
-      <div className="card-head">
-        <h2 id="voice-title">How Nexus talks</h2>
-      </div>
+    <Section id="voice-title" title="How Nexus talks" className="voice-card">
       <p className="muted voice-lead">Pick a vibe, then fine-tune. Only changes wording — never what Nexus can do.</p>
       {voice.isLoading && <p className="state">Loading…</p>}
       {voice.isError && <p className="state error-text">Couldn't load how Nexus talks.</p>}
@@ -201,6 +201,6 @@ export function VoiceCard() {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
