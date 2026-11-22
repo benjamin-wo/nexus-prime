@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useDayPill } from "./TripArrange";
+import { Button, Chip } from "../components/ui";
 
 const HOLD_TO_OPEN_MS = 600;
 
@@ -20,17 +21,16 @@ function DayPill({ iso, label, current, mark, title, onOpen }: { iso: string; la
     return () => window.clearTimeout(timer);
   }, [pill.over, current]);
   return (
-    <button
+    <Chip
       data-pill={pill.pill}
-      type="button"
-      className={`day-pill${pill.over ? " drop-over" : ""}`}
+      className={pill.over ? "drop-over" : undefined}
       aria-current={current ? "true" : undefined}
       title={title}
       onClick={onOpen}
     >
       {mark}
       {label}
-    </button>
+    </Chip>
   );
 }
 
@@ -219,22 +219,21 @@ export function DayCarousel({
       </nav>
       {days.length > 1 && (
         <div className="day-controls">
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => go(shown - 1)} disabled={shown === 0} aria-label="Previous day">
+          <Button variant="text" size="sm" onClick={() => go(shown - 1)} disabled={shown === 0} aria-label="Previous day">
             ‹
-          </button>
+          </Button>
           <span className="caption" aria-live="polite">
             {iso && <span className="sr-only">{name(iso)}, </span>}
             {shown + 1} of {days.length}
           </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-small"
+          <Button
+            variant="text" size="sm"
             onClick={() => go(shown + 1)}
             disabled={shown === days.length - 1}
             aria-label="Next day"
           >
             ›
-          </button>
+          </Button>
         </div>
       )}
       <div ref={track} className="day-track" data-easing={easing || undefined} style={height === null ? undefined : { height }} onScroll={onScroll}>

@@ -77,7 +77,7 @@ describe("the shared page", () => {
   it("shows the cover's chip, and under the title the dates and the stops", async () => {
     await open(trip());
     expect(screen.getByText("Shared with you · read only")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("accent-serif");
+    expect(screen.getByRole("heading", { level: 1 })).not.toHaveClass("accent-serif");
     expect(document.querySelector(".trip-hero-meta")).toHaveTextContent(/ – .* · Tokyo and Kyoto/);
     expect(screen.getByText("Shared from Nexus. No money, booking references, notes or travellers are shown.")).toBeInTheDocument();
   });
@@ -92,7 +92,7 @@ describe("the shared page", () => {
     const plan = screen.getByRole("region", { name: "The plan" });
     const named = within(plan).getByRole("heading", { name: /^Day 2 · .* Market morning$/ });
     expect(named.querySelector(".shared-day-meta")).toHaveTextContent(/^Day 2 · /);
-    expect(named.querySelector(".shared-day-title")).toHaveClass("accent-serif");
+    expect(named.querySelector(".shared-day-title")).not.toHaveClass("accent-serif");
     expect(named.querySelector(".shared-day-title")).toHaveTextContent("Market morning");
     // A day with no name of its own takes its stop: the one that starts on a travel day.
     expect(within(plan).getByRole("heading", { name: /^Day 1 · .* Tokyo$/ })).toBeInTheDocument();

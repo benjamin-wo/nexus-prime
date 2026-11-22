@@ -4,6 +4,7 @@ import type { Idea, Place, SearchScope, TripStop } from "../api";
 import { Icon, type IconName } from "../components/Icon";
 import { stopOfDay } from "./TripBits";
 import { PlacePicture, Rating } from "./TripPlaces";
+import { Button, Chip } from "../components/ui";
 
 /** Where a search for the trip looks: all of it, one of its stops, or round one day's places. */
 export type Scope = {
@@ -217,10 +218,9 @@ export function ScopeMenu({ scopes, value, onPick }: { scopes: Scope[]; value: s
 
   return (
     <div className="find-scope" role="group" aria-label="Look in" ref={box} onKeyDown={key}>
-      <button
+      <Chip
         ref={chip}
-        type="button"
-        className="day-pill find-scope-chip"
+        className="find-scope-chip"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -229,7 +229,7 @@ export function ScopeMenu({ scopes, value, onPick }: { scopes: Scope[]; value: s
       >
         {current.label}
         <Icon name="chevronDown" size={16} />
-      </button>
+      </Chip>
       {open && (
         <div id={menuId} className="find-menu" role="menu" aria-label="Look in">
           {scopes.map((s) => (
@@ -260,9 +260,9 @@ export function ThemeChips({ value, disabled, onPick }: { value: string | null; 
   return (
     <div className="chips find-themes" role="group" aria-label="Themes">
       {THEMES.map((t) => (
-        <button key={t.label} type="button" className="day-pill" aria-pressed={value === t.label} disabled={disabled} onClick={() => onPick(t)}>
+        <Chip key={t.label} pressed={value === t.label} disabled={disabled} onClick={() => onPick(t)}>
           {t.label}
-        </button>
+        </Chip>
       ))}
     </div>
   );
@@ -342,19 +342,19 @@ export function ResultList({ results, label, pickLabel, saveText, busy, dayScope
             </span>
             <span className="find-actions">
               {isSaved ? (
-                <button type="button" className="btn find-saved" disabled aria-label={`${f.name} is saved`}>
+                <Button className="find-saved" disabled aria-label={`${f.name} is saved`}>
                   <Icon name="check" size={16} />
                   Saved
-                </button>
+                </Button>
               ) : (
                 <>
-                  <button type="button" className="btn btn-soft" disabled={busy} onClick={() => onPick(f, "list")} aria-label={`${pickLabel}: ${f.name}`}>
+                  <Button variant="secondary" disabled={busy} onClick={() => onPick(f, "list")} aria-label={`${pickLabel}: ${f.name}`}>
                     {saveText ?? pickLabel}
-                  </button>
+                  </Button>
                   {dayScope && (
-                    <button type="button" className="btn btn-soft" disabled={busy} onClick={() => onPick(f, "day")} aria-label={`Add to Day ${dayScope.number}: ${f.name}`}>
+                    <Button variant="secondary" disabled={busy} onClick={() => onPick(f, "day")} aria-label={`Add to Day ${dayScope.number}: ${f.name}`}>
                       Add to Day {dayScope.number}
-                    </button>
+                    </Button>
                   )}
                 </>
               )}

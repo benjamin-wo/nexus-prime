@@ -11,7 +11,6 @@ import "./row.css";
  * With `to` (a route), `href` (a plain link) or `onClick` the title, sub-line and trailing figure are one link or
  * button, so the whole row is pressable; `actions` stay outside it, as their own buttons.
  *
- * The page CSS that still writes `.money-rows` / `.money-row*` by hand shares these rules (row.css).
  */
 export function RowList({ className, ...rest }: HTMLAttributes<HTMLUListElement>) {
   return <ul className={className ? `row-list ${className}` : "row-list"} {...rest} />;
@@ -33,9 +32,11 @@ export interface RowProps {
   onClick?: MouseEventHandler<HTMLButtonElement>;
   /** On the `li`. */
   className?: string;
+  /** More under the row, still inside it (a confirm view, a form): the whole width of the row. */
+  children?: ReactNode;
 }
 
-export function Row({ title, sub, trailing, actions, to, href, onClick, className }: RowProps) {
+export function Row({ title, sub, trailing, actions, to, href, onClick, className, children }: RowProps) {
   const body = (
     <>
       <span className="row-text">
@@ -71,6 +72,7 @@ export function Row({ title, sub, trailing, actions, to, href, onClick, classNam
     <li className={className ? `row-item ${className}` : "row-item"}>
       {line}
       {actions != null && actions !== false && <span className="row-actions-end">{actions}</span>}
+      {children != null && children !== false && <div className="row-more">{children}</div>}
     </li>
   );
 }

@@ -5,6 +5,7 @@ import { ApiError, api, type IssuedTripInvite, type Trip, type TripInvite, type 
 import { ConfirmBox } from "../components/ConfirmBox";
 import { formatShortDate } from "../format";
 import { Companions } from "./TripBits";
+import { Button } from "../components/ui";
 
 /** Everyone on a trip, the owner first: the members list, reloaded when the window regains focus
  * so someone added or removed elsewhere shows up. */
@@ -134,9 +135,9 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
                 <span className="caption">{[m.you ? "You" : null, m.role === "owner" ? "Owner" : "Member"].filter(Boolean).join(" · ")}</span>
               </span>
               {owner && m.role !== "owner" && (
-                <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => setAsking(m)} aria-label={`Remove ${m.name}`}>
+                <Button variant="danger" size="sm" disabled={busy} onClick={() => setAsking(m)} aria-label={`Remove ${m.name}`}>
                   Remove
-                </button>
+                </Button>
               )}
             </li>
           ))}
@@ -163,9 +164,9 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
                   Invite link
                 </label>
                 <input id="invite-link" ref={field} className="input" value={issued.url} readOnly onFocus={(e) => e.target.select()} />
-                <button type="button" className="btn btn-soft" onClick={() => void copy()}>
+                <Button variant="secondary" onClick={() => void copy()}>
                   {copied ? "Copied" : "Copy"}
-                </button>
+                </Button>
               </div>
               <p className="caption">Works once, for 7 days.</p>
             </div>
@@ -181,17 +182,17 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
                       Made {dayOf(i.created_at)} · expires {dayOf(i.expires_at)}
                     </span>
                   </span>
-                  <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => void cancel(i.id)} aria-label={`Cancel the invite made ${dayOf(i.created_at)}`}>
+                  <Button variant="text" size="sm" disabled={busy} onClick={() => void cancel(i.id)} aria-label={`Cancel the invite made ${dayOf(i.created_at)}`}>
                     Cancel
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
           )}
           <div className="share-actions">
-            <button type="button" className="btn btn-soft" disabled={busy} onClick={() => void invite()}>
+            <Button variant="secondary" disabled={busy} onClick={() => void invite()}>
               Invite someone
-            </button>
+            </Button>
           </div>
         </>
       )}
@@ -208,9 +209,9 @@ export function PeopleSection({ trip, onLeft }: { trip: Trip; onLeft: () => void
       )}
       {!owner && me && asking !== "leave" && (
         <div className="share-actions">
-          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => setAsking("leave")}>
+          <Button variant="danger" disabled={busy} onClick={() => setAsking("leave")}>
             Leave trip
-          </button>
+          </Button>
         </div>
       )}
       {error && (

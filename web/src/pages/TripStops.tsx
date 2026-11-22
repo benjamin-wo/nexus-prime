@@ -4,6 +4,7 @@ import { api, type Trip, type TripDetail, type TripStop } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { day, stopColor, stopOfDay, stopsOf } from "./TripBits";
+import { Button, Chip } from "../components/ui";
 
 const DAY_MS = 86400000;
 const nightsBetween = (start: string, end: string) => Math.round((Date.parse(end) - Date.parse(start)) / DAY_MS);
@@ -87,7 +88,7 @@ export function StopsRow({ detail, viewing, onDay, onEdit }: { detail: TripDetai
                 </li>
               )}
               <li>
-                <button type="button" className="day-pill stop-chip" aria-current={s === here ? "true" : undefined} onClick={() => onDay(s.start)}>
+                <Chip className="stop-chip" aria-current={s === here ? "true" : undefined} onClick={() => onDay(s.start)}>
                   <span className="stop-dot" style={{ background: stopColor(i) }} aria-hidden="true" />
                   <span className="stop-text">
                     <strong className="stop-name">{s.name}</strong>
@@ -95,16 +96,16 @@ export function StopsRow({ detail, viewing, onDay, onEdit }: { detail: TripDetai
                       {s.start === s.end ? day(s.start) : `${day(s.start)} – ${day(s.end)}`} · {nights === 0 ? "same day" : `${nights} ${nights === 1 ? "night" : "nights"}`}
                     </span>
                   </span>
-                </button>
+                </Chip>
               </li>
             </Fragment>
           );
         })}
       </ol>
-      <button type="button" className="btn btn-ghost btn-small" onClick={onEdit}>
+      <Button variant="text" size="sm" onClick={onEdit}>
         <Icon name="edit" size={16} />
         Edit stops
-      </button>
+      </Button>
     </div>
   );
 }
@@ -163,17 +164,17 @@ export function StopsSheet({ trip, detail, onClose, onSaved }: { trip: Trip; det
                 <span className="caption">To</span>
                 <input className="input" type="date" value={r.end} min={trip.start} max={trip.end} onChange={(e) => change(r.key, { end: e.target.value })} aria-label={`Stop ${i + 1} ends`} />
               </label>
-              <button type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setRows((was) => was.filter((x) => x.key !== r.key))} aria-label={`Remove stop ${i + 1}`}>
+              <Button variant="danger" size="sm" onClick={() => setRows((was) => was.filter((x) => x.key !== r.key))} aria-label={`Remove stop ${i + 1}`}>
                 Remove
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
         {rows.length === 0 && <p className="caption">No stops: saving goes back to the ones your places to stay suggest.</p>}
         {rows.length < 10 && (
-          <button type="button" className="btn btn-ghost btn-small stops-add" onClick={add}>
+          <Button variant="text" size="sm" className="stops-add" onClick={add}>
             Add stop
-          </button>
+          </Button>
         )}
         {error && (
           <p className="error-text" role="alert">
@@ -181,12 +182,12 @@ export function StopsSheet({ trip, detail, onClose, onSaved }: { trip: Trip; det
           </p>
         )}
         <div className="actions">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <Button type="submit" variant="primary" disabled={busy}>
             {busy ? "Saving…" : "Save"}
-          </button>
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void send([])}>
+          </Button>
+          <Button variant="text" disabled={busy} onClick={() => void send([])}>
             Use suggested
-          </button>
+          </Button>
         </div>
       </form>
     </Sheet>

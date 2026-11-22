@@ -26,6 +26,9 @@ import { PrepTab } from "./TripPrep";
 import { TripFaces, hasMembers, useMembers } from "./TripPeople";
 import { ShareSheet } from "./TripShare";
 import { DayWeather, PlaceActions, StayStrip, useTripWeather } from "./TripDayHead";
+import { Button, ButtonLink, Chip, Section } from "../components/ui";
+
+import "./travel.css";
 
 export { tripWhen };
 
@@ -159,9 +162,9 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
         <p className="caption currency-line">
           Spending in {currency}
           {found?.country && ` (${found.country})`}{" "}
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => setPicking(true)}>
+          <Button variant="text" size="sm" onClick={() => setPicking(true)}>
             Change
-          </button>
+          </Button>
         </p>
       )}
       <details className="more-options" open={Boolean(initial)}>
@@ -198,15 +201,15 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
               value={row.amount}
               onChange={(e) => setPlanned(planned.map((p, i) => (i === n ? { ...p, amount: e.target.value } : p)))}
             />
-            <button type="button" className="btn btn-ghost btn-danger btn-small" onClick={() => setPlanned(planned.filter((_, i) => i !== n))}>
+            <Button variant="danger" size="sm" onClick={() => setPlanned(planned.filter((_, i) => i !== n))}>
               Remove
-            </button>
+            </Button>
           </div>
         ))}
         {planned.length < 12 && (
-          <button type="button" className="btn btn-soft btn-small" onClick={() => setPlanned([...planned, { name: "", amount: "" }])}>
+          <Button variant="secondary" size="sm" onClick={() => setPlanned([...planned, { name: "", amount: "" }])}>
             Add a category
-          </button>
+          </Button>
         )}
       </fieldset>
       <label className="field">
@@ -227,12 +230,12 @@ function TripForm({ initial, home, onDone }: { initial?: Trip; home: string; onD
         </p>
       )}
       <div className="actions">
-        <button type="submit" className="btn btn-primary" disabled={busy || looking}>
+        <Button type="submit" variant="primary" disabled={busy || looking}>
           {initial ? "Save changes" : "Add trip"}
-        </button>
-        <button type="button" className="btn" onClick={() => onDone()}>
+        </Button>
+        <Button onClick={() => onDone()}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -256,21 +259,21 @@ function WhereNext({ onAsk, onAdd }: { onAsk?: (text: string) => void; onAdd: ()
       {onAsk && (
         <form className="where-form" onSubmit={go} aria-label="Research a trip">
           <input className="input" value={where} maxLength={120} onChange={(e) => setWhere(e.target.value)} placeholder="A place and when, e.g. Japan in January" aria-label="Where and when" />
-          <button type="submit" className="btn btn-soft" disabled={!where.trim()}>
+          <Button type="submit" variant="secondary" disabled={!where.trim()}>
             Research it
-          </button>
+          </Button>
         </form>
       )}
       <div className="chips where-chips">
         {onAsk &&
           WHERE_IDEAS.map((idea) => (
-            <button key={idea} type="button" className="day-pill" onClick={() => ask(idea)}>
+            <Chip key={idea} onClick={() => ask(idea)}>
               {idea}
-            </button>
+            </Chip>
           ))}
-        <button type="button" className="day-pill" onClick={onAdd}>
+        <Chip onClick={onAdd}>
           Add a trip
-        </button>
+        </Chip>
       </div>
       <p className="caption">Nexus looks up when to go and what it costs.</p>
     </section>
@@ -303,16 +306,14 @@ export function TripsPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
     <>
       <div className="page-head trips-head">
         <div>
-          <h1>
-            Your <span className="accent-serif">trips</span>
-          </h1>
+          <h1>Your trips</h1>
           {role === "guest" ? <p className="trips-summary">The trips you were invited to.</p> : summary && <p className="trips-summary">{summary}</p>}
         </div>
         {!adding && !guest && (
-          <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+          <Button variant="primary" onClick={() => setAdding(true)}>
             <Icon name="plus" size={16} />
             New trip
-          </button>
+          </Button>
         )}
       </div>
 
@@ -439,12 +440,12 @@ function DayLabel({ trip, iso, suggested, onChange }: { trip: Trip; iso: string;
     return (
       <form className="day-label-form" onSubmit={save} aria-label={`Label for ${dayPill(iso)}`}>
         <input className="input" value={text} maxLength={40} autoFocus onChange={(e) => setText(e.target.value)} placeholder="City or plan, e.g. Busan" aria-label="Name for this day" />
-        <button type="submit" className="btn btn-soft btn-small">
+        <Button type="submit" variant="secondary" size="sm">
           Save
-        </button>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setEditing(false)}>
+        </Button>
+        <Button variant="text" size="sm" onClick={() => setEditing(false)}>
           Cancel
-        </button>
+        </Button>
       </form>
     );
   }
@@ -494,10 +495,10 @@ function EntryOpen({ booking, id, onEdit }: { booking: Booking; id: string; onEd
       <div className="entry-open-actions">
         {/* A taxi driver's address, and the Maps app: for a hotel too (its strip is on the day). */}
         {booking.address && <PlaceActions name={booking.hotel ?? booking.title} address={booking.address} />}
-        <button type="button" className="btn btn-ghost btn-small" onClick={onEdit} aria-label={`Change ${booking.title}`}>
+        <Button variant="text" size="sm" onClick={onEdit} aria-label={`Change ${booking.title}`}>
           <Icon name="edit" size={16} />
           Change
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -736,9 +737,9 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
               {homeless.has(d) && (
                 <p className="gap-line">
                   <span>Nowhere to stay this night yet</span>
-                  <button type="button" className="btn btn-soft btn-small" onClick={() => onAdd({ kind: "hotel", day: d })} aria-label={`Add a place to stay on ${dayPill(d)}`}>
+                  <Button variant="secondary" size="sm" onClick={() => onAdd({ kind: "hotel", day: d })} aria-label={`Add a place to stay on ${dayPill(d)}`}>
                     Add
-                  </button>
+                  </Button>
                 </p>
               )}
               <DayHops tripId={detail.trip.id} day={d} enabled={Boolean(detail.routes) && detail.places} soon={near}>
@@ -829,15 +830,15 @@ function Itinerary({ detail, day, onDay, onChange, onAdd, onIdeas }: {
                   );
                 }}
               </DayHops>
-              <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d })}>
+              <Button variant="text" size="sm" onClick={() => onAdd({ kind: "activity", day: d })}>
                 <Icon name="plus" size={16} />
                 {addLabel}
-              </button>
+              </Button>
               {inTrip(d) && (detail.places || detail.ideas) && (
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => onAdd({ kind: "activity", day: d, near: true })} aria-label={`Find ideas near here, Day ${n}`}>
+                <Button variant="text" size="sm" onClick={() => onAdd({ kind: "activity", day: d, near: true })} aria-label={`Find ideas near here, Day ${n}`}>
                   <Icon name="find" size={16} />
                   Find ideas near here
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -889,10 +890,7 @@ function LooseBookings({ trips }: { trips: Trip[] }) {
   }
 
   return (
-    <section className="card quiet-list" aria-labelledby="loose-bookings">
-      <div className="card-head">
-        <h2 id="loose-bookings">Bookings not on a trip</h2>
-      </div>
+    <Section id="loose-bookings" title="Bookings not on a trip" className="quiet-list">
       <ul className="quiet-rows">
         {loose.data.map((b) => (
           <BookingRow key={b.id} booking={b}>
@@ -910,7 +908,7 @@ function LooseBookings({ trips }: { trips: Trip[] }) {
           </BookingRow>
         ))}
       </ul>
-    </section>
+    </Section>
   );
 }
 
@@ -950,22 +948,21 @@ function TripMenu({ trip, onEdit, onDelete, onChange }: { trip: Trip; onEdit: ()
     }
   }
   const item = (label: string, run: () => void, danger = false) => (
-    <button
-      type="button"
+    <Button
       role="menuitem"
-      className={`btn btn-ghost${danger ? " btn-danger" : ""}`}
+      variant={danger ? "danger" : "text"}
       onClick={() => {
         run();
       }}
     >
       {label}
-    </button>
+    </Button>
   );
   return (
     <div className="trip-menu">
-      <button type="button" className="trip-chip trip-chip-icon" aria-label="Trip options" aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(!open); setConfirming(false); }}>
+      <Button className="trip-bar-button trip-bar-button-icon" aria-label="Trip options" aria-haspopup="menu" aria-expanded={open} onClick={() => { setOpen(!open); setConfirming(false); }}>
         ⋯
-      </button>
+      </Button>
       {open && confirming && (
         <div className="trip-menu-list">
           <ConfirmBox
@@ -1038,11 +1035,10 @@ function NextUpStrip({ detail, onGo }: { detail: TripDetail; onGo: (go: Go) => v
   if (!next) return null;
   return (
     <section className="next-up" aria-label="Next up">
-      <Icon name="sparkle" size={16} className="next-up-icon" />
       <p className="next-up-text">{next.text}</p>
-      <button type="button" className="btn btn-ghost next-up-action" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
+      <Button variant="text" className="next-up-action" onClick={() => onGo(next.go)} aria-label={`${next.action}: ${next.text}`}>
         {next.action}
-      </button>
+      </Button>
     </section>
   );
 }
@@ -1065,15 +1061,15 @@ function TripActions({ trip, member, editing, add, onShare, onEdit, onDelete, on
   return (
     <div className="trip-actions">
       {!editing && (
-        <button type="button" className="trip-chip" onClick={onShare} aria-label={member ? "People on this trip" : "Share the plan"}>
+        <Button className="trip-bar-button" onClick={onShare} aria-label={member ? "People on this trip" : "Share the plan"}>
           {member ? "People" : "Share"}
-        </button>
+        </Button>
       )}
       {add && (
-        <button type="button" className="btn btn-primary trip-add-desktop" onClick={add.run} aria-label={add.label}>
+        <Button variant="primary" className="trip-add-desktop" onClick={add.run} aria-label={add.label}>
           <Icon name="plus" size={16} />
           Add
-        </button>
+        </Button>
       )}
       {/* Editing the trip, its photo and deleting it are the owner's. */}
       {!editing && !member && <TripMenu trip={trip} onEdit={onEdit} onDelete={onDelete} onChange={onChange} />}
@@ -1281,7 +1277,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           </Link>
           <span className="trip-slim-thumb" style={data ? heroStyle(data.trip) : undefined} aria-hidden="true" />
           <div className="trip-slim-title">
-            <SlimName className="accent-serif trip-slim-name">{data?.trip.destination ?? "Trip"}</SlimName>
+            <SlimName className="trip-slim-name">{data?.trip.destination ?? "Trip"}</SlimName>
             {data && <span className="trip-slim-dates">{dates}</span>}
           </div>
           {actions}
@@ -1291,10 +1287,10 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
         <header className="trip-hero">
           <div ref={photo} className={`trip-hero-photo${data?.trip.photo ? "" : " no-photo"}`} style={data ? heroStyle(data.trip) : undefined}>
             <div className="trip-hero-bar" aria-hidden={away || undefined} inert={away}>
-              <Link className="trip-chip" to="/travel" aria-label="Back to trips">
+              <ButtonLink className="trip-bar-button" to="/travel" aria-label="Back to trips">
                 <Icon name="chevron" size={16} className="icon-back" />
                 Trips
-              </Link>
+              </ButtonLink>
               {actions}
             </div>
             {data?.trip.photo && (
@@ -1304,7 +1300,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
             )}
           </div>
           <div className="trip-hero-body">
-            <h1 className="accent-serif trip-hero-title">{data?.trip.destination ?? "Trip"}</h1>
+            <h1 className="trip-hero-title">{data?.trip.destination ?? "Trip"}</h1>
             {data && (
               <p className="trip-hero-meta">
                 <span>
@@ -1326,9 +1322,9 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           <h2 id="trip-gone">This trip isn't here any more.</h2>
           <p className="caption">It may have been deleted, or you were taken off it.</p>
           <div className="actions">
-            <Link className="btn btn-soft" to="/travel">
+            <ButtonLink variant="secondary" to="/travel">
               Go to your trips
-            </Link>
+            </ButtonLink>
           </div>
         </section>
       )}
@@ -1370,12 +1366,11 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
               <p style={{ whiteSpace: "pre-line", margin: 0 }}>{imported}</p>
               <p className="caption">Does everything look right?</p>
               <span className="quick">
-                <button type="button" className="btn btn-soft btn-small" onClick={() => setImported(null)}>
+                <Button variant="secondary" size="sm" onClick={() => setImported(null)}>
                   Looks right
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-small"
+                </Button>
+                <Button
+                  size="sm"
                   onClick={() => {
                     setImported(null);
                     open("plan");
@@ -1383,7 +1378,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                   }}
                 >
                   Fix something
-                </button>
+                </Button>
               </span>
             </section>
           )}
@@ -1410,9 +1405,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                 />
               </div>
               {onAsk && stage !== "after" && (
-                <button
-                  type="button"
-                  className="btn btn-ghost trip-ask"
+                <Button
+                  variant="text" className="trip-ask"
                   onClick={() =>
                     onAsk(
                       // A member's chat sees the plan only: no budget to ask about.
@@ -1422,9 +1416,8 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
                     )
                   }
                 >
-                  <Icon name="sparkle" size={16} className="icon-inline" />
                   Ask Nexus about this trip
-                </button>
+                </Button>
               )}
             </>
           )}

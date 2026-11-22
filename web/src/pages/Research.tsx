@@ -6,6 +6,9 @@ import { api, type Research, type ResearchIdeasOut, type Run, type Trip, type Tr
 import { Icon } from "../components/Icon";
 import { formatRange, formatWholeMoney, formatShortDate } from "../format";
 import { stopsOf } from "./TripBits";
+import { Button, ButtonLink, Section } from "../components/ui";
+
+import "./travel.css";
 
 const day = (iso: string) => formatShortDate(iso, "UTC");
 /** Research prices are whole numbers in the currency named beside them: "SGD 4,602". */
@@ -201,12 +204,12 @@ function AddIdeas({
         </p>
         {alert}
         <div className="actions">
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void add(step.trip)}>
+          <Button variant="primary" disabled={busy} onClick={() => void add(step.trip)}>
             {busy ? "Adding…" : "Add"}
-          </button>
-          <button type="button" className="btn" disabled={busy} onClick={() => onLeave(step.trip)}>
+          </Button>
+          <Button disabled={busy} onClick={() => onLeave(step.trip)}>
             Not now
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -229,21 +232,21 @@ function AddIdeas({
           <ul className="trip-pick">
             {open.map((t) => (
               <li key={t.id}>
-                <button type="button" className="btn btn-soft trip-pick-btn" disabled={busy} onClick={() => void add(t)}>
+                <Button variant="secondary" className="trip-pick-btn" disabled={busy} onClick={() => void add(t)}>
                   <span>{t.destination}</span>
                   <span className="caption">
                     {day(t.start)} to {day(t.end)}
                   </span>
-                </button>
+                </Button>
               </li>
             ))}
           </ul>
         )}
         {alert}
         <div className="actions">
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => onStep(null)}>
+          <Button variant="text" disabled={busy} onClick={() => onStep(null)}>
             Cancel
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -271,9 +274,9 @@ function AddIdeas({
           {detail.isLoading && <p className="caption">Checking the trip's stops…</p>}
           {detail.data && !plan && <p className="caption">That would break the rules for stops. You can still add it with Edit stops on the trip.</p>}
           <div className="actions">
-            <button type="button" className="btn btn-primary" disabled={busy || !plan} onClick={() => void addStop(trip, suggestion)}>
+            <Button variant="primary" disabled={busy || !plan} onClick={() => void addStop(trip, suggestion)}>
               {busy ? "Saving…" : `Add ${suggestion} as a stop`}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -293,10 +296,7 @@ export function ResearchList() {
   const mine = (runs.data ?? []).filter((r) => r.kind === "travel.research");
   if (mine.length === 0) return null;
   return (
-    <section className="card quiet-list" aria-labelledby="research">
-      <div className="card-head">
-        <h2 id="research">Research</h2>
-      </div>
+    <Section id="research" title="Research" className="quiet-list">
       <ul className="quiet-rows">
         {mine.map((r) => (
           <li key={r.id} className="quiet-row">
@@ -308,7 +308,7 @@ export function ResearchList() {
           </li>
         ))}
       </ul>
-    </section>
+    </Section>
   );
 }
 
@@ -331,10 +331,7 @@ export function budgetLine(r: Pick<Research, "estimate_low" | "estimate_high" | 
 export function ResearchSummary({ r }: { r: Research }) {
   const line = budgetLine(r);
   return (
-    <section className="card money-summary" aria-labelledby="budget-card">
-      <h2 id="budget-card" className="money-label">
-        Estimated cost
-      </h2>
+    <Section id="budget-card" title="Estimated cost" className="money-summary">
       {positive(r.estimate_low) && positive(r.estimate_high) ? (
         <>
           <p className="money-figure">{wholeRange(r.estimate_low, r.estimate_high, r.home_currency)}</p>
@@ -362,7 +359,7 @@ export function ResearchSummary({ r }: { r: Research }) {
         </p>
       )}
       <p className="money-note">Worked out from the prices below</p>
-    </section>
+    </Section>
   );
 }
 
@@ -425,13 +422,13 @@ export function ResearchPage() {
   return (
     <div className="research-page">
       <header className="research-head">
-        <Link className="btn btn-ghost research-back" to="/travel">
+        <ButtonLink variant="text" className="research-back" to="/travel">
           <Icon name="chevron" size={16} className="icon-back" />
           Trips
-        </Link>
+        </ButtonLink>
         <div className="research-head-row">
           <div className="research-head-text">
-            <h1 className="accent-serif research-title">{r ? r.destination : "Research"}</h1>
+            <h1 className="research-title">{r ? r.destination : "Research"}</h1>
             {r && (
               <p className="research-meta">
                 {day(r.start)} to {day(r.end)} · {plural(r.nights, "night")} · {plural(r.travellers, "traveller")}
@@ -440,13 +437,13 @@ export function ResearchPage() {
           </div>
           {r &&
             (r.trip_id ? (
-              <Link className="btn btn-soft" to={`/travel/trips/${r.trip_id}`}>
+              <ButtonLink variant="secondary" to={`/travel/trips/${r.trip_id}`}>
                 Open the trip
-              </Link>
+              </ButtonLink>
             ) : (
-              <button type="button" className="btn btn-primary" onClick={() => void makeTrip()}>
+              <Button variant="primary" onClick={() => void makeTrip()}>
                 Make it a trip
-              </button>
+              </Button>
             ))}
         </div>
       </header>
@@ -465,10 +462,7 @@ export function ResearchPage() {
       {r && (
         <>
           <ResearchSummary r={r} />
-          <section className="card" aria-labelledby="when-to-go">
-            <div className="card-head">
-              <h2 id="when-to-go">When to go</h2>
-            </div>
+          <Section id="when-to-go" title="When to go">
             {r.when_summary && <p className="research-lede">{r.when_summary}</p>}
             <ul className="research-rows">
               {r.when.map((p) => (
@@ -479,12 +473,8 @@ export function ResearchPage() {
                 </li>
               ))}
             </ul>
-          </section>
-          <section className="card" aria-labelledby="costs">
-            <div className="card-head">
-              <h2 id="costs">Costs</h2>
-              <span className="caption">As checked on each source's date</span>
-            </div>
+          </Section>
+          <Section id="costs" title="Costs" action={<span className="caption">As checked on each source's date</span>}>
             {r.prices.length === 0 ? (
               <p className="state">No prices with a source were found.</p>
             ) : (
@@ -507,11 +497,8 @@ export function ResearchPage() {
                 ))}
               </ul>
             )}
-          </section>
-          <section className="card" aria-labelledby="where-to-stay">
-            <div className="card-head">
-              <h2 id="where-to-stay">Where to stay</h2>
-            </div>
+                    </Section>
+          <Section id="where-to-stay" title="Where to stay">
             <div className="research-areas">
               {r.areas.map((a) => (
                 <div key={a.name} className="area">
@@ -533,9 +520,9 @@ export function ResearchPage() {
             </div>
             {withIdeas.length > 0 && (
               <div className="research-actions">
-                <button type="button" className="btn btn-soft" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
+                <Button variant="secondary" disabled={ticked.length === 0} onClick={() => setStep({ kind: "pick" })}>
                   Add to a trip…
-                </button>
+                </Button>
                 <span className="caption">
                   {ticked.length === 0 ? "Tick an area to save its ideas." : `Saves the things to do in ${ticked.length} of ${withIdeas.length} areas as ideas. Nothing is booked.`}
                 </span>
@@ -546,7 +533,7 @@ export function ResearchPage() {
                 <strong>Getting around:</strong> {r.getting_around} <Cite id={r.getting_around_source} research={r} />
               </p>
             )}
-          </section>
+          </Section>
           <ResearchSources r={r} />
         </>
       )}

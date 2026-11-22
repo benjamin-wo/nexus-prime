@@ -12,6 +12,6 @@
 .block > .card {
   flex: 1; background: var(--bg-card); border: 0; border-radius: var(--radius-section); box-shadow: none; padding: var(--space-4);
 }
-.block > .card:has(> :is(ul, ol, .row-list, .money-rows, .rows, .feed):first-child) {
+.block > .card:has(> :is(ul, ol, .row-list, .rows, .feed):first-child) {
   padding-block: var(--space-1);
 }

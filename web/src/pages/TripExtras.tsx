@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import { Icon, type IconName } from "../components/Icon";
 import { api, type PackItem, type Trip, type TripWeather } from "../api";
+import { Button, Section } from "../components/ui";
 
 const weekday = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", timeZone: "UTC" }).format(new Date(iso));
 
@@ -44,11 +45,12 @@ export function WeatherCard({ trip }: { trip: Trip }) {
   const highs = w.days.map((d) => d.high).filter((n): n is number => n !== null);
   const lows = w.days.map((d) => d.low).filter((n): n is number => n !== null);
   return (
-    <section className="card prep-card weather-card" aria-labelledby="trip-weather">
-      <div className="card-head">
-        <h2 id="trip-weather">Weather in {w.place}</h2>
-        <span className="caption">{w.kind === "forecast" ? "Forecast" : `Typical for these dates, last ${w.years} years`}</span>
-      </div>
+    <Section
+      id="trip-weather"
+      title={<>Weather in {w.place}</>}
+      action={<span className="caption">{w.kind === "forecast" ? "Forecast" : `Typical for these dates, last ${w.years} years`}</span>}
+      className="prep-card weather-card"
+    >
       {highs.length > 0 && lows.length > 0 && (
         <p className="weather-range">
           {degrees(Math.min(...lows))} to {degrees(Math.max(...highs))}
@@ -71,7 +73,7 @@ export function WeatherCard({ trip }: { trip: Trip }) {
           Weather data by Open-Meteo.com
         </a>
       </p>
-    </section>
+    </Section>
   );
 }
 
@@ -128,15 +130,12 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
   }
 
   return (
-    <section className="card prep-card packing-card" aria-labelledby="trip-packing">
-      <div className="card-head">
-        <h2 id="trip-packing">Packing list</h2>
-        {items.length > 0 && (
-          <span className="caption">
-            {done} of {items.length} packed
-          </span>
-        )}
-      </div>
+    <Section
+      id="trip-packing"
+      title="Packing list"
+      action={items.length > 0 && <span className="caption">{done} of {items.length} packed</span>}
+      className="prep-card packing-card"
+    >
       {items.length > 0 && (
         <div className="meter meter-sky" aria-hidden="true">
           <span style={{ width: `${(done / items.length) * 100}%` }} />
@@ -159,27 +158,27 @@ export function PackingCard({ trip, onChange, adding = false, onAddDone }: { tri
                   {item.text}
                 </label>
               </div>
-              <button type="button" className="btn btn-ghost prep-remove" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
+              <Button variant="text" className="prep-remove" aria-label={`Remove ${item.text}`} onClick={() => void save(items.filter((_, j) => j !== i))}>
                 <Icon name="x" size={18} />
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       )}
       <form className="packing-add" onSubmit={add} aria-label="Add to the packing list">
         <input ref={addRef} className="input" value={text} maxLength={60} onChange={(e) => setText(e.target.value)} placeholder="Add something, e.g. Swimsuit" aria-label="Thing to pack" />
-        <button type="submit" className="btn btn-soft" disabled={!text.trim()}>
+        <Button type="submit" variant="secondary" disabled={!text.trim()}>
           Add
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={() => void suggest()} disabled={busy}>
-          {busy ? "Suggesting…" : (<><Icon name="sparkle" size={16} className="icon-inline" />Suggest</>)}
-        </button>
+        </Button>
+        <Button variant="text" onClick={() => void suggest()} disabled={busy}>
+          {busy ? "Suggesting…" : "Suggest"}
+        </Button>
       </form>
       {error && (
         <p className="error-text" role="alert">
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }

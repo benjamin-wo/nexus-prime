@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 
 import { acceptInvitePath, api, ApiError, type JoinedTrip, type Me, type Trip } from "../api";
+import { Button, ButtonLink } from "../components/ui";
 
 type Opened = { tripId: string; notice: string | null };
 
@@ -56,9 +57,9 @@ export function TripInvite({ me }: { me: Me }) {
           <section className="card">
             <h1>This invite doesn't work any more</h1>
             <p className="secondary">Ask the trip's owner for a new link.</p>
-            <Link className="btn btn-primary" to={where.to}>
+            <ButtonLink variant="primary" to={where.to}>
               {where.label}
-            </Link>
+            </ButtonLink>
           </section>
         </div>
       );
@@ -70,9 +71,9 @@ export function TripInvite({ me }: { me: Me }) {
           <p className="error-text" role="alert">
             {opened.error instanceof Error && opened.error.message ? opened.error.message : "Something went wrong."}
           </p>
-          <button type="button" className="btn btn-primary" onClick={() => void opened.refetch()}>
+          <Button variant="primary" onClick={() => void opened.refetch()}>
             Try again
-          </button>
+          </Button>
         </section>
       </div>
     );
