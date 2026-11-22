@@ -30,13 +30,15 @@ export interface RowProps {
   href?: string;
   /** The row is a button. */
   onClick?: MouseEventHandler<HTMLButtonElement>;
+  /** The accessible name of the row's link or button, when its text read in order isn't it. */
+  label?: string;
   /** On the `li`. */
   className?: string;
   /** More under the row, still inside it (a confirm view, a form): the whole width of the row. */
   children?: ReactNode;
 }
 
-export function Row({ title, sub, trailing, actions, to, href, onClick, className, children }: RowProps) {
+export function Row({ title, sub, trailing, actions, to, href, onClick, label, className, children }: RowProps) {
   const body = (
     <>
       <span className="row-text">
@@ -49,19 +51,19 @@ export function Row({ title, sub, trailing, actions, to, href, onClick, classNam
   let line: ReactNode;
   if (to !== undefined) {
     line = (
-      <Link className="row-line row-press" to={to}>
+      <Link className="row-line row-press" to={to} aria-label={label}>
         {body}
       </Link>
     );
   } else if (href !== undefined) {
     line = (
-      <a className="row-line row-press" href={href}>
+      <a className="row-line row-press" href={href} aria-label={label}>
         {body}
       </a>
     );
   } else if (onClick) {
     line = (
-      <button type="button" className="row-line row-press" onClick={onClick}>
+      <button type="button" className="row-line row-press" onClick={onClick} aria-label={label}>
         {body}
       </button>
     );

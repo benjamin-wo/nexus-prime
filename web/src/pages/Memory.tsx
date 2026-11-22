@@ -3,6 +3,9 @@ import { useState } from "react";
 
 import { api, type Memory } from "../api";
 import { ConfirmBox } from "../components/ConfirmBox";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 const KIND_LABEL: Record<Memory["kind"], string> = {
   fact: "About you",
@@ -41,9 +44,9 @@ function MemoryRow({ memory, onChanged }: { memory: Memory; onChanged: () => voi
         {memory.text}
       </span>
       {!confirming && (
-        <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)} aria-label={`Forget: ${memory.text}`}>
+        <Button variant="text" onClick={() => setConfirming(true)} aria-label={`Forget: ${memory.text}`}>
           Forget
-        </button>
+        </Button>
       )}
       {confirming && (
         <ConfirmBox
@@ -89,11 +92,8 @@ export function MemorySection() {
 
   const items = memories.data ?? [];
   return (
-    <section className="card" aria-labelledby="memory">
-      <div className="card-head">
-        <h2 id="memory">What Nexus remembers</h2>
-        <span className="caption">Only from what you tell it</span>
-      </div>
+    <Section id="memory" title="What Nexus remembers">
+      <p className="caption set-intro">Only from what you tell it</p>
       {memories.isLoading && <p className="state">Loading…</p>}
       {memories.isError && <p className="state error-text">Couldn't load memories.</p>}
       {memories.data?.length === 0 && (
@@ -123,20 +123,20 @@ export function MemorySection() {
           {confirmAll ? (
             <span className="quick">
               <span>Forget everything?</span>
-              <button type="button" className="btn btn-danger" onClick={forgetAll}>
+              <Button variant="danger" onClick={forgetAll}>
                 Forget all
-              </button>
-              <button type="button" className="btn" onClick={() => setConfirmAll(false)}>
+              </Button>
+              <Button onClick={() => setConfirmAll(false)}>
                 Keep
-              </button>
+              </Button>
             </span>
           ) : (
-            <button type="button" className="btn btn-ghost" onClick={() => setConfirmAll(true)}>
+            <Button variant="text" onClick={() => setConfirmAll(true)}>
               Forget everything
-            </button>
+            </Button>
           )}
         </div>
       )}
-    </section>
+    </Section>
   );
 }

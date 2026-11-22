@@ -7,6 +7,8 @@ import { formatChange, formatMoney, formatPercent, formatShortDate } from "../fo
 import { livePolling } from "../prices";
 import { base64 } from "../files";
 import { ConfirmBox } from "../components/ConfirmBox";
+import { COMPACT_QUERY, useMediaQuery } from "../components/overlay/breakpoints";
+import { Sheet } from "../components/Sheet";
 import { Foldaway } from "../components/Foldaway";
 import { PriceWhen } from "../components/PriceWhen";
 import { TodayCard } from "../components/TodayCard";
@@ -278,8 +280,14 @@ function DividendsCard() {
   );
 }
 
-/** `kind` is the kind of the card's own label: a row whose price is of another kind says so. */
-export function HoldingRow({ position, kind, onChanged }: { position: Holding; kind: PriceKind; onChanged: (message?: string) => void }) {
+const holdingValue = (p: Holding) => (p.value ? formatMoney(p.value) : formatMoney(p.cost));
+
+/** What a screen reader hears for a holding's row or button: "AAPL, 15 shares, value USD 3,189.00". */
+const holdingName = (p: Holding) => `${p.symbol}, ${shares(p.quantity)} shares, ${p.value ? "value" : "cost"} ${holdingValue(p)}`;
+
+/** One holding's sheet: its figures, a link to its page, and Edit and Remove at the foot. `kind` is the kind of the
+ * card's own label: a price of another kind says so. */
+export function HoldingSheet({ position, onClose, onChanged }: { position: Holding; onClose: () => void; onChanged: (message?: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -295,20 +303,21 @@ export function HoldingRow({ position, kind, onChanged }: { position: Holding; k
         method: "PUT",
         body: { quantity, average_cost: cost, currency: position.average_cost.currency },
       });
-      setEditing(false);
       onChanged(`Updated ${position.symbol}`);
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save that");
     }
   }
 
-  // Removing a holding can't be undone from here, so it asks first, in the page.
+  // Removing a holding can't be undone from here, so it asks first, in the sheet.
   async function remove() {
     setError(null);
     setBusy(true);
     try {
       await api(`/investments/holdings/${position.symbol}`, { method: "DELETE" });
       onChanged(`Removed ${position.symbol}`);
+      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't remove that");
       setConfirming(false);
@@ -316,88 +325,175 @@ export function HoldingRow({ position, kind, onChanged }: { position: Holding; k
     }
   }
 
+  const resting = !editing && !confirming;
   return (
-    <>
-    <tr>
-      <th scope="row">
-        <Link to={`/investment/stocks/${position.symbol}`}>{position.symbol}</Link>
-        {position.earnings && (
-          <span className="caption"> · earnings {formatShortDate(position.earnings.day, "UTC")}</span>
-        )}
-      </th>
-      {editing ? (
-        <td colSpan={5}>
-          <form className="quick" onSubmit={save} aria-label={`Edit ${position.symbol}`}>
-            <label className="field">
-              Shares
-              <input className="input" inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </label>
-            <label className="field">
-              Avg cost ({position.average_cost.currency})
-              <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} />
-            </label>
-            <Button type="submit" variant="primary">Save</Button>
-            <Button onClick={() => setEditing(false)}>Cancel</Button>
-            {error && <span className="error-text" role="alert">{error}</span>}
-          </form>
-        </td>
-      ) : (
-        <>
-          <td className="num" data-label="Shares">{shares(position.quantity)}</td>
-          <td className="num" data-label="Avg cost">{formatMoney(position.average_cost)}</td>
-          <td className="num" data-label="Price">
-            <span className="price-cell">
-              {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
-              {position.price && (
-                <span className={position.price_kind === kind ? "when-common" : undefined}>
-                  <PriceWhen kind={position.price_kind} at={position.price_at} day={position.price_day} />
-                </span>
-              )}
-            </span>
-          </td>
-          <td className="num" data-label="Value">
-            {position.value ? formatMoney(position.value) : formatMoney(position.cost)}
-            {!position.value && <span className="caption"> cost</span>}
-          </td>
-          <td className="num" data-label="Gain">
-            <Change amount={position.gain} percent={position.gain_percent} />
-          </td>
-        </>
-      )}
-      <td className="quick">
-        {!editing && !confirming && (
-          <>
-            <Button size="sm" onClick={() => setEditing(true)} aria-label={`Edit ${position.symbol}`}>
+    <Sheet
+      title={position.symbol}
+      onClose={onClose}
+      footer={
+        resting && (
+          <div className="holding-actions">
+            <Button variant="secondary" onClick={() => setEditing(true)} aria-label={`Edit ${position.symbol}`}>
               Edit
             </Button>
-            <Button variant="danger" size="sm" className="holding-remove" onClick={() => setConfirming(true)} aria-label={`Remove ${position.symbol}`}>
+            <Button variant="danger" onClick={() => setConfirming(true)} aria-label={`Remove ${position.symbol}`}>
               Remove
             </Button>
-          </>
-        )}
-      </td>
-    </tr>
-    {confirming && (
-      <tr>
-        <td colSpan={7}>
-          <ConfirmBox
-            label={`Remove ${position.symbol}`}
-            question={`Remove ${position.symbol} from your holdings? Your trades stay in the list.`}
-            confirm="Remove"
-            busy={busy}
-            onConfirm={() => void remove()}
-            onKeep={() => setConfirming(false)}
-          />
-        </td>
-      </tr>
-    )}
-    {!editing && error && (
-      <tr>
-        <td colSpan={7}>
-          <span className="error-text" role="alert">{error}</span>
-        </td>
-      </tr>
-    )}
+          </div>
+        )
+      }
+    >
+      {editing ? (
+        <form className="quick" onSubmit={save} aria-label={`Edit ${position.symbol}`}>
+          <label className="field">
+            Shares
+            <input className="input" inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          </label>
+          <label className="field">
+            Avg cost ({position.average_cost.currency})
+            <input className="input" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} />
+          </label>
+          <Button type="submit" variant="primary">Save</Button>
+          <Button onClick={() => setEditing(false)}>Cancel</Button>
+        </form>
+      ) : confirming ? (
+        <ConfirmBox
+          label={`Remove ${position.symbol}`}
+          question={`Remove ${position.symbol} from your holdings? Your trades stay in the list.`}
+          confirm="Remove"
+          busy={busy}
+          onConfirm={() => void remove()}
+          onKeep={() => setConfirming(false)}
+        />
+      ) : (
+        <>
+          <dl className="holding-detail" aria-label={`${position.symbol} details`}>
+            <div>
+              <dt>Shares</dt>
+              <dd className="num">{shares(position.quantity)}</dd>
+            </div>
+            <div>
+              <dt>Avg cost</dt>
+              <dd className="num">{formatMoney(position.average_cost)}</dd>
+            </div>
+            <div>
+              <dt>Price</dt>
+              <dd className="num">
+                {position.price ? formatMoney(position.price) : <span className="muted">—</span>}
+                {position.price && <PriceWhen kind={position.price_kind} at={position.price_at} day={position.price_day} />}
+              </dd>
+            </div>
+            <div>
+              <dt>Value</dt>
+              <dd className="num">
+                {holdingValue(position)}
+                {!position.value && <span className="caption"> cost</span>}
+              </dd>
+            </div>
+            <div>
+              <dt>Gain</dt>
+              <dd className="num">
+                <Change amount={position.gain} percent={position.gain_percent} />
+              </dd>
+            </div>
+            {position.earnings && (
+              <div>
+                <dt>Earnings</dt>
+                <dd className="num">{formatShortDate(position.earnings.day, "UTC")}</dd>
+              </div>
+            )}
+          </dl>
+          <p>
+            <Link to={`/investment/stocks/${position.symbol}`}>Open {position.symbol}</Link>
+          </p>
+        </>
+      )}
+      {error && <p className="error-text" role="alert">{error}</p>}
+    </Sheet>
+  );
+}
+
+/** The holdings: one row each on a phone, a table on a wide screen. Opening one shows its sheet. `kind` is the kind of
+ * the card's own label: a table row whose price is of another kind says so. */
+export function HoldingList({ holdings, kind, onChanged }: { holdings: Holding[]; kind: PriceKind; onChanged: (message?: string) => void }) {
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const [open, setOpen] = useState<string | null>(null);
+  const selected = holdings.find((p) => p.symbol === open);
+  return (
+    <>
+      {compact ? (
+        <RowList aria-label="Holdings">
+          {holdings.map((p) => (
+            <Row
+              key={p.symbol}
+              title={<strong>{p.symbol}</strong>}
+              sub={
+                <>
+                  {shares(p.quantity)} shares · avg {formatMoney(p.average_cost)}
+                  {p.earnings && ` · earnings ${formatShortDate(p.earnings.day, "UTC")}`}
+                </>
+              }
+              trailing={
+                <span className="holding-figure">
+                  <span className="num">{holdingValue(p)}</span>
+                  <span className="holding-gain num">
+                    <Change amount={p.gain} percent={p.gain_percent} />
+                  </span>
+                </span>
+              }
+              label={holdingName(p)}
+              onClick={() => setOpen(p.symbol)}
+            />
+          ))}
+        </RowList>
+      ) : (
+        <div className="table-wrap">
+          <table className="holdings">
+            <thead>
+              <tr>
+                <th scope="col">Stock</th>
+                <th scope="col" className="num">Shares</th>
+                <th scope="col" className="num">Avg cost</th>
+                <th scope="col" className="num">Price</th>
+                <th scope="col" className="num">Value</th>
+                <th scope="col" className="num">Gain</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holdings.map((p) => (
+                <tr key={`${p.symbol}:${p.updated_at}`}>
+                  <th scope="row">
+                    <button type="button" className="holding-open" aria-label={holdingName(p)} onClick={() => setOpen(p.symbol)}>
+                      {p.symbol}
+                    </button>
+                    {p.earnings && <span className="caption"> · earnings {formatShortDate(p.earnings.day, "UTC")}</span>}
+                  </th>
+                  <td className="num">{shares(p.quantity)}</td>
+                  <td className="num">{formatMoney(p.average_cost)}</td>
+                  <td className="num">
+                    <span className="price-cell">
+                      {p.price ? formatMoney(p.price) : <span className="muted">—</span>}
+                      {p.price && (
+                        <span className={p.price_kind === kind ? "when-common" : undefined}>
+                          <PriceWhen kind={p.price_kind} at={p.price_at} day={p.price_day} />
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="num">
+                    {holdingValue(p)}
+                    {!p.value && <span className="caption"> cost</span>}
+                  </td>
+                  <td className="num">
+                    <Change amount={p.gain} percent={p.gain_percent} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {selected && <HoldingSheet key={selected.symbol} position={selected} onClose={() => setOpen(null)} onChanged={onChanged} />}
     </>
   );
 }
@@ -514,28 +610,7 @@ export function InvestmentPage() {
             No holdings yet. Upload a screenshot of your broker's Portfolio screen, or send it to the bot.
           </p>
         )}
-        {holdings.length > 0 && (
-          <div className="table-wrap">
-            <table className="holdings">
-              <thead>
-                <tr>
-                  <th scope="col">Stock</th>
-                  <th scope="col" className="num">Shares</th>
-                  <th scope="col" className="num">Avg cost</th>
-                  <th scope="col" className="num">Price</th>
-                  <th scope="col" className="num">Value</th>
-                  <th scope="col" className="num">Gain</th>
-                  <th scope="col"><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {holdings.map((p) => (
-                  <HoldingRow key={`${p.symbol}:${p.updated_at}`} position={p} kind={portfolio.data?.totals.price_kind ?? "close"} onChanged={changed} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {holdings.length > 0 && <HoldingList holdings={holdings} kind={portfolio.data?.totals.price_kind ?? "close"} onChanged={changed} />}
         <Foldaway label="Add one by hand">
           <form className="quick add-holding" onSubmit={add} aria-label="Add a holding">
             <label className="field">

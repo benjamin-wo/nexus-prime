@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
 
 import { api, type EmailOverview, goHomeTimezone, type Me, setTimezone, type TripAlerts, type Updates, type Wallet } from "../api";
 import { BackLink } from "../components/BackLink";
-import { Icon } from "../components/Icon";
 import { InviteButton } from "../components/InviteButton";
+import { Button, Row, RowList, Section } from "../components/ui";
 import { describeZone, filterZones, friendlyZone, sourceNote, zoneChoices } from "../timezone";
 import { CategoriesSection } from "./Categories";
 import { MemorySection } from "./Memory";
@@ -14,6 +14,8 @@ import { UpdatesSection } from "./Updates";
 import { VoiceCard } from "./Voice";
 import { WalletsSection } from "./Wallets";
 import { YourDataSection } from "./YourData";
+
+import "./settings.css";
 
 /** Whether Nexus messages the user on Telegram when someone else changes a trip they
  * share (at most one message per trip every 30 minutes). */
@@ -36,11 +38,8 @@ function TripAlertsSection() {
   }
 
   return (
-    <section className="card" aria-labelledby="trip-alerts">
-      <div className="card-head">
-        <h2 id="trip-alerts">Shared trips</h2>
-        <span className="caption">Telegram</span>
-      </div>
+    <Section id="trip-alerts" title="Shared trips">
+      <p className="caption set-intro">Telegram</p>
       {alerts.isLoading && <p className="state">Loading…</p>}
       {alerts.isError && <p className="state error-text">Couldn't load your shared trips setting.</p>}
       {alerts.data && (
@@ -66,7 +65,7 @@ function TripAlertsSection() {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -105,11 +104,8 @@ export function TimeZoneSection({ me }: { me: Me }) {
   }
 
   return (
-    <section className="card" aria-labelledby="time-zone">
-      <div className="card-head">
-        <h2 id="time-zone">Time zone</h2>
-        <span className="caption">Where Nexus counts your day</span>
-      </div>
+    <Section id="time-zone" title="Time zone">
+      <p className="caption set-intro">Where Nexus counts your day</p>
       <div className="setting tz-now">
         <p>
           <strong data-testid="time-zone-now">{describeZone(user.timezone)}</strong>
@@ -119,18 +115,18 @@ export function TimeZoneSection({ me }: { me: Me }) {
       </div>
       {!picking && (
         <div className="actions tz-actions">
-          <button type="button" className="btn btn-small" disabled={busy} onClick={() => setPicking(true)}>
+          <Button size="sm" disabled={busy} onClick={() => setPicking(true)}>
             Change
-          </button>
+          </Button>
           {user.timezone !== home && (
-            <button
-              type="button"
-              className="btn btn-small btn-soft"
+            <Button
+              size="sm"
+              variant="secondary"
               disabled={busy}
               onClick={() => void run(goHomeTimezone, `Back on home time, ${friendlyZone(home)}.`)}
             >
               Use home time
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -159,17 +155,17 @@ export function TimeZoneSection({ me }: { me: Me }) {
           </label>
           {shown.length === 0 && <p className="caption">No time zone matches “{query.trim()}”.</p>}
           <div className="actions">
-            <button
-              type="button"
-              className="btn btn-primary btn-small"
+            <Button
+              variant="primary"
+              size="sm"
               disabled={busy || !choice}
               onClick={() => void run(() => setTimezone(choice, "manual"), `Saved. Nexus now uses ${friendlyZone(choice)} time.`)}
             >
               Save
-            </button>
-            <button type="button" className="btn btn-small" disabled={busy} onClick={() => setPicking(false)}>
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => setPicking(false)}>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -183,7 +179,7 @@ export function TimeZoneSection({ me }: { me: Me }) {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -296,13 +292,13 @@ function PreferenceSwitch({ me, field, title, hint }: { me: Me; field: Preferenc
   }
 
   return (
-    <>
-      <label className="set-row set-switch-row">
-        <span className="set-text">
-          <span className="set-row-title" id={`${id}-name`}>
+    <li className="row-item set-switch-item">
+      <label className="row-line set-switch-row">
+        <span className="row-text">
+          <span className="row-title" id={`${id}-name`}>
             {title}
           </span>
-          <span className="caption" id={`${id}-hint`}>
+          <span className="row-sub" id={`${id}-hint`}>
             {hint}
           </span>
         </span>
@@ -322,7 +318,7 @@ function PreferenceSwitch({ me, field, title, hint }: { me: Me; field: Preferenc
           {error}
         </p>
       )}
-    </>
+    </li>
   );
 }
 
@@ -335,21 +331,20 @@ function AccountGroup({ me, onLogout }: { me: Me; onLogout: () => void }) {
       <h2 className="section-title" id="set-account">
         Account
       </h2>
-      <ul className="set-list">
-        {canInvite && (
-          <li>
-            <InviteButton variant="row" />
-          </li>
-        )}
-        <li>
-          <button type="button" className="set-row" onClick={onLogout}>
-            <span className="set-text">
-              <span className="set-row-title">Sign out</span>
-              {me.demo && <span className="caption">Ends the demo. Sign in with Telegram to use your own.</span>}
-            </span>
-          </button>
-        </li>
-      </ul>
+      <div className="set-list">
+        <RowList>
+          {canInvite && (
+            <li className="row-item">
+              <InviteButton variant="row" />
+            </li>
+          )}
+          <Row
+            title="Sign out"
+            sub={me.demo ? "Ends the demo. Sign in with Telegram to use your own." : undefined}
+            onClick={onLogout}
+          />
+        </RowList>
+      </div>
     </section>
   );
 }
@@ -373,6 +368,7 @@ export function Settings({ me, onLogout }: { me: Me; onLogout: () => void }) {
           Preferences
         </h2>
         <div className="set-list">
+          <RowList>
           <PreferenceSwitch
             me={me}
             field="track_cards"
@@ -381,6 +377,7 @@ export function Settings({ me, onLogout }: { me: Me; onLogout: () => void }) {
           />
           <PreferenceSwitch me={me} field="show_invest" title="Investing" hint="Portfolio, watchlist and trade plans in the menu" />
           <PreferenceSwitch me={me} field="show_travel" title="Travel" hint="Trips and trip research in the menu" />
+          </RowList>
         </div>
       </section>
       {GROUPS.map((group) => {
@@ -390,19 +387,15 @@ export function Settings({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <h2 className="section-title" id={id}>
               {group}
             </h2>
-            <ul className="set-list">
-              {sections
-                .filter((s) => s.group === group)
-                .map((s) => (
-                  <li key={s.slug}>
-                    <Link className="set-row" to={`/settings/${s.slug}`}>
-                      <span className="set-row-title">{s.title}</span>
-                      {summaries[s.slug] && <span className="set-row-value">{summaries[s.slug]}</span>}
-                      <Icon name="chevron" size={18} />
-                    </Link>
-                  </li>
-                ))}
-            </ul>
+            <div className="set-list">
+              <RowList>
+                {sections
+                  .filter((s) => s.group === group)
+                  .map((s) => (
+                    <Row key={s.slug} to={`/settings/${s.slug}`} title={s.title} trailing={summaries[s.slug]} />
+                  ))}
+              </RowList>
+            </div>
           </section>
         );
       })}

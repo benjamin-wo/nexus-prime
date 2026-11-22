@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { NexusMark, NexusWordmark } from "../components/NexusMark";
 import { TelegramLogin } from "../components/TelegramLogin";
+import { Button } from "../components/ui";
+
+import "./settings.css";
 
 type Step = "working" | "off" | "limited" | "error";
 
@@ -45,7 +48,7 @@ export function DemoPage() {
 
   return (
     <div className="login">
-      <section className="card" aria-live="polite">
+      <section className="login-panel" aria-live="polite">
         <div className="brand-hero">
           <NexusMark big size={134} />
           <NexusWordmark height={26} alt="Nexus" />
@@ -76,16 +79,15 @@ export function DemoPage() {
           <>
             <h1>Couldn't set up the demo</h1>
             <p className="secondary">Check your connection and try again.</p>
-            <button
-              type="button"
-              className="btn btn-primary"
+            <Button
+              variant="primary"
               onClick={() => {
                 setStep("working");
                 setAttempt((n) => n + 1);
               }}
             >
               Try again
-            </button>
+            </Button>
           </>
         )}
       </section>

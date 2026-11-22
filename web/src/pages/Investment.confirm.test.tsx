@@ -61,21 +61,29 @@ function open(extra: Record<string, () => unknown> = {}) {
 
 afterEach(() => vi.restoreAllMocks());
 
+/** Opens the holding's sheet, where Edit and Remove are. */
+async function openHolding(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: /^NVDA, 10 shares/ }));
+  return screen.getByRole("dialog", { name: "NVDA" });
+}
+
 describe("changing the portfolio", () => {
   it("asks before removing a holding, in the page, and says it was removed", async () => {
     const dialog = vi.spyOn(window, "confirm");
     const calls = open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Remove NVDA" }));
+    await user.click(within(await openHolding(user)).getByRole("button", { name: "Remove NVDA" }));
     const ask = screen.getByRole("group", { name: "Remove NVDA" });
     expect(ask).toHaveTextContent("Remove NVDA from your holdings?");
-    // Nothing has been sent, and Keep puts the row back as it was.
+    // Nothing has been sent, and Keep puts the sheet back as it was.
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     await user.click(within(ask).getByRole("button", { name: "Keep" }));
     expect(screen.queryByRole("group", { name: "Remove NVDA" })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Remove NVDA" }));
     await user.click(within(screen.getByRole("group", { name: "Remove NVDA" })).getByRole("button", { name: "Remove" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Removed NVDA");
+    expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1));
     expect(await screen.findByRole("status")).toHaveTextContent("Removed NVDA");
     expect(dialog).not.toHaveBeenCalled();
@@ -84,10 +92,23 @@ describe("changing the portfolio", () => {
   it("keeps the holding and says why when it can't be removed", async () => {
     open({ "DELETE /investments/holdings/NVDA": () => new Response(JSON.stringify({ detail: "Try again in a moment" }), { status: 500 }) });
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Remove NVDA" }));
+    await user.click(within(await openHolding(user)).getByRole("button", { name: "Remove NVDA" }));
     await user.click(within(screen.getByRole("group", { name: "Remove NVDA" })).getByRole("button", { name: "Remove" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove NVDA" })).toBeInTheDocument();
+  });
+
+  it("edits a holding in its sheet, says Updated, and closes the sheet", async () => {
+    const calls = open({ "PUT /investments/holdings/NVDA": () => undefined });
+    const user = userEvent.setup();
+    await user.click(within(await openHolding(user)).getByRole("button", { name: "Edit NVDA" }));
+    const form = screen.getByRole("form", { name: "Edit NVDA" });
+    await user.clear(within(form).getByLabelText("Shares"));
+    await user.type(within(form).getByLabelText("Shares"), "12");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Updated NVDA");
+    expect(calls.some((c) => c.method === "PUT" && c.path === "/investments/holdings/NVDA")).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("says Added MSFT after adding a holding by hand", async () => {

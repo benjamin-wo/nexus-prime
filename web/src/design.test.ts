@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  *
  * - Colour literals (hex, rgb(), rgba(), hsl(), hsla()) live only in `:root` blocks (the light tokens, the dark
  *   tokens under prefers-color-scheme and under data-theme). Everywhere else a colour is a `var(--token)`.
- *   `rgba(var(--accent-rgb), 0.16)` is fine: the colour is still a token.
+ *   `rgba(var(--rose-rgb), 0.16)` is fine: the colour is still a token.
  * - No linear-gradient / radial-gradient / conic-gradient, anywhere.
  * - A box-shadow is `none` or built only from `var(--shadow-*)` tokens: no coloured or glow shadows.
  * - font-family is `inherit`, a `var(--font-*)` token, or one of the stacks named in DESIGN.md.
@@ -32,6 +32,7 @@ const OTHER_CSS = [
   join(SRC, "pages/home.css"),
   join(SRC, "pages/invest.css"),
   join(SRC, "pages/money.css"),
+  join(SRC, "pages/settings.css"),
   join(SRC, "pages/travel.css"),
   ...readdirSync(UI_DIR).filter((f) => f.endsWith(".css")).sort().map((f) => join(UI_DIR, f)),
 ];
@@ -147,7 +148,6 @@ const KNOWN_OFFENDERS: string[] = [
   ".day-strip[data-fade=\"start\"] :: gradient",
   ".drop-after :: shadow",
   ".drop-before :: shadow",
-  ".input:focus :: shadow",
   ".key.over :: gradient",
   ".ledger td.select input[type=\"checkbox\"], .ledger th input[type=\"checkbox\"], .import-table td.select input[type=\"checkbox\"], .import-table th input[type=\"checkbox\"] :: shadow",
   ".ledger td.select input[type=\"checkbox\"]:checked, .ledger th input[type=\"checkbox\"]:checked, .import-table td.select input[type=\"checkbox\"]:checked, .import-table th input[type=\"checkbox\"]:checked :: shadow",
@@ -192,9 +192,10 @@ describe("styles.css follows DESIGN.md", () => {
  * not as raw markup. Pages not yet redone still write the classes by hand; this counts them (in .tsx outside
  * components/ui, tests left out): a string that starts with a btn class (`className="btn …"`, `{`btn …`}`, a
  * ternary's `"btn-primary"`) and a "day-pill" or "ask-chip" class anywhere in a class string.
- * RAW_CONTROLS MUST ONLY SHRINK: a new control uses the component; when a page moves to them, lower the number.
+ * RAW_CONTROLS is 0 and stays 0: new code must use the components (Button, ButtonLink, Chip, ChipGroup), never raw
+ * markup with these classes.
  */
-const RAW_CONTROLS = 97;
+const RAW_CONTROLS = 0;
 const RAW_CONTROL = /["'`]btn\b|["'`\s]day-pill\b|["'`\s]ask-chip\b/g;
 
 function tsxFiles(dir: string): string[] {
@@ -215,5 +216,40 @@ describe("buttons and chips use components/ui", () => {
     expect(total, `use Button or Chip from components/ui; by file: ${JSON.stringify(counts)}`).toBeLessThanOrEqual(
       RAW_CONTROLS,
     );
+  });
+});
+
+/**
+ * Tokens and helpers Paper removed (DESIGN.md). They must not come back anywhere in web/src, in CSS or TSX.
+ * Their uses were moved to the Paper tokens: --bg-raised, --bg-input, --text-secondary, --pal-slate, --rose-accent.
+ */
+const REMOVED = [
+  "--hero-top", "--hero-mid", "--hero-fade",
+  "--nexus-from", "--nexus-to",
+  "--accent-glow", "--accent-soft", "--accent-rgb", "--danger-rgb",
+  "--emerald-soft", "--status-warning-soft", "--emerald-border", "--status-warning-border", "--sky-soft",
+  "--title-accent",
+  "--cyan-accent", "--cyan-text", "--sky-accent", "--sky-text", "--pal-teal",
+  "--pal-lime", "--bar-active-bg", "--nav-active-glyph",
+  "--tabs-bg", "--tab-active-bg",
+  "--shadow-frame", "--shadow-card", "--shadow-tab", "--shadow-bar", "--shadow-slim",
+  "accent-serif", "AccentTitle",
+];
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const path = join(dir, e.name);
+    if (e.isDirectory()) return sourceFiles(path);
+    return /\.(css|tsx?)$/.test(e.name) && path !== fileURLToPath(import.meta.url) ? [path] : [];
+  });
+}
+
+describe("removed Paper tokens stay removed", () => {
+  it("appear nowhere in web/src", () => {
+    const hits = sourceFiles(SRC).flatMap((f) => {
+      const text = readFileSync(f, "utf8");
+      return REMOVED.filter((t) => new RegExp(`${t.replace(/[-]/g, "\\-")}(?![\\w-])`).test(text)).map((t) => `${relative(SRC, f)}: ${t}`);
+    });
+    expect(hits).toEqual([]);
   });
 });

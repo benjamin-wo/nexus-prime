@@ -19,6 +19,8 @@ import {
   type Range,
 } from "../costs";
 
+import "./settings.css";
+
 /** Daily cost as bars. Hover, focus or tap a bar and the line above names the day, its cost and its
  * calls; with nothing picked it is the latest day. */
 export function DailyCostChart({ days }: { days: CostDay[] }) {

@@ -3,6 +3,7 @@ import { type KeyboardEvent, useEffect, useId, useState } from "react";
 
 import { api, type Direction, type MerchantSuggestion } from "../api";
 import { formatMoney } from "../format";
+import { Chip, ChipGroup } from "./ui";
 
 /** The text after a short pause, so suggestions aren't fetched on every key. */
 function useSettled(value: string, ms = 150): string {
@@ -80,13 +81,13 @@ export function MerchantField({
     <div className="field merchant-field">
       <label htmlFor={`${id}-input`}>{label}</label>
       {chips.length > 0 && (
-        <div className="chips merchant-chips" role="group" aria-label="Frequent">
+        <ChipGroup className="merchant-chips" aria-label="Frequent">
           {chips.map((s) => (
-            <button key={s.name} type="button" className="ask-chip" onClick={() => pick(s)} aria-label={`${s.name}, ${detail(s)}`}>
+            <Chip key={s.name} onClick={() => pick(s)} aria-label={`${s.name}, ${detail(s)}`}>
               {s.name} <span className="caption">{formatMoney(s.amount)}</span>
-            </button>
+            </Chip>
           ))}
-        </div>
+        </ChipGroup>
       )}
       <input
         id={`${id}-input`}

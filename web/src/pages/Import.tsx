@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, useState } from "react";
-import { Link } from "react-router-dom";
 
 import {
   api,
@@ -12,6 +11,9 @@ import {
 } from "../api";
 import { BackLink } from "../components/BackLink";
 import { formatDate, formatMoney } from "../format";
+import { Button, ButtonLink, Section } from "../components/ui";
+
+import "./settings.css";
 
 const MAX_CSV_BYTES = 2_000_000;
 const MAX_PDF_BYTES = 10_000_000;
@@ -233,14 +235,13 @@ function MoveCell({
     return (
       <>
         <span className="caption">Ordinary entry</span>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="text"
           aria-label={`Make it a transfer: ${label}`}
           onClick={() => onChange(named?.id ?? null)}
         >
           Make it a transfer
-        </button>
+        </Button>
       </>
     );
   return (
@@ -261,14 +262,13 @@ function MoveCell({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="text"
           aria-label={`${row.direction === "in" ? "Income" : "Expense"} instead: ${label}`}
           onClick={() => onChange(null)}
         >
           {row.direction === "in" ? "Income instead" : "Expense instead"}
-        </button>
+        </Button>
       </span>
     </>
   );
@@ -513,8 +513,7 @@ export function ImportPage() {
         </div>
       </div>
 
-      <section className="card" aria-labelledby="import-file">
-        <h2 id="import-file">Statement file</h2>
+      <Section id="import-file" title="Statement file">
         <label className="field">
           Choose a CSV or PDF
           <input
@@ -545,13 +544,13 @@ export function ImportPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </label>
-            <button
+            <Button
               type="submit"
-              className="btn btn-primary"
+              variant="primary"
               disabled={!password || busy}
             >
               Open
-            </button>
+            </Button>
             <span className="caption">
               Used only to read this file; it isn't kept.
             </span>
@@ -575,26 +574,23 @@ export function ImportPage() {
               Imported {done.added} transaction{done.added === 1 ? "" : "s"}
               {done.skipped ? `; ${done.skipped} left out` : ""}.
             </span>
-            <button type="button" className="btn" onClick={() => undo(done)}>
+            <Button onClick={() => undo(done)}>
               Undo import
-            </button>
-            <Link className="btn btn-ghost" to="/accounting/ledger">
+            </Button>
+            <ButtonLink variant="text" to="/accounting/ledger">
               See the ledger
-            </Link>
+            </ButtonLink>
           </div>
         )}
-      </section>
+      </Section>
 
       {preview && file && (
-        <section className="card" aria-labelledby="import-preview">
-          <div className="card-head">
-            <h2 id="import-preview">Check before importing</h2>
-            <span className="caption">
+        <Section id="import-preview" title="Check before importing">
+          <p className="caption set-intro">
               {preview.saved_as
                 ? `Using your saved layout “${preview.saved_as}”`
                 : file.name}
-            </span>
-          </div>
+            </p>
           {file.fromPdf && file.scanned ? (
             <p
               className={check === false ? "error-text" : "caption"}
@@ -708,22 +704,20 @@ export function ImportPage() {
                     />
                   </>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-primary"
+                <Button
+                  variant="primary"
                   onClick={confirm}
                   disabled={busy || ticked.size === 0}
                 >
                   Import {ticked.size} transaction{ticked.size === 1 ? "" : "s"}
-                </button>
+                </Button>
               </div>
             </>
           )}
-        </section>
+        </Section>
       )}
 
-      <section className="card" aria-labelledby="import-history">
-        <h2 id="import-history">Past imports</h2>
+      <Section id="import-history" title="Past imports">
         {history.data?.length === 0 && <p className="state">No imports yet.</p>}
         {history.data && history.data.length > 0 && (
           <ul className="memory-list">
@@ -734,19 +728,18 @@ export function ImportPage() {
                   {r.undone_at && <span className="caption"> · undone</span>}
                 </span>
                 {!r.undone_at && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
+                  <Button
+                    variant="text"
                     onClick={() => undo(r)}
                   >
                     Undo
-                  </button>
+                  </Button>
                 )}
               </li>
             ))}
           </ul>
         )}
-      </section>
+      </Section>
     </>
   );
 }

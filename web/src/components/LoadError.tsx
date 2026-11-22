@@ -2,6 +2,8 @@ import { useId } from "react";
 
 import { Button } from "./ui";
 
+import "../pages/settings.css";
+
 /** What of a TanStack query a Retry needs: to fetch again, and whether that is under way. */
 type Retryable = { refetch: () => unknown; isFetching?: boolean };
 

@@ -200,7 +200,6 @@ describe("the research page", () => {
   it("heads the page with a Trips link, the title and one primary action", async () => {
     await open(research());
     expect(screen.getByRole("link", { name: "Trips" })).toHaveAttribute("href", "/travel");
-    expect(screen.getByRole("heading", { level: 1 })).not.toHaveClass("accent-serif");
     expect(screen.getByRole("button", { name: "Make it a trip" })).toHaveClass("btn-primary");
     expect(screen.queryByRole("link", { name: "Open the trip" })).toBeNull();
   });

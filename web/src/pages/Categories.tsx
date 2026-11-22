@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 
 import { api, type Category } from "../api";
+import { Button, buttonClass, Section } from "../components/ui";
+
+import "./settings.css";
 
 function CategoryRow({
   category,
@@ -79,22 +82,22 @@ function CategoryRow({
             </select>
           </label>
           <p className="caption">Its expenses, rules and budget move over, and {category.name} is deleted.</p>
-          <button type="submit" className="btn btn-primary" disabled={!into}>
+          <Button type="submit" variant="primary" disabled={!into}>
             Merge
-          </button>
-          <button type="button" className="btn" onClick={() => setMerging(false)}>
+          </Button>
+          <Button onClick={() => setMerging(false)}>
             Cancel
-          </button>
+          </Button>
         </form>
       ) : renaming ? (
         <form className="quick" onSubmit={rename} aria-label={`Rename ${category.name}`}>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
-          <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
+          <Button type="submit" variant="primary" disabled={!name.trim()}>
             Save
-          </button>
-          <button type="button" className="btn" onClick={() => setRenaming(false)}>
+          </Button>
+          <Button onClick={() => setRenaming(false)}>
             Cancel
-          </button>
+          </Button>
         </form>
       ) : (
         <div className="budget-head">
@@ -115,25 +118,25 @@ function CategoryRow({
                     </option>
                   ))}
                 </select>
-                <button type="button" className="btn btn-danger" disabled={!target} onClick={() => void remove()}>
+                <Button variant="danger" disabled={!target} onClick={() => void remove()}>
                   Delete
-                </button>
-                <button type="button" className="btn" onClick={() => setConfirming(false)}>
+                </Button>
+                <Button onClick={() => setConfirming(false)}>
                   Keep
-                </button>
+                </Button>
               </>
             ) : (
               <>
-                <button type="button" className="btn btn-ghost" onClick={() => setRenaming(true)}>
+                <Button variant="text" onClick={() => setRenaming(true)}>
                   Rename
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setMerging(true)}>
+                </Button>
+                <Button variant="text" onClick={() => setMerging(true)}>
                   Merge into…
-                </button>
+                </Button>
                 {!keepsForever && (
-                  <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+                  <Button variant="text" onClick={() => setConfirming(true)}>
                     Delete
-                  </button>
+                  </Button>
                 )}
               </>
             )}
@@ -179,11 +182,8 @@ export function CategoriesSection() {
 
   const categories = all.data ?? [];
   return (
-    <section className="card" aria-labelledby="categories">
-      <div className="card-head">
-        <h2 id="categories">Categories</h2>
-        <span className="caption">Every expense lands in one</span>
-      </div>
+    <Section id="categories" title="Categories">
+      <p className="caption set-intro">Every expense lands in one</p>
       {all.isLoading && <p className="state">Loading…</p>}
       {all.isError && <p className="state error-text">Couldn't load categories.</p>}
       {!open && categories.length > 0 && (
@@ -201,7 +201,7 @@ export function CategoriesSection() {
         </>
       )}
       <details className="category-fold" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-        <summary className="btn">{open ? "Done" : "Manage"}</summary>
+        <summary className={buttonClass()}>{open ? "Done" : "Manage"}</summary>
         {categories.length > 0 && (
           <ul className="budgets" aria-label="Your categories">
             {categories.map((c) => (
@@ -214,9 +214,9 @@ export function CategoriesSection() {
             New category
             <input className="input" placeholder="Pets" value={name} onChange={(e) => setName(e.target.value)} required />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
+          <Button type="submit" variant="primary" disabled={!name.trim()}>
             Add
-          </button>
+          </Button>
           {error && (
             <p className="error-text" role="alert">
               {error}
@@ -224,6 +224,6 @@ export function CategoriesSection() {
           )}
         </form>
       </details>
-    </section>
+    </Section>
   );
 }

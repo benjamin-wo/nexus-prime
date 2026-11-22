@@ -1,10 +1,11 @@
 import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Holding } from "../api";
 import { priceWhen } from "../format";
 import { renderWithProviders } from "../testing";
-import { HoldingRow } from "./Investment";
+import { HoldingList } from "./Investment";
 
 // A made-up holding of a made-up stock.
 const acme: Holding = {
@@ -28,17 +29,12 @@ const acme: Holding = {
 
 function renderRow(position: Holding, kind: Holding["price_kind"] & string) {
   return renderWithProviders(
-    <table>
-      <tbody>
-        <HoldingRow position={position} kind={kind} onChanged={() => {}} />
-      </tbody>
-    </table>,
+    <HoldingList holdings={[position]} kind={kind} onChanged={() => {}} />,
   );
 }
 
 describe("a holding's price", () => {
-  // The phone card is the same markup as the table row, so a caption that is in the row is in
-  // the card. The stylesheet hides the common kind's caption on desktop only.
+  // The table (a wide screen) carries each price's caption; the stylesheet hides the common kind's.
   it("always says when it is from, even when the table's own label says so too", () => {
     renderRow(acme, "close");
     const cell = screen.getByText("182.40", { exact: false }).closest("td") as HTMLElement;
@@ -63,5 +59,36 @@ describe("a holding's price", () => {
     renderRow({ ...acme, price: null, price_day: null, price_kind: null, value: null }, "close");
     const cell = screen.getByText("—").closest("td") as HTMLElement;
     expect(cell.querySelector(".price-when")).toBeNull();
+  });
+});
+
+describe("the holdings list", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const phone = () =>
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width"), media: query, addEventListener() {}, removeEventListener() {} }));
+
+  it("has no Edit or Remove until a holding is opened, then shows them in its sheet (table)", async () => {
+    renderRow(acme, "close");
+    expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: /^ACME, 10 shares, value USD.1,824\.00$/ }));
+    const sheet = screen.getByRole("dialog", { name: "ACME" });
+    expect(within(sheet).getByRole("button", { name: "Edit ACME" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Remove ACME" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("link", { name: "Open ACME" })).toHaveAttribute("href", "/investment/stocks/ACME");
+    expect(within(sheet).getByText("Avg cost").nextSibling).toHaveTextContent("150.00");
+  });
+
+  it("is one row per holding on a phone, with no buttons in it", async () => {
+    phone();
+    renderRow(acme, "close");
+    expect(screen.queryByRole("table")).toBeNull();
+    const row = screen.getByRole("button", { name: /^ACME, 10 shares, value USD.1,824\.00$/ });
+    expect(row).toHaveTextContent("10 shares · avg");
+    expect(row).toHaveTextContent("1,824.00");
+    expect(screen.queryByRole("button", { name: /^(Edit|Remove) / })).toBeNull();
+    await userEvent.setup().click(row);
+    expect(within(screen.getByRole("dialog", { name: "ACME" })).getByRole("button", { name: "Edit ACME" })).toBeInTheDocument();
   });
 });

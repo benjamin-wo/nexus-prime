@@ -48,23 +48,25 @@ test("removing a holding asks in the page, and Keep leaves it", async ({ page })
   state.holdings = [{ symbol: "NVDA", quantity: "10", average_cost: { amount: "118.4000", currency: "USD" }, cost: { amount: "1184.0000", currency: "USD" }, updated_at: "2026-09-28T03:00:00Z" }];
   await page.goto("/investment");
   const holdings = page.getByRole("region", { name: "Holdings" });
+  await holdings.getByRole("button", { name: /^NVDA, / }).click();
+  const sheet = page.getByRole("dialog", { name: "NVDA" });
   // Edit and Remove are not twins: Remove is the quiet one, and sits apart.
-  const edit = (await holdings.getByRole("button", { name: "Edit NVDA" }).boundingBox())!;
-  const remove = holdings.getByRole("button", { name: "Remove NVDA" });
+  const edit = (await sheet.getByRole("button", { name: "Edit NVDA" }).boundingBox())!;
+  const remove = sheet.getByRole("button", { name: "Remove NVDA" });
   const removeBox = (await remove.boundingBox())!;
   expect(removeBox.x - (edit.x + edit.width)).toBeGreaterThan(16);
   await expect(remove).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 
   await remove.click();
-  const ask = holdings.getByRole("group", { name: "Remove NVDA" });
+  const ask = sheet.getByRole("group", { name: "Remove NVDA" });
   await expect(ask).toContainText("Remove NVDA from your holdings?");
   await ask.getByRole("button", { name: "Keep" }).click();
-  await expect(holdings.getByRole("rowheader", { name: "NVDA" })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Remove NVDA" })).toBeVisible();
   expect(state.holdings).toHaveLength(1);
 
   await remove.click();
   await ask.getByRole("button", { name: "Remove" }).click();
-  await expect(holdings.getByRole("rowheader", { name: "NVDA" })).toHaveCount(0);
+  await expect(holdings.getByRole("button", { name: /^NVDA, / })).toHaveCount(0);
   await expect(toast(page)).toContainText("Removed NVDA");
 });
 

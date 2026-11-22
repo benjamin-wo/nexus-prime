@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { api, type Frequency, type Updates } from "../api";
+import { Section } from "../components/ui";
+
+import "./settings.css";
 
 const ORDER: Frequency[] = ["instant", "hourly", "thrice_daily", "daily", "off"];
 
@@ -184,11 +187,8 @@ export function UpdatesSection() {
 
   const data = updates.data;
   return (
-    <section className="card" aria-labelledby="updates">
-      <div className="card-head">
-        <h2 id="updates">Telegram updates</h2>
-        <span className="caption">Your transactions, sent to you</span>
-      </div>
+    <Section id="updates" title="Telegram updates">
+      <p className="caption set-intro">Your transactions, sent to you</p>
       {updates.isLoading && <p className="state">Loading…</p>}
       {updates.isError && <p className="state error-text">Couldn't load your updates setting.</p>}
       {data && (
@@ -316,6 +316,6 @@ export function UpdatesSection() {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }

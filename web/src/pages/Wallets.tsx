@@ -9,6 +9,9 @@ import { MonthPicker } from "../components/MonthPicker";
 import { formatDate, formatMoney, txName } from "../format";
 import { currentMonth, type MonthKey, monthLabel } from "../months";
 import { type CardDetails, detailsBody, NETWORKS, NO_DETAILS, payingWallets, tracksCards, walletLabel } from "../wallets";
+import { Button, buttonClass, Section } from "../components/ui";
+
+import "./settings.css";
 
 const KIND_LABEL: Record<WalletKind, string> = {
   spending: "Main account",
@@ -163,12 +166,12 @@ function WalletRow({
             <input className="input" placeholder="efund, rainy day" value={words} onChange={(e) => setWords(e.target.value)} />
           </label>
           <span className="quick">
-            <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
+            <Button type="submit" variant="primary" disabled={!name.trim()}>
               Save
-            </button>
-            <button type="button" className="btn" onClick={() => setEditing(false)}>
+            </Button>
+            <Button onClick={() => setEditing(false)}>
               Cancel
-            </button>
+            </Button>
           </span>
         </form>
       ) : (
@@ -181,13 +184,13 @@ function WalletRow({
             </div>
             {!confirming && (
               <span className="quick">
-                <button type="button" className="btn btn-ghost" onClick={startEditing}>
+                <Button variant="text" onClick={startEditing}>
                   Edit
-                </button>
+                </Button>
                 {!isFixed && (
-                  <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+                  <Button variant="text" onClick={() => setConfirming(true)}>
                     Delete
-                  </button>
+                  </Button>
                 )}
               </span>
             )}
@@ -222,17 +225,16 @@ function WalletRow({
               {preview.data && <p className="caption">{previewText(preview.data)}</p>}
               {preview.isError && <p className="caption error-text">Couldn't check its transfers.</p>}
               <span className="quick">
-                <button
-                  type="button"
-                  className="btn btn-danger"
+                <Button
+                  variant="danger"
                   disabled={!target || preview.isLoading}
                   onClick={() => void remove()}
                 >
                   Delete
-                </button>
-                <button type="button" className="btn" onClick={() => setConfirming(false)}>
+                </Button>
+                <Button onClick={() => setConfirming(false)}>
                   Keep
-                </button>
+                </Button>
               </span>
             </>
           )}
@@ -270,9 +272,9 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
             : `${left.length} ${left.length === 1 ? "entry looks" : "entries look"} like ${left.length === 1 ? "a transfer" : "transfers"}`}
         </p>
         {left.length > 0 && (
-          <button type="button" className="btn btn-small" onClick={() => setReviewing(true)}>
+          <Button size="sm" onClick={() => setReviewing(true)}>
             Review
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -320,20 +322,19 @@ function LikelyMoves({ found, wallets, onChanged }: { found: LikelyMove[]; walle
         </select>
       </label>
       <span className="quick">
-        <button type="button" className="btn btn-primary btn-small" disabled={!wallet || busy} onClick={() => void convert()}>
+        <Button variant="primary" size="sm" disabled={!wallet || busy} onClick={() => void convert()}>
           Make it a transfer
-        </button>
-        <button
-          type="button"
-          className="btn btn-small"
+        </Button>
+        <Button
+          size="sm"
           disabled={busy}
           onClick={() => setSkipped(new Set(skipped).add(tx.id))}
         >
           Not a transfer
-        </button>
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => setReviewing(false)}>
+        </Button>
+        <Button variant="text" size="sm" onClick={() => setReviewing(false)}>
           Close
-        </button>
+        </Button>
       </span>
       {error && (
         <p className="error-text" role="alert">
@@ -434,11 +435,8 @@ export function WalletsSection({ me }: { me: Me }) {
   const paying = payingWallets(wallets);
   const usual = paying.find((w) => w.usual);
   return (
-    <section className="card" aria-labelledby="wallets">
-      <div className="card-head">
-        <h2 id="wallets">Wallets</h2>
-        <span className="caption">Where you transfer money</span>
-      </div>
+    <Section id="wallets" title="Wallets">
+      <p className="caption set-intro">Where you transfer money</p>
       {all.isLoading && <p className="state">Loading…</p>}
       {all.isError && <p className="state error-text">Couldn't load wallets.</p>}
       {!open && wallets.length > 0 && (
@@ -491,7 +489,7 @@ export function WalletsSection({ me }: { me: Me }) {
       )}
       <LikelyMoves found={likely.data ?? []} wallets={wallets} onChanged={refresh} />
       <details className="category-fold" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-        <summary className="btn">{open ? "Done" : "Manage"}</summary>
+        <summary className={buttonClass()}>{open ? "Done" : "Manage"}</summary>
         {wallets.length > 0 && (
           <ul className="budgets" aria-label="Your wallets">
             {wallets.map((w) => (
@@ -519,9 +517,9 @@ export function WalletsSection({ me }: { me: Me }) {
             Match words (optional)
             <input className="input" placeholder="efund, rainy day" value={words} onChange={(e) => setWords(e.target.value)} />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
+          <Button type="submit" variant="primary" disabled={!name.trim()}>
             Add
-          </button>
+          </Button>
           {error && (
             <p className="error-text" role="alert">
               {error}
@@ -529,6 +527,6 @@ export function WalletsSection({ me }: { me: Me }) {
           )}
         </form>
       </details>
-    </section>
+    </Section>
   );
 }

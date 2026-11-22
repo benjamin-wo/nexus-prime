@@ -44,7 +44,7 @@
 .itinerary-day { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: var(--space-3); }
 .day-rail { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
 .day-dot-end { background: var(--accent); color: var(--on-accent); }
-.day-dot-planned { background: var(--accent-glow); border: 1px solid var(--accent); color: var(--accent-text); }
+.day-dot-planned { background: var(--bg-input); border: 1px solid var(--accent); color: var(--accent-text); }
 .day-dot-empty { border: 1px dashed var(--text-muted); color: var(--text-muted); }
 .day-dot-out { border: 1px solid var(--border-card); color: var(--text-muted); }
 .day-line { flex: 1; width: 2px; min-height: var(--space-4); background: var(--border-card); }
@@ -57,7 +57,7 @@
 .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 0.8125rem; font-weight: 700; color: var(--text-strong); background: var(--bg-card-hover); border: 2px solid var(--bg-card); }
 .avatar + .avatar { margin-left: -8px; }
 .avatar.more { color: var(--text-secondary); }
-.import-banner { border-color: var(--emerald-border); display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
+.import-banner { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); }
 .checklist li.todo { color: var(--status-warning); }
 .day-strip { position: sticky; z-index: 4; display: flex; gap: var(--space-2); overflow-x: auto; margin: 0 calc(-1 * var(--space-4)) var(--space-3); padding: var(--space-2) var(--space-4); background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); }
 .itinerary-day { scroll-margin-top: 110px; }
@@ -125,7 +125,7 @@
 .packing-add .input { flex: 1 1 180px; min-width: 0; }
 /* A day's panel on the Plan tab: the weather on one line and the night's stay as a strip, under the day's heading. */
 .day-weather { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin: 0 0 var(--space-2); }
-.day-stay { display: grid; gap: var(--space-1); margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: var(--bg-input); border: 1px solid var(--border-subtle); }
+.day-stay { display: grid; gap: var(--space-1); margin: 0 0 var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-inner); background: var(--bg-input); }
 .day-stay-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
 .day-stay-name { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
 .day-stay-more > summary { display: flex; align-items: center; gap: var(--space-1); min-height: 32px; cursor: pointer; list-style: none; font-size: 0.8125rem; color: var(--text-muted); }
@@ -149,8 +149,8 @@
 .sorted-line { margin: 0; color: var(--emerald-accent); font-size: 0.875rem; }
 .gap-line {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin: 0;
-  padding: var(--space-2) var(--space-3); border-radius: 10px; border: 1px dashed var(--status-warning-border);
-  background: var(--status-warning-soft); color: var(--status-warning); font-size: 0.8125rem;
+  padding: var(--space-2) var(--space-3); border-radius: 10px; border: 1px dashed var(--border-edge);
+  color: var(--status-warning); font-size: 0.8125rem;
 }
 .trip-ask { justify-self: start; }
 .currency-line { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
@@ -170,7 +170,7 @@
 .share-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .share-actions > .btn-ghost:first-child { margin-left: -12px; }
 .share-saved { margin: calc(-1 * var(--space-2)) 0 0; min-height: 1.25em; }
-.shared-note { margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-inner); border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-secondary); font-size: 0.875rem; }
+.shared-note { margin: 0 0 var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-inner); background: var(--bg-input); color: var(--text-secondary); font-size: 0.875rem; }
 .shared-foot { text-align: center; margin: 0; }
 .itinerary-day[aria-current="date"] .day-head h3 { color: var(--text-strong); }
 .map-app { display: inline-flex; align-items: center; gap: var(--space-1); }
@@ -514,7 +514,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .trip-v2 .trip-slim {
   position: sticky; top: 0; z-index: 8; display: flex; align-items: center; gap: var(--space-3); height: var(--trip-slim-h);
   margin: 0 calc(-1 * var(--trip-gutter)); padding: 0 var(--trip-gutter); background: var(--bg-card);
-  box-shadow: var(--shadow-slim); animation: trip-slim-in 160ms ease-out;
+  animation: trip-slim-in 160ms ease-out;
 }
 .trip-v2 .trip-slim[data-over] { margin-bottom: calc(-1 * (var(--trip-slim-h) + var(--space-4))); }
 .trip-slim-thumb { flex: none; width: 36px; height: 36px; border-radius: 10px; background-color: var(--bg-raised); background-size: cover; background-position: center; }
@@ -542,7 +542,7 @@ a.photo-credit:hover { text-decoration: underline; }
   .trip-add-desktop { display: inline-flex; }
 }
 /* Cover (Plan): the photo alone, full-bleed on a phone; the title and the rest below it, on white. */
-.trip-v2 .trip-hero { margin: 0 calc(-1 * var(--trip-gutter)); background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); }
+.trip-v2 .trip-hero { margin: 0 calc(-1 * var(--trip-gutter)); background: var(--bg-card); }
 .trip-hero-bar { position: absolute; inset: 12px 12px auto 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); }
 .trip-hero-bar[aria-hidden="true"] { visibility: hidden; }
 .trip-hero-credit { display: contents; }
@@ -552,7 +552,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .trip-hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; color: var(--text-secondary); }
 .trip-hero-shared { margin: 0; color: var(--text-muted); font-size: 0.8125rem; }
 @media (min-width: 901px) {
-  .trip-v2 .trip-hero { margin: 0; border: 1px solid var(--border-card); border-radius: var(--radius); }
+  .trip-v2 .trip-hero { margin: 0; border-radius: var(--radius); }
   .trip-hero-bar { inset: 16px 16px auto 16px; }
   .trip-hero-body { padding: var(--space-6) var(--space-6) var(--space-4); }
   .trip-v2 .trip-hero-title { font-size: 3rem; }
@@ -675,7 +675,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .find-meta a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .find-actions { flex: none; display: grid; gap: var(--space-1); justify-items: stretch; }
 .find-actions .btn { min-height: 44px; white-space: nowrap; }
-.find-saved { background: var(--emerald-soft); color: var(--emerald-accent); font-weight: 600; }
+.find-saved { color: var(--emerald-accent); font-weight: 600; }
 .find-saved:disabled { opacity: 1; cursor: default; }
 /* Money tab v2 */
 /* Summary: one card, a stacked bar of spent / booked / planned, and what is left. */
@@ -745,10 +745,10 @@ a.photo-credit:hover { text-decoration: underline; }
 }
 .trip-card {
   position: relative; display: flex; flex-direction: column; overflow: hidden;
-  border-radius: var(--radius); border: 1px solid var(--border-card); background: var(--bg-card);
-  transition: translate var(--t-standard), box-shadow var(--t-standard), border-color var(--t-standard);
+  border-radius: var(--radius); background: var(--bg-card);
+  transition: translate var(--t-standard);
 }
-.trip-card:hover { translate: 0 -2px; border-color: var(--accent-border); }
+.trip-card:hover { translate: 0 -2px; }
 .trip-card:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }
 .trip-card-photo { display: block; height: 140px; background-color: var(--bg-raised); background-size: cover; background-position: center; }
 .trip-card-body { display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4) var(--space-4); }
@@ -785,7 +785,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .trip-row-link:focus-visible { outline: none; }
 .trip-row-dates { color: var(--text-muted); font-size: 0.8125rem; }
 /* Where to next: a quiet panel, its example chips in one row that scrolls sideways. */
-.where-next { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-radius: var(--radius); border: 1px solid var(--border-subtle); }
+.where-next { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-radius: var(--radius); background: var(--bg-card); }
 .where-next h2 { margin: 0; font-size: 1.125rem; }
 .where-form { display: flex; gap: var(--space-2); }
 .where-form .input { flex: 1; min-width: 0; }
@@ -806,7 +806,7 @@ a.photo-credit:hover { text-decoration: underline; }
 /* Shared page: the trip page's cover (photo alone, glass chip on it, title below on white), then each day as its own card, in a column of at most 760px. */
 .shared-page { min-height: 100dvh; padding: 0 0 var(--space-8); }
 .shared-col { width: 100%; max-width: 760px; margin: 0 auto; display: grid; gap: var(--space-4); }
-.shared-hero { background: var(--bg-card); border-bottom: 1px solid var(--border-subtle); }
+.shared-hero { background: var(--bg-card); }
 .shared-chip {
   display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 999px; font-weight: 600;
   background: var(--scrim-chip); color: var(--scrim-chip-text); box-shadow: var(--shadow-thumb);
@@ -816,14 +816,14 @@ a.photo-credit:hover { text-decoration: underline; }
 .shared-body > p { margin: 0; }
 @media (min-width: 901px) {
   .shared-page { padding-top: 40px; }
-  .shared-hero { border: 1px solid var(--border-card); border-radius: var(--radius); }
+  .shared-hero { border-radius: var(--radius); }
   .shared-title { font-size: 3rem; }
   .shared-body { padding: 0; }
 }
 .shared-plan { display: grid; gap: var(--space-3); }
 .shared-plan > .caption { margin: 0; }
-.shared-day { display: grid; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-card); border-radius: var(--radius); background: var(--bg-card); scroll-margin-top: var(--space-4); }
-.shared-day[aria-current="date"] { border-color: var(--accent-border); }
+.shared-day { display: grid; gap: var(--space-2); padding: var(--space-4); border-radius: var(--radius); background: var(--bg-card); scroll-margin-top: var(--space-4); }
+.shared-day[aria-current="date"] { background: var(--bg-card-hover); }
 .shared-day-head { margin: 0; font-weight: 400; }
 .shared-day-meta { display: block; font-size: 0.8125rem; font-weight: 500; line-height: 1.4; color: var(--text-muted); }
 .shared-day-title { display: block; font-size: 1.5rem; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
@@ -984,7 +984,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .trip-menu-sep { width: 100%; height: 0; margin: var(--space-1) 0; border: 0; border-top: 1px solid var(--border-subtle); }
 .trip-menu-list > .confirm-box { margin: 0; width: min(280px, calc(100vw - 48px)); }
 .trip-menu-list .confirm-box .btn { justify-content: center; background: var(--bg-raised); }
-.trip-menu-list .confirm-box .btn-danger { border-color: rgba(var(--danger-rgb), 0.45); background: transparent; }
+.trip-menu-list .confirm-box .btn-danger { border-color: var(--rose-accent); background: transparent; }
 .trip-menu-list .confirm-box .btn-ghost { background: transparent; }
 @media (pointer: coarse) {
   .trip-icon-button { width: 44px; height: 44px; }

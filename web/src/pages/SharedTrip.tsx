@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { type CSSProperties, useEffect } from "react";
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 
 import { api, ApiError, type SharedBooking, type SharedTrip } from "../api";
@@ -178,10 +178,6 @@ export function SharedDays({ trip }: { trip: SharedTrip }) {
   );
 }
 
-/** The trip's photo for the cover, with no fade over it; the gradient fallback keeps its own. */
-const heroStyle = (trip: Pick<SharedTrip, "photo" | "destination">): CSSProperties =>
-  trip.photo ? { backgroundImage: `url("${trip.photo.url}")` } : coverStyle(trip);
-
 /** "Tokyo, Kyoto and Osaka": the stops' places in order, each once. Nothing for no stops, or one
  * that is only the destination again. */
 export function stopNames(stops: readonly { name: string }[], destination: string): string {
@@ -211,7 +207,7 @@ export function SharedTripPage() {
     <main className="shared-page">
       <div className="shared-col">
         <header className="trip-hero shared-hero">
-          <div className={`trip-hero-photo${trip?.photo ? "" : " no-photo"}`} style={trip ? heroStyle(trip) : undefined}>
+          <div className={`trip-hero-photo${trip?.photo ? "" : " no-photo"}`} style={trip ? coverStyle(trip) : undefined}>
             <div className="trip-hero-bar">
               <span className="shared-chip">Shared with you · read only</span>
             </div>

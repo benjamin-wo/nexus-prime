@@ -1198,20 +1198,26 @@ test("holdings from a screenshot are checked, saved, edited and removed", async 
   await expect(page.getByRole("status")).toHaveText("Saved 2 positions.");
   expect(state.screenshots).toBe(1);
   const holdings = page.getByRole("region", { name: "Holdings" });
-  await expect(holdings.getByRole("rowheader", { name: "NVDA" })).toBeVisible();
-  // Valued at the last close where there's a price; the rest wait for one.
-  await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("130.25");
+  const nvda = holdings.getByRole("button", { name: /^NVDA, / });
+  await expect(nvda).toBeVisible();
+  // Edit and Remove stay out of the list until a holding is opened.
+  await expect(holdings.getByRole("button", { name: /^(Edit|Remove) / })).toHaveCount(0);
   await expect(holdings.getByLabel("Portfolio totals")).toContainText("SGD");
   await expect(holdings).toContainText("no price yet for AAPL");
-
-  await holdings.getByRole("button", { name: "Edit NVDA" }).click();
-  const edit = holdings.getByRole("form", { name: "Edit NVDA" });
+  // Valued at the last close where there's a price; the rest wait for one.
+  await nvda.click();
+  const sheet = page.getByRole("dialog", { name: "NVDA" });
+  await expect(sheet).toContainText("130.25");
+  await sheet.getByRole("button", { name: "Edit NVDA" }).click();
+  const edit = sheet.getByRole("form", { name: "Edit NVDA" });
   await edit.getByLabel("Shares").fill("12");
   await edit.getByRole("button", { name: "Save" }).click();
-  await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("12");
-  await holdings.getByRole("button", { name: "Remove AAPL" }).click();
-  await holdings.getByRole("group", { name: "Remove AAPL" }).getByRole("button", { name: "Remove" }).click();
-  await expect(holdings.getByRole("rowheader", { name: "AAPL" })).toHaveCount(0);
+  await expect(sheet).toHaveCount(0);
+  await expect(holdings.getByRole("button", { name: /^NVDA, 12 shares/ })).toBeVisible();
+  await holdings.getByRole("button", { name: /^AAPL, / }).click();
+  await page.getByRole("dialog", { name: "AAPL" }).getByRole("button", { name: "Remove AAPL" }).click();
+  await page.getByRole("group", { name: "Remove AAPL" }).getByRole("button", { name: "Remove" }).click();
+  await expect(holdings.getByRole("button", { name: /^AAPL, / })).toHaveCount(0);
   await page.goto("/");
   const glance = page.getByRole("region", { name: "Portfolio today" });
   await expect(glance).toContainText("SGD");
@@ -1226,6 +1232,14 @@ test.describe("prices by market state", () => {
   const usd = (amount: string) => ({ amount, currency: "USD" });
   const nvda = [{ symbol: "NVDA", quantity: "10", average_cost: usd("118.4000"), cost: usd("1184.0000"), updated_at: "2026-09-28T03:00:00Z" }];
 
+  // A phone's list shows value and gain only; the price is in the holding's sheet. A wide screen's table shows it in the row.
+  async function nvdaScope(page: Page, isMobile: boolean) {
+    const holdings = page.getByRole("region", { name: "Holdings" });
+    if (!isMobile) return holdings.getByRole("row").filter({ hasText: "NVDA" });
+    await holdings.getByRole("button", { name: /^NVDA, / }).click();
+    return page.getByRole("dialog", { name: "NVDA" });
+  }
+
   test("prices are live while the market is open, provisional after the close, else the close", async ({ page, isMobile }) => {
     const state = await fakeApi(page);
     state.holdings = nvda;
@@ -1237,12 +1251,13 @@ test.describe("prices by market state", () => {
 
     // Shut: the daily closes, with the day each is from.
     await page.goto("/investment");
-    await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("130.25");
     await expect(holdings).toContainText("Close of Fri, Sep 25");
+    const shut = await nvdaScope(page, isMobile);
+    await expect(shut).toContainText("130.25");
     await expect(holdings).not.toContainText("Live");
     await expect(holdings).not.toContainText("provisional");
-    // The table's caption says it once; on a phone each holding's card says it too, so a close is never taken for the price now.
-    const nvdaPrice = holdings.getByRole("row").filter({ hasText: "NVDA" }).locator("td[data-label='Price'] .price-when");
+    // The table's caption says it once; on a phone the holding's sheet says it too, so a close is never taken for the price now.
+    const nvdaPrice = shut.locator(".price-when");
     if (isMobile) await expect(nvdaPrice).toBeVisible();
     else await expect(nvdaPrice).toBeHidden();
     await expect(nvdaPrice).toContainText("Close of Fri, Sep 25");
@@ -1258,10 +1273,10 @@ test.describe("prices by market state", () => {
     // Open: the live quote and its time, with the day's change against the quote's own previous close.
     state.market = "open";
     await page.goto("/investment");
-    await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("131.50");
     await expect(holdings).toContainText("Live · 10:41pm");
-    // The table's caption, and on a phone the holding's own card.
-    await expect(holdings.locator(".live-dot:visible")).toHaveCount(isMobile ? 2 : 1);
+    // The caption above the list; on a phone the holding's sheet has its own.
+    await expect(holdings.locator(".live-dot:visible")).toHaveCount(1);
+    await expect(await nvdaScope(page, isMobile)).toContainText("131.50");
     await page.goto("/investment/watchlist");
     await expect(watched).toContainText("AMD · USD 131.75");
     await expect(watched).toContainText("Live · 10:41pm");
@@ -1276,7 +1291,7 @@ test.describe("prices by market state", () => {
     await expect(holdings).toContainText("Close (provisional) · 10:41pm");
     await expect(holdings).not.toContainText("Live");
     await expect(holdings.locator(".live-dot")).toHaveCount(0);
-    await expect(holdings.getByRole("row").filter({ hasText: "NVDA" })).toContainText("Close (provisional) · 10:41pm");
+    await expect(await nvdaScope(page, isMobile)).toContainText("Close (provisional) · 10:41pm");
     await page.goto("/investment/watchlist");
     await expect(watched).toContainText("Close (provisional) · 10:41pm");
     await page.goto("/investment/stocks/AMD");
@@ -1304,7 +1319,7 @@ test.describe("prices by market state", () => {
     await expect(card).toContainText("Close (provisional) · 10:41pm");
   });
 
-  test("live prices refresh every minute and stop when the market is shut", async ({ page }) => {
+  test("live prices refresh every minute and stop when the market is shut", async ({ page, isMobile }) => {
     const state = await fakeApi(page);
     state.holdings = nvda;
     state.market = "open";
@@ -1317,12 +1332,13 @@ test.describe("prices by market state", () => {
     const holdings = page.getByRole("region", { name: "Holdings" });
     await expect(holdings).toContainText("Live · 10:41pm");
     expect(fetches).toBe(1);
+    const scope = await nvdaScope(page, isMobile);
 
     // A newer quote arrives on the next minute without a reload.
     state.quotes.NVDA = { price: "132.10", prev_close: "130.25", quoted_at: "2026-09-28T14:42:00Z" };
     await page.clock.runFor(60_000);
-    await expect(holdings).toContainText("132.10");
-    await expect(holdings).toContainText("Live · 10:42pm");
+    await expect(scope).toContainText("132.10");
+    await expect(scope).toContainText("Live · 10:42pm");
     expect(fetches).toBe(2);
 
     // The market shuts: the next refresh shows the close, then nothing more is asked.
