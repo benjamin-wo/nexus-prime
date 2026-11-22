@@ -820,15 +820,8 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
   .holdings thead { display: none; }
   .holdings tr { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
   .holdings th, .holdings td { border: 0; padding: 0; }
-  .holdings td.quick, .holdings td[colspan] { grid-column: 1 / -1; }
   .holdings td[data-label] { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: var(--space-2); }
   .holdings td[data-label]::before { content: attr(data-label); color: var(--text-muted); }
-}
-/* A holding's price says when it is from. In the table the caption above it says so once for a
- * price of the common kind; in the phone card each price keeps its own. */
-.holdings .price-cell { display: grid; justify-items: end; }
-@media (min-width: 901px) {
-  .holdings .when-common { display: none; }
 }
 .trip-form .actions, .page-head .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .trip-card-meter { margin-top: var(--space-2); }
@@ -1490,10 +1483,6 @@ button.set-row:disabled { cursor: default; opacity: 0.6; }
 .toast-two > span { flex: 1 1 100%; min-width: 0; }
 .toast-two > .btn:not(.btn-ghost) { flex: 0 0 auto; }
 .toast-two > .btn-ghost { margin-left: auto; }
-.holdings td.quick .holding-remove { margin-left: auto; }
-@media (min-width: 901px) {
-  .holdings td.quick .holding-remove { margin-left: var(--space-4); }
-}
 .memory-row { flex-wrap: wrap; }
 .memory-row > .confirm-box, .memory-row > .error-text { flex: 1 1 100%; margin-top: 0; }
 .toast .btn { flex: 0 0 auto; white-space: nowrap; }

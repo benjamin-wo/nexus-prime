@@ -34,3 +34,19 @@
 .step-change.up { color: var(--emerald-accent); }
 .step-change.down { color: var(--rose-accent); }
 .step-detail { margin: var(--space-1) 0 0; color: var(--text-secondary); }
+
+/* Holdings: a row each on a phone, a table on a wide screen; either opens the holding's sheet. */
+.holding-figure { display: grid; justify-items: end; gap: 2px; }
+.holding-figure > .num:first-child { color: var(--text-strong); font-weight: 600; }
+.holding-gain { font-size: 0.8125rem; font-weight: 400; }
+/* A holding's price says when it is from; in the table the caption above says so once for a price of the common kind. */
+.price-cell { display: grid; justify-items: end; }
+.when-common { display: none; }
+.holding-open { min-height: 44px; padding: 0; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 600; text-decoration: underline; text-decoration-color: var(--link-underline); text-underline-offset: 3px; cursor: pointer; }
+/* The sheet: the figures as label and value lines, then Edit and Remove at the foot. */
+.holding-detail { margin: 0 0 var(--space-3); }
+.holding-detail > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-card); }
+.holding-detail > div:last-child { border-bottom: 0; }
+.holding-detail dt { color: var(--text-muted); }
+.holding-detail dd { margin: 0; text-align: right; display: grid; justify-items: end; }
+.holding-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
