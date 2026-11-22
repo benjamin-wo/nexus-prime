@@ -74,14 +74,16 @@ test.describe("Notifications", () => {
     await fakeApi(page);
     await page.clock.setFixedTime(new Date("2026-10-22T04:00:00Z"));
     await page.goto("/");
-    const hero = page.getByRole("region", { name: "Nexus", exact: true });
-    const bell = hero.getByRole("link", { name: "Notifications" });
+    const head = page.getByRole("region", { name: "This month", exact: true });
+    const bell = head.getByRole("link", { name: "Notifications" });
     await expect(bell).toBeVisible();
-    // The three round buttons (Log expense, Notifications and Settings) stay inside the hero and apart from each other.
-    const buttons = await hero.locator(".round-btn").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
+    // Log, Settings and the bell sit on the date's line, inside the page, apart from each other and 44px high.
+    const buttons = await head.locator(".home-label-actions > *").evaluateAll((els) => els.map((el) => el.getBoundingClientRect()));
     expect(buttons).toHaveLength(3);
-    expect(buttons[1].left).toBeGreaterThanOrEqual(buttons[0].right);
-    expect(buttons[2].left).toBeGreaterThanOrEqual(buttons[1].right);
+    expect(buttons[1].left).toBeGreaterThanOrEqual(buttons[0].right - 1);
+    expect(buttons[2].left).toBeGreaterThanOrEqual(buttons[1].right - 1);
+    for (const b of buttons) expect(b.height).toBeGreaterThanOrEqual(44);
+    expect(buttons[2].right).toBeLessThanOrEqual(page.viewportSize()!.width);
     await bell.click();
     await expect(page).toHaveURL(/\/settings\/notifications$/);
     await expect(page.getByRole("heading", { name: "Notifications", level: 1 })).toBeVisible();

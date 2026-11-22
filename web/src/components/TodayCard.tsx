@@ -5,9 +5,8 @@ import { Link } from "react-router-dom";
 import { api, ApiError, type Mover, type Session, type Today, type Why } from "../api";
 import { formatChange, formatPercent } from "../format";
 import { livePolling } from "../prices";
-import { Icon } from "./Icon";
 import { PriceWhen } from "./PriceWhen";
-import { Button } from "./ui";
+import { Button, Section } from "./ui";
 
 const TITLES: Record<Session, string> = {
   live: "Today",
@@ -83,7 +82,6 @@ function MoverRow({ mover }: { mover: Mover }) {
               "Reading the headlines…"
             ) : (
               <>
-                <Icon name="sparkle" size={16} className="icon-inline" />
                 Why did it move?<span className="sr-only"> {mover.symbol}</span>
               </>
             )}
@@ -133,12 +131,8 @@ export function TodayCard() {
   );
 
   return (
-    <section className="card" aria-labelledby="today">
-      <div className="card-head">
-        <h2 id="today">{title}</h2>
-        {when}
-      </div>
+    <Section id="today" title={title} action={when}>
       {body}
-    </section>
+    </Section>
   );
 }

@@ -7,7 +7,7 @@ import { fakeApi } from "./fake-api";
 
 const guide = (page: Page) => page.getByRole("region", { name: "Get started", exact: true });
 const step = (page: Page, name: string) => guide(page).getByRole("listitem").filter({ hasText: name });
-const needsYou = (page: Page) => page.getByRole("region", { name: "Needs you", exact: true });
+const needsYou = (page: Page) => page.getByRole("region", { name: "For today", exact: true });
 
 /** Do something as the app would, through the fake API: a first expense and a first budget. */
 const send = (page: Page, url: string, method: string, body: unknown) =>
@@ -25,17 +25,17 @@ const budgetOne = (page: Page) => send(page, "/api/budgets", "PUT", { category_i
 
 const fresh = { setupDismissed: false, telegramLinked: false, noTransactions: true };
 
-test("a brand-new person sees the guide with all four steps to do, above Needs you, and its actions work", async ({ page }) => {
+test("a brand-new person sees the guide with all four steps to do, under For today, and its actions work", async ({ page }) => {
   await fakeApi(page, fresh);
   await page.goto("/");
   await expect(guide(page)).toBeVisible();
   await expect(guide(page)).toContainText("0 of 4");
   const names = ["Connect Telegram", "Log your first expense", "Set a monthly budget", "Get receipts in automatically"];
-  for (const name of names) await expect(step(page, name)).toContainText("To do");
+  for (const name of names) await expect(step(page, name).getByRole("link").or(step(page, name).getByRole("button")).first()).toContainText("Set up");
   await expect(guide(page)).toContainText("Log in Telegram or the chat button; review here.");
   // It is the only first-run card: the old checklist is gone.
   await expect(page.getByRole("region", { name: "Get set up" })).toHaveCount(0);
-  expect((await guide(page).boundingBox())!.y).toBeLessThan((await needsYou(page).boundingBox())!.y);
+  expect((await needsYou(page).boundingBox())!.y).toBeLessThan((await guide(page).boundingBox())!.y);
 
   // The bot is the one the app signs in with; a budget is set on the budgets page, email in Settings.
   await expect(step(page, "Connect Telegram").getByRole("link")).toHaveAttribute("href", "https://t.me/nexus_test_bot");
@@ -58,19 +58,19 @@ test("the steps tick as they happen, and the guide goes by itself when all four 
   await page.goto("/");
   await expect(guide(page)).toContainText("1 of 4");
   await expect(step(page, "Connect Telegram")).toContainText("Done");
-  await expect(step(page, "Log your first expense")).toContainText("To do");
+  await expect(step(page, "Log your first expense")).toContainText("Set up");
 
   await logOne(page);
   await page.reload();
   await expect(guide(page)).toContainText("2 of 4");
   await expect(step(page, "Log your first expense")).toContainText("Done");
-  await expect(step(page, "Set a monthly budget")).toContainText("To do");
+  await expect(step(page, "Set a monthly budget")).toContainText("Set up");
 
   await budgetOne(page);
   await page.reload();
   await expect(guide(page)).toContainText("3 of 4");
   await expect(step(page, "Set a monthly budget")).toContainText("Done");
-  await expect(step(page, "Get receipts in automatically")).toContainText("To do");
+  await expect(step(page, "Get receipts in automatically")).toContainText("Set up");
 
   // Email connected: the last step.
   state.setup.items.find((i) => i.key === "receipts")!.done = true;

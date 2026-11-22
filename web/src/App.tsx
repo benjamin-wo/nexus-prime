@@ -220,7 +220,7 @@ function Cockpit({ me }: { me: Me }) {
         <EditTransactionProvider onEdit={editTx}>
           <Routes>
             <Route path="/" element={<Navigate to="/app" replace />} />
-            <Route path="/app" element={<Home me={me} onAsk={(ask) => setChat({ ask })} onLog={() => setSheet({})} />} />
+            <Route path="/app" element={<Home me={me} onLog={() => setSheet({})} />} />
             <Route path="/accounting" element={<Dashboard me={me} onAsk={(ask) => setChat({ ask })} />} />
             <Route
               path="/accounting/ledger"

@@ -346,7 +346,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
   font-size: 1.0625rem; font-weight: 600; color: var(--text-strong); margin-bottom: var(--space-6);
 }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; }
-.title-mark { display: inline-flex; align-items: center; gap: var(--space-2); }
 .state-mark, .budget-first-text { display: flex; align-items: center; gap: var(--space-3); }
 .state-mark > span, .budget-first-text > span { min-width: 0; }
 .brand-accent { color: var(--accent-text); }
@@ -363,8 +362,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .dept-card { display: grid; gap: var(--space-2); align-content: start; text-decoration: none; color: inherit; }
 .dept-card h2 { margin: 0; }
 .run-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.progress { height: 6px; border-radius: 3px; background: var(--border-subtle); overflow: hidden; }
-.progress > span { display: block; height: 100%; background: var(--accent); }
 .rail .spacer { flex: 1; }
 /* The demo bar sits over the rail and the page, in a row of its own. */
 .shell:has(> .demo-banner) { grid-template-rows: auto minmax(0, 1fr); }
@@ -939,11 +936,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .sources { margin: 0; padding-left: 1.5em; display: grid; gap: var(--space-2); overflow-wrap: anywhere; }
 .itinerary-day h3 { margin: 0 0 var(--space-1); }
 .row-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-/* Buttons under a needs-you item line up with its text, past the icon. */
-.needs-actions { padding: 0 0 var(--space-3) calc(44px + var(--space-3)); }
-.needs-error { margin: 0; padding: 0 0 var(--space-3) calc(44px + var(--space-3)); }
-/* Fingers, not pointers: the buttons are as tall as a thumb needs. */
-@media (pointer: coarse) { .needs-actions .btn { min-height: 44px; } }
 .notes { font-family: var(--font-body); white-space: pre-wrap; margin: 0; }
 
 /* --- trip page (photo cover, pill tabs, overview cards, day-by-day rail) --- */
@@ -973,11 +965,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .trip-pair { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: var(--space-4); align-items: stretch; margin-bottom: var(--space-4); }
 .trip-pair > .card { margin: 0; }
 .ready-top { display: flex; align-items: center; gap: var(--space-3); font-weight: 600; }
-.ring {
-  --ring-pct: 0%; width: 56px; height: 56px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  background: conic-gradient(var(--accent) 0 var(--ring-pct), var(--bg-raised) var(--ring-pct) 100%);
-}
-.ring-inner { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-card); font-size: 0.8125rem; font-weight: 600; }
 .trip-money-figure { margin: 0 0 var(--space-2); font-size: 1.5rem; font-weight: 600; }
 .trip-money .meter { margin-bottom: var(--space-2); }
 .trip-ask { width: 100%; min-height: 48px; margin-bottom: var(--space-4); }
@@ -1151,9 +1138,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .rows { display: grid; margin: 0; padding: 0; list-style: none; }
 .rows > li + li, .rows > .row + .row { border-top: 1px solid var(--border-card); }
 .row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) 0; min-width: 0; }
-.row-link { color: inherit; text-decoration: none; border-radius: var(--radius-inner); transition: background var(--t-micro); }
-.row-link:hover { background: var(--bg-card-hover); }
-.row-link.urgent .row-icon { color: var(--status-warning); background: var(--status-warning-soft); }
 .row-icon {
   width: 42px; height: 42px; flex: none; border-radius: 13px; display: grid; place-items: center;
   background: var(--bg-raised); color: var(--accent-text); font-size: 0.8125rem; font-weight: 600;
@@ -1291,8 +1275,8 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 [data-reveal="pending"] { opacity: 0; transform: translateY(10px); }
 [data-reveal="in"] { animation: reveal 360ms cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0ms) both; }
 @keyframes reveal { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-/* Bars and rings fill as their card arrives. */
-[data-reveal="in"] .meter span, [data-reveal="in"] .progress > span, [data-reveal="in"] .bar {
+/* Bars fill as their card arrives. */
+[data-reveal="in"] .meter span, [data-reveal="in"] .bar {
   transform-origin: left center; animation: fill-x 700ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 100ms) both;
 }
 [data-reveal="in"] .month-bar { transform-origin: center bottom; animation: fill-y 900ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 150ms) both; }
@@ -1304,9 +1288,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 [data-reveal="in"] .split-bar span { transform-origin: left center; animation: fill-x 700ms cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 100ms) both; }
 @keyframes fill-x { from { transform: scaleX(0); } }
 @keyframes fill-y { from { transform: scaleY(0); } }
-@property --ring-pct { syntax: "<percentage>"; inherits: false; initial-value: 0%; }
-[data-reveal="in"] .ring { animation: ring-fill 1.2s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--reveal-delay, 0ms) + 200ms) both; }
-@keyframes ring-fill { from { --ring-pct: 0%; } }
 
 
 /* While typing on a phone (viewport.ts): the tab bar and floating buttons step aside
@@ -1316,8 +1297,8 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-reveal] { opacity: 1; transform: none; animation: none; }
-  [data-reveal] .meter span, [data-reveal] .progress > span, [data-reveal] .bar, [data-reveal] .month-bar,
-  [data-reveal] .split-bar span, [data-reveal] .ring { animation: none; }
+  [data-reveal] .meter span, [data-reveal] .bar, [data-reveal] .month-bar,
+  [data-reveal] .split-bar span { animation: none; }
 }
 
 /* --- the trip page that follows the trip --- */
@@ -1507,78 +1488,13 @@ table.ledger tbody tr.day-row:hover { background: none; }
   .chip-x { min-width: 32px; min-height: 32px; }
 }
 
-/* --- The light layout: a hero on Home, titled blocks, a dark bottom bar --- */
+/* --- The light layout: the ground, titled blocks, the bottom bar --- */
 .main-viewport { background: var(--bg-shell); }
 
-/* Round icon buttons, white glass on the hero. White stays white in the dark theme: the hero is deep indigo in both. */
-.round-btn {
-  width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  border: 1px solid var(--border-edge); background: var(--bg-card); color: var(--text-primary);
-  cursor: pointer; text-decoration: none; transition: background var(--t-micro);
-}
-.round-btn:hover, .round-btn:focus-visible { background: var(--bg-card-hover); }
 
-/* Home's overview: on solid indigo, not in a card (light text on it). The white text and the shadow under it are constant: the hero is a dark panel in both themes. */
-.hero {
-  position: relative; display: grid; gap: var(--space-4); padding: var(--space-8); border-radius: 28px; color: var(--text-primary);
-  background: var(--hero-top);
-}
-.hero h1, .hero .accent-serif { color: var(--text-strong); }
-.hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); }
-.hero-date { margin: 0 0 2px; font-size: 0.875rem; color: var(--text-secondary); }
-.hero-actions { display: flex; gap: var(--space-2); }
-.hero-figure { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin-top: var(--space-2); }
-.hero-value {
-  display: inline-flex; align-items: center; gap: var(--space-1);
-  font-size: clamp(2.375rem, 10.5vw, 3.5rem); font-weight: 600; line-height: 1.05; letter-spacing: -0.03em; font-variant-numeric: tabular-nums lining-nums;
-}
-.hero-arrow { display: inline-grid; opacity: 0.9; }
-.hero-label { font-size: 1rem; font-weight: 500; }
-.hero-note { margin: 0; font-size: 0.9375rem; font-weight: 500; }
-.hero-brief { margin: 0; max-width: 640px; font-size: 1.0625rem; line-height: 1.5; font-weight: 500; }
-/* Light text on the hero: a faint shadow keeps it crisp where it's lightest. */
-
-@media (max-width: 900px) {
-  /* On a phone the hero runs to the edges and the top, fading into the page. The fade lives in the
-     bottom padding only, so the brief's last line always sits on solid colour (white on the faded
-     part fell below 3:1). */
-  .hero {
-    margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0; padding: var(--space-5) var(--space-4) calc(var(--space-8) * 1.75);
-    border-radius: 0; background: var(--hero-top);
-  }
-}
-
-/* --- Today (Home): Needs you and the first steps on the left, the glance cards on the right --- */
+/* --- Money overview: the spend card's small tiles (Home's own rules are in pages/home.css) --- */
 .spend-card .mini-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .spend-card .mini-tiles.single { grid-template-columns: minmax(0, 1fr); }
-.today { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); align-items: start; }
-@media (min-width: 1024px) { .today { grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); } }
-@media (max-width: 720px) { .today { gap: var(--space-4); } }
-.badge-now { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); font-size: 0.8125rem; flex: none; }
-.needs-more { margin: var(--space-2) 0 0 -12px; }
-.working { padding: var(--space-4) var(--space-5); }
-.working .feed { gap: var(--space-3); }
-.ask-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
-/* Long suggestions wrap inside their pill rather than pushing the card wider on a narrow phone. */
-.ask-panel :is(.chip-btn, .ask-chip) { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-/* Home needs no wrapper box: .home adds none of its own. */
-.home { display: contents; }
-.glance { display: grid; gap: var(--space-2); align-content: start; }
-.glance > .meter { margin: var(--space-1) 0; }
-.glance > p { margin: 0; }
-.glance-figure { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere; }
-.glance-line { font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
-.pace-ahead { color: var(--status-warning); font-weight: 600; }
-.mode-lines { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
-@media (min-width: 720px) { .mode-lines { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); } }
-.mode-lines li { display: flex; align-items: flex-start; gap: var(--space-3); min-width: 0; overflow-wrap: anywhere; }
-.mode-lines svg { flex: none; margin-top: 2px; color: var(--accent-text); }
-.ring { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border-card); }
-/* Home's "Get started" guide: compact rows, one small action each. */
-.start-head { display: inline-flex; align-items: center; gap: var(--space-1); }
-.start-row { padding: var(--space-2) 0; }
-.start-row.is-done .wrap { color: var(--text-muted); }
-.start-note { margin: var(--space-2) 0 0; }
 
 
 /* Trip page: tabs and plan */
@@ -2565,15 +2481,6 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .note-digested { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-border); }
 .note-dropped { color: var(--text-muted); border-color: var(--border-card); }
 
-/* Home's hero holds three round buttons (Log expense, Notifications, Settings): on a small phone they
- * get smaller and, if the greeting still leaves no room, drop under it instead of spilling out. */
-.hero-top { flex-wrap: wrap; }
-.hero-actions { margin-left: auto; }
-@media (max-width: 360px) {
-  .hero-top { gap: var(--space-2); }
-  .hero-actions { gap: 6px; }
-  .hero .round-btn { width: 40px; height: 40px; }
-}
 
 /* Settings: the Time zone card. */
 .tz-now strong { font-size: 1.0625rem; font-variant-numeric: tabular-nums lining-nums; color: var(--text-strong); }
@@ -2716,11 +2623,6 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .load-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) 0 var(--space-4); }
 .load-error-text { flex: 1 1 12rem; min-width: 0; margin: 0; font-size: 0.9375rem; }
 .load-error-page { padding: var(--space-4); background: var(--bg-glass); border: 1px solid var(--border-card); border-radius: var(--radius); }
-/* On the Home hero (a dark panel in both themes) it is white, with a button to match. */
-.hero .load-error { padding: 0; margin-top: var(--space-1); }
-.hero .load-error-text { color: var(--text-primary); }
-.hero .load-error .btn { background: var(--bg-card); border-color: var(--border-edge); color: var(--text-primary); }
-.hero .load-error .btn:hover:not(:disabled) { background: var(--bg-card-hover); }
 
 /* Settings: a time field that saves when left (the status sits on the label's line, so nothing moves). */
 .time-field { position: relative; display: grid; gap: var(--space-1); min-width: 0; }
