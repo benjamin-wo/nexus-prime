@@ -1,0 +1,30 @@
+/* Sub-tabs (DESIGN.md §5 Department tabs): a department's own pages as text on the ground, in Bricolage. The
+   current one is ink and 600 with a 4px --accent dot under it; the others keep the dot's space, transparent, so
+   nothing shifts. The rest are --text-muted. 44px tall and wide, for a finger; a long row scrolls sideways
+   with no scrollbar, never wraps. Tabs.tsx writes the markup. */
+.dept-tabs {
+  display: flex; gap: var(--space-1); max-width: calc(100% + var(--space-3)); margin-left: calc(-1 * var(--space-3));
+  overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+}
+.dept-tabs::-webkit-scrollbar { display: none; }
+
+.dept-tab {
+  flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-height: 44px; min-width: 44px; padding: 0 var(--space-3); border-radius: var(--radius-inner);
+  font-family: var(--font-ui); font-size: 0.9375rem; font-weight: 500; line-height: 1.2; white-space: nowrap;
+  color: var(--text-muted); text-decoration: none; transition: color var(--t-micro);
+}
+.dept-tab::after {
+  content: ""; width: 4px; height: 4px; border-radius: 50%; background: transparent; flex: none;
+}
+.dept-tab:hover { color: var(--text-primary); }
+.dept-tab.active, .dept-tab[aria-current="page"] { color: var(--text-strong); font-weight: 600; }
+.dept-tab.active::after, .dept-tab[aria-current="page"]::after { background: var(--accent); }
+/* The dot's space is under the label; push the label down by the same so it sits in the middle. */
+.dept-tab::before { content: ""; height: 4px; flex: none; }
+
+/* The smallest phones: the tabs tighten (and may shorten) rather than scroll. */
+@media (max-width: 359px) {
+  .dept-tabs { gap: 0; }
+  .dept-tab { flex: 1 1 auto; min-width: 44px; padding: 0 var(--space-2); font-size: 0.875rem; }
+}

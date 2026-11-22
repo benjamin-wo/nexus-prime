@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { Button } from "./ui";
+
 export type ToastAction = { label: string; run: () => void };
 
 /** A line at the bottom of the page that goes away by itself. ``action`` is its one button (Undo,
@@ -23,18 +25,18 @@ export function Toast({
     <div className={also ? "toast toast-two" : "toast"} role="status">
       <span>{message}</span>
       {action && (
-        <button type="button" className="btn" onClick={action.run}>
+        <Button onClick={action.run}>
           {action.label}
-        </button>
+        </Button>
       )}
       {also && (
-        <button type="button" className="btn" onClick={also.run}>
+        <Button onClick={also.run}>
           {also.label}
-        </button>
+        </Button>
       )}
-      <button type="button" className="btn btn-ghost" aria-label="Dismiss" onClick={onClose}>
+      <Button variant="text" aria-label="Dismiss" onClick={onClose}>
         ×
-      </button>
+      </Button>
     </div>
   );
 }

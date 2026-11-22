@@ -17,6 +17,7 @@ import { Icon } from "./Icon";
 import { NexusMark } from "./NexusMark";
 import { PHONE_QUERY, useMediaQuery } from "./overlay/breakpoints";
 import { Overlay } from "./overlay/Overlay";
+import { Button, ButtonLink, Chip, ChipGroup } from "./ui";
 
 type Message = {
   from: "user" | "bot";
@@ -419,14 +420,13 @@ export function ChatDrawer({
             {messagesLeft(demo.messages_left)}
           </span>
         )}
-        <button
-          type="button"
-          className="btn btn-ghost"
+        <Button
+          variant="text"
           aria-label="Close chat"
           onClick={onClose}
         >
           ×
-        </button>
+        </Button>
       </header>
       </div>
       <div
@@ -438,13 +438,13 @@ export function ChatDrawer({
         }}
       >
         {more && (
-          <button
-            type="button"
-            className="btn btn-small earlier"
+          <Button
+            size="sm"
+            className="earlier"
             onClick={() => void loadEarlier()}
           >
             Earlier messages
-          </button>
+          </Button>
         )}
         {messages.length === 0 && (
           <p className="muted">
@@ -453,13 +453,13 @@ export function ChatDrawer({
           </p>
         )}
         {messages.length === 0 && loaded && !busy && (
-          <div className="chips" role="group" aria-label="Suggestions">
+          <ChipGroup aria-label="Suggestions">
             {SUGGESTIONS.map((suggestion) => (
-              <button key={suggestion} type="button" className="ask-chip" onClick={() => say(suggestion)}>
+              <Chip key={suggestion} onClick={() => say(suggestion)}>
                 {suggestion}
-              </button>
+              </Chip>
             ))}
-          </div>
+          </ChipGroup>
         )}
         {messages.map((m, i) => (
           <div
@@ -476,9 +476,9 @@ export function ChatDrawer({
                 <div className="choices">
                   {m.buttons.flat().filter((b) => !isSource(b)).map((b) =>
                     b.data.startsWith("url:") ? (
-                      <a
+                      <ButtonLink
+                        variant="primary"
                         key={b.data}
-                        className="btn btn-primary"
                         href={b.data.slice(4)}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -488,17 +488,15 @@ export function ChatDrawer({
                         }}
                       >
                         {b.label}
-                      </a>
+                      </ButtonLink>
                     ) : (
-                      <button
+                      <Button
                         key={b.data}
-                        type="button"
-                        className="btn"
                         disabled={busy}
                         onClick={() => press(i, b.data, b.label)}
                       >
                         {b.label}
-                      </button>
+                      </Button>
                     ),
                   )}
                 </div>
@@ -544,31 +542,31 @@ export function ChatDrawer({
         />
         {voice.recording ? (
           <>
-            <button type="button" className="btn btn-ghost chat-cancel" aria-label="Cancel recording" onClick={voice.cancel}>
+            <Button variant="text" className="chat-cancel" aria-label="Cancel recording" onClick={voice.cancel}>
               <Icon name="x" />
-            </button>
-            <button ref={stopButton} type="button" className="btn btn-primary chat-action" aria-label="Stop and send" onClick={voice.stop}>
+            </Button>
+            <Button variant="primary" className="chat-action" ref={stopButton} aria-label="Stop and send" onClick={voice.stop}>
               <Icon name="stop" />
-            </button>
+            </Button>
           </>
         ) : busy ? (
-          <button type="button" className="btn btn-primary chat-action" disabled={stopping} onClick={stop}>
+          <Button variant="primary" className="chat-action" disabled={stopping} onClick={stop}>
             {stopping ? "Stopping…" : "Stop"}
-          </button>
+          </Button>
         ) : draft.trim() ? (
-          <button type="submit" className="btn btn-primary chat-action">
+          <Button variant="primary" className="chat-action" type="submit">
             Send
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className={`btn btn-primary chat-action${micAvailable ? "" : " chat-mic-off"}`}
+          <Button
+            variant="primary"
+            className={`chat-action${micAvailable ? "" : " chat-mic-off"}`}
             aria-label="Record a voice note"
             aria-disabled={busy || !micAvailable ? true : undefined}
             onClick={startVoice}
           >
             <Icon name="mic" />
-          </button>
+          </Button>
         )}
       </form>
     </Overlay>

@@ -1,0 +1,37 @@
+/* Chips and filters (DESIGN.md §5): one look for every pressable pill. Chip.tsx writes .chip-btn; pages that
+   still write .day-pill (Travel) or .ask-chip (suggestions) share these rules. 34px tall; off is an outline with
+   ink text, on is an ink fill with ground-coloured text, so colour is never what says "on".
+   Page-specific extras (".day-pill.drop-over", ".nudge .ask-chip" ...) stay in styles.css. */
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.chip-btn, .day-pill, .ask-chip {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  min-height: 34px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--border-edge);
+  background: transparent; color: var(--text-primary); font: inherit; font-size: 0.875rem; font-weight: 500;
+  line-height: 1.2; text-decoration: none; cursor: pointer;
+  transition: transform var(--t-micro), background var(--t-micro), color var(--t-micro), border-color var(--t-micro);
+}
+:is(.chip-btn, .day-pill, .ask-chip):hover:not(:disabled) { background: var(--bg-card-hover); }
+:is(.chip-btn, .day-pill, .ask-chip):active:not(:disabled) { transform: scale(0.97); }
+:is(.chip-btn, .day-pill, .ask-chip):disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* On: pressed, the current one of a set, or the picked one of a radiogroup. */
+:is(.chip-btn, .day-pill, .ask-chip):is([aria-pressed="true"], [aria-current="true"], [aria-current="page"], [aria-checked="true"]),
+:is(.chip-btn, .day-pill, .ask-chip):is([aria-pressed="true"], [aria-current="true"], [aria-current="page"], [aria-checked="true"]):hover:not(:disabled) {
+  background: var(--text-strong); border-color: var(--text-strong); color: var(--bg-shell); font-weight: 600;
+}
+
+@media (hover: none) {
+  :is(.chip-btn, .day-pill, .ask-chip):not([aria-pressed="true"], [aria-current="true"], [aria-current="page"], [aria-checked="true"]):hover:not(:disabled) {
+    background: transparent;
+  }
+}
+
+/* Fingers, not pointers: a hit area of at least 44 x 44 px (e2e/tap-targets.spec.ts measures it). */
+@media (pointer: coarse) {
+  .chip-btn, .day-pill, .ask-chip { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.chip-btn, .day-pill, .ask-chip):active:not(:disabled) { transform: none; }
+}

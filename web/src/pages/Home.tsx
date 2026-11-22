@@ -23,6 +23,7 @@ import { GetStarted } from "../components/GetStarted";
 import { Icon, departmentIcon } from "../components/Icon";
 import { LoadError } from "../components/LoadError";
 import { Toast } from "../components/Toast";
+import { Button, Chip, ChipGroup } from "../components/ui";
 import { DEPARTMENTS } from "../departments";
 import { formatMoney } from "../format";
 import { livePolling } from "../prices";
@@ -88,13 +89,12 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
         )}
       </span>
       {going && (
-        <button
-          type="button"
-          className="btn btn-small"
+        <Button
+          size="sm"
           onClick={() => onCancel(run)}
         >
           Cancel
-        </button>
+        </Button>
       )}
     </li>
   );
@@ -179,13 +179,13 @@ function Hero({
 function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => void }) {
   return (
     <Block id="ask" title="Just ask Nexus" className="ask-panel">
-      <div className="chips" aria-label="Suggested questions">
+      <ChipGroup aria-label="Suggested questions">
         {chips.map((c) => (
-          <button key={c} type="button" className="ask-chip" onClick={() => onAsk(c)}>
+          <Chip key={c} onClick={() => onAsk(c)}>
             {c}
-          </button>
+          </Chip>
         ))}
-      </div>
+      </ChipGroup>
     </Block>
   );
 }
@@ -240,15 +240,9 @@ function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: (message?: 
       {item.actions.length > 0 && (
         <div className="row-actions needs-actions">
           {item.actions.map((a, i) => (
-            <button
-              key={a.key}
-              type="button"
-              className={i === 0 ? "btn btn-small btn-primary" : "btn btn-small"}
-              disabled={busy}
-              onClick={() => void run(a)}
-            >
+            <Button key={a.key} variant={i === 0 ? "primary" : undefined} size="sm" disabled={busy} onClick={() => void run(a)}>
               {a.label}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -289,14 +283,15 @@ function NeedsYou({
         </ul>
       )}
       {items.length > NEEDS_SHOWN && (
-        <button
-          type="button"
-          className="btn btn-ghost btn-small needs-more"
+        <Button
+          variant="text"
+          size="sm"
+          className="needs-more"
           aria-expanded={all}
           onClick={() => setAll(!all)}
         >
           {all ? "Show fewer" : `Show all (${items.length})`}
-        </button>
+        </Button>
       )}
     </Block>
   );
