@@ -7,6 +7,7 @@ import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } f
 import { type Nearby, pointOf } from "./TripArrange";
 import { stopColor, stopOfDay } from "./TripBits";
 import { dayColor, dayNumber } from "./TripMap";
+import { Button, Chip, Section } from "../components/ui";
 
 /** How long a finger or button is held on the map before a pin is dropped. */
 export const LONG_PRESS_MS = 550;
@@ -60,12 +61,12 @@ function PinPrompt({ onSave, onClose }: { onSave: (name: string) => Promise<void
         </p>
       )}
       <span className="actions">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <Button type="submit" variant="primary" disabled={busy}>
           Save pin
-        </button>
-        <button type="button" className="btn" onClick={onClose}>
+        </Button>
+        <Button onClick={onClose}>
           Cancel
-        </button>
+        </Button>
       </span>
     </Sheet>
   );
@@ -256,16 +257,14 @@ export function IdeasMap({ detail, apiKey, ideas, color, near, viewing, onPick, 
 
   return (
     <>
-      <section className="card ideas-map" aria-labelledby="ideas-map-title">
-        <div className="card-head">
-          <h2 id="ideas-map-title">Map</h2>
-        </div>
+      <div className="ideas-map">
+      <Section id="ideas-map-title" title="Map">
         {several && (
           <div className="chips stop-switch" role="group" aria-label="Stop">
             {stops.map((s, i) => (
-              <button key={stopKey(s)} type="button" className="day-pill" aria-pressed={stop !== null && stopKey(s) === stopKey(stop)} onClick={() => setChosen(stopKey(s))}>
+              <Chip key={stopKey(s)} pressed={stop !== null && stopKey(s) === stopKey(stop)} onClick={() => setChosen(stopKey(s))}>
                 <span className="list-dot" style={{ background: stopColor(i) }} aria-hidden="true" /> {s.name}
-              </button>
+              </Chip>
             ))}
           </div>
         )}
@@ -296,7 +295,8 @@ export function IdeasMap({ detail, apiKey, ideas, color, near, viewing, onPick, 
             Not on the map: link a place to pin it. {unpinned.map((b) => b.title).join(", ")}
           </p>
         )}
-      </section>
+      </Section>
+      </div>
       {/* Outside the card, like the day picker: the card's own stacking would put it under the tab bar. */}
       {holding && (
         <PinPrompt

@@ -11,12 +11,13 @@ import { EntryEditor } from "./TripEntry";
 import { IdeasMap } from "./TripIdeasMap";
 import { dayNumber } from "./TripMap";
 import { PlaceLine, SavePlaces, useLinkedPlaces } from "./TripPlaces";
+import { Button, Chip, ChipGroup, Section } from "../components/ui";
 
 /** The list an idea shows under: its own list, else its kind. */
 export const listOf = (b: Booking) => b.list_name ?? b.category ?? null;
 
 /** Dot colours for lists, told apart by lightness as well as hue. */
-const DOTS = ["var(--accent)", "#e08a1e", "#9ca8b8", "var(--cyan-accent)"];
+const DOTS = ["var(--accent)", "var(--status-warning)", "var(--pal-track)", "var(--pal-slate)"];
 
 /** Each list's dot colour, by sorted name: a list keeps its colour as others come and go. */
 export function listColors(lists: string[]): Map<string, string> {
@@ -126,14 +127,14 @@ export function PlaceRow({ booking, color, dragging = true, hint = null, onEdit,
             />
           ) : (
             <div className="place-open-actions">
-              <button type="button" className="btn btn-ghost btn-small" onClick={onEdit} aria-label={`Change ${booking.title}`}>
+              <Button variant="text" size="sm" onClick={onEdit} aria-label={`Change ${booking.title}`}>
                 <Icon name="edit" size={16} />
                 Change
-              </button>
-              <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => setConfirming(true)} aria-label={`Remove ${booking.title}`}>
+              </Button>
+              <Button variant="danger" size="sm" disabled={busy} onClick={() => setConfirming(true)} aria-label={`Remove ${booking.title}`}>
                 <Icon name="trash" size={16} />
                 Remove
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -192,52 +193,56 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
     {((mapKey && !wide) || canFind) && (
       <div className="ideas-bar">
         {mapKey && !wide && (
-          <div className="ideas-switch" role="group" aria-label="Show ideas as">
+          <ChipGroup className="ideas-switch" aria-label="Show ideas as">
             {(["list", "map"] as const).map((v) => (
-              <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+              <Chip key={v} pressed={view === v} onClick={() => setView(v)}>
                 <Icon name={v} size={16} />
                 {v === "list" ? "List" : "Map"}
-              </button>
+              </Chip>
             ))}
-          </div>
+          </ChipGroup>
         )}
         {canFind && (
-          <button type="button" className="btn btn-soft ideas-find" onClick={() => setFinding(true)}>
+          <Button variant="secondary" className="ideas-find" onClick={() => setFinding(true)}>
             <Icon name="find" size={18} />
             Find ideas
-          </button>
+          </Button>
         )}
       </div>
     )}
     <div className="ideas-layout" data-view={mapKey && !wide ? view : "list"}>
-    <section id="section-place" className="card ideas" aria-labelledby="ideas-title">
-      <div className="ideas-head">
-        <h2 id="ideas-title">{count === 1 ? "1 idea" : `${count} ideas`}</h2>
-        {canArrange && (
-          <button type="button" className="btn btn-ghost btn-small ideas-arrange" aria-pressed={arrangingNow} onClick={() => setArranging(!arrangingNow)}>
+    <div id="section-place" className="ideas-col">
+    <Section
+      id="ideas-title"
+      title={count === 1 ? "1 idea" : `${count} ideas`}
+      action={
+        canArrange && (
+          <Button variant="text" size="sm" className="ideas-arrange" aria-pressed={arrangingNow} onClick={() => setArranging(!arrangingNow)}>
             {arrangingNow ? "Done" : "Arrange"}
-          </button>
-        )}
-      </div>
+          </Button>
+        )
+      }
+      className="ideas"
+    >
       {arrangingNow && <p className="caption">Drag an idea by its grip to put your ideas in order, or tap its calendar button to plan it.</p>}
       {(lists.length > 1 || onDays.length > 0) && (
         <div className="chips list-chips" role="group" aria-label="Lists">
           {lists.length > 1 && (
             <>
-              <button type="button" className="day-pill" aria-pressed={!picked} onClick={() => setList(null)}>
+              <Chip pressed={!picked} onClick={() => setList(null)}>
                 All
-              </button>
+              </Chip>
               {lists.map((l) => (
-                <button key={l} type="button" className="day-pill" aria-pressed={picked === l} onClick={() => setList(l)}>
+                <Chip key={l} pressed={picked === l} onClick={() => setList(l)}>
                   {l} <span className="caption">{shown.filter((b) => listOf(b) === l).length}</span>
-                </button>
+                </Chip>
               ))}
             </>
           )}
           {onDays.length > 0 && (
-            <button type="button" className="day-pill" aria-pressed={planned} onClick={() => setPlanned(!planned)}>
+            <Chip pressed={planned} onClick={() => setPlanned(!planned)}>
               Show planned
-            </button>
+            </Chip>
           )}
         </div>
       )}
@@ -266,9 +271,9 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
                 </li>
               ) : b.scheduled ? (
                 <PlaceRow key={b.id} booking={b} color={color(b)} dragging={false} hint={hint(b)} onEdit={() => setEditing(b.id)} onRemoved={onChange}>
-                  <button type="button" className="btn btn-soft btn-small" onClick={() => setPicking(b)} aria-label={`${b.title} is on Day ${dayNumber(detail.trip, b.day ?? b.starts)}, change the day`}>
+                  <Button variant="secondary" size="sm" onClick={() => setPicking(b)} aria-label={`${b.title} is on Day ${dayNumber(detail.trip, b.day ?? b.starts)}, change the day`}>
                     Day {dayNumber(detail.trip, b.day ?? b.starts)}
-                  </button>
+                  </Button>
                 </PlaceRow>
               ) : (
                 <PlaceRow key={b.id} booking={b} color={color(b)} dragging={arrangingNow} hint={hint(b)} onEdit={() => setEditing(b.id)} onRemoved={onChange}>
@@ -281,7 +286,8 @@ export function IdeasTab({ detail, onChange, viewing }: { detail: TripDetail; on
           </ul>
         )}
       </DropZone>
-    </section>
+    </Section>
+    </div>
     {mapKey && (wide || view === "map") && (
       <IdeasMap detail={detail} apiKey={mapKey} ideas={items} color={color} near={near} viewing={viewing} onPick={setPicking} onDrop={drop} />
     )}

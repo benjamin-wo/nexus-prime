@@ -8,6 +8,7 @@ import { type GMap, type GOverlay, loadMaps, type MapsApi, onMapsAuthFailure } f
 import { duration } from "./TripArrange";
 import { sortKey } from "./TripBits";
 import { useLinkedPlaces } from "./TripPlaces";
+import { Button } from "../components/ui";
 
 /** Each day's colour on the map, repeating after eight days; places to visit with
  * no day are grey. Chosen to stay apart from each other and readable under white. */
@@ -242,18 +243,17 @@ export function TripMap({ detail, day, selected, onDay }: {
         <h2 id="trip-map-title">Map</h2>
         <span className="trip-map-buttons">
           {pins.length > 0 && onDay && (day !== null || selected) && (
-            <button
-              type="button"
-              className="btn btn-ghost btn-small trip-map-scope"
+            <Button
+              variant="text" size="sm" className="trip-map-scope"
               onClick={() => onDay(day === null ? (selected ?? null) : null)}
             >
               {day === null ? "This day" : "All days"}
-            </button>
+            </Button>
           )}
           {pins.length > 0 && (
-            <button type="button" className="btn btn-ghost btn-small trip-map-toggle" onClick={() => setFull(!full)} aria-pressed={full}>
+            <Button variant="text" size="sm" className="trip-map-toggle" onClick={() => setFull(!full)} aria-pressed={full}>
               {full ? "Close map" : "Full screen"}
-            </button>
+            </Button>
           )}
         </span>
       </div>

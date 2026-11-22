@@ -122,7 +122,7 @@ test("travel insurance is added from Add to prep, counted under Money, and logge
 
   await tripAdd(page).click();
   const choice = page.getByRole("dialog", { name: "Add to prep" });
-  await expect(choice.locator(".way")).toHaveText([/A to-do/, /Cover or a document/, /Something to pack/]);
+  await expect(choice.locator(".row-line")).toHaveText([/A to-do/, /Cover or a document/, /Something to pack/]);
   await choice.getByRole("button", { name: /Cover or a document/ }).click();
 
   const sheet = page.getByRole("dialog", { name: "Add cover or a document" });

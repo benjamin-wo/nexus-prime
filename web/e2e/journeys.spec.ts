@@ -1860,6 +1860,7 @@ test("plans are added to a trip's itinerary by hand, day by day, and changed", a
   await expect(itinerary.getByRole("form", { name: "Change the entry" })).toHaveCount(0);
   await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toBeVisible();
   await expect(itinerary).toContainText("1-2-3 Ginza");
+  await expect(itinerary.locator(".day-track")).not.toHaveAttribute("data-scrolling", "true"); // a tap while the days scroll is a swipe, and does nothing
   await dinner.click({ position: { x: 150, y: 3 } }); // the open part below takes its own taps, and the drag handle at the left has a 44 px reach on a phone
   await expect(dinner).toHaveAttribute("aria-expanded", "false");
   await expect(itinerary.getByRole("button", { name: "Change Dinner at Sushi Ten" })).toHaveCount(0);

@@ -24,6 +24,7 @@ import { Sheet } from "../components/Sheet";
 import { distance, metresBetween, type Point } from "../geo";
 import { sortKey, stopOfDay, stopsOf, suggestLabel } from "./TripBits";
 import { useLinkedPlaces } from "./TripPlaces";
+import { Button } from "../components/ui";
 
 const dayName = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
 
@@ -467,12 +468,12 @@ export function MoveForm({ booking, days, spots, onDone }: { booking: Booking; d
         </select>
       </label>
       <span className="actions">
-        <button type="submit" className="btn btn-small btn-primary">
+        <Button type="submit" variant="primary" size="sm">
           Move
-        </button>
-        <button type="button" className="btn btn-small" onClick={onDone}>
+        </Button>
+        <Button size="sm" onClick={onDone}>
           Cancel
-        </button>
+        </Button>
       </span>
     </form>
   );
@@ -516,9 +517,9 @@ export function DayNotes({ notes, hops = [], onFind }: { notes: DayNote[]; hops?
           <Icon name={NOTE_ICON[n.kind]} size={18} />
           <span className="wrap">{n.kind === "arrival" ? arrivalText(n, hops) : n.text}</span>
           {n.kind === "free" && onFind && (
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => onFind(n.start ?? null)}>
+            <Button variant="text" size="sm" onClick={() => onFind(n.start ?? null)}>
               Find something to do
-            </button>
+            </Button>
           )}
         </li>
       ))}
@@ -793,13 +794,13 @@ export function DayPickerSheet({ detail, booking, viewing, onClose }: { detail: 
           <ul className="day-options">{picker.days.map(option)}</ul>
         </section>
         {picker.here ? (
-          <button type="button" className="btn btn-soft" onClick={() => put(PLACES, picker.lastIdea)}>
+          <Button variant="secondary" onClick={() => put(PLACES, picker.lastIdea)}>
             Take it off Day {picker.here.number}
-          </button>
+          </Button>
         ) : (
-          <button type="button" className="btn" onClick={onClose}>
+          <Button onClick={onClose}>
             Keep it as an idea
-          </button>
+          </Button>
         )}
       </div>
     </Sheet>

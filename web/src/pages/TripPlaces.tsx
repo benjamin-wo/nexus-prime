@@ -7,6 +7,7 @@ import { Sheet } from "../components/Sheet";
 import { nearbyOf } from "./TripArrange";
 import { stopsOf } from "./TripBits";
 import { findScopes, firstScope, listFor, type Found, mergeResults, type PickCtx, ResultList, type Scope, ScopeMenu, scopeParams, ThemeChips, whereCaption } from "./TripFind";
+import { Button } from "../components/ui";
 
 /** What the trip page knows about Google Maps: whether it's set up, and the details
  * of the entries linked to a place (fetched when shown; only place ids are kept); and
@@ -278,13 +279,13 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
             maxLength={120}
           />
         </span>
-        <button type="submit" className="btn btn-primary" disabled={waiting}>
+        <Button type="submit" variant="primary" disabled={waiting}>
           Search
-        </button>
+        </Button>
         {onCancel && (
-          <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          <Button variant="text" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         )}
       </form>
       {scopes && (
@@ -340,10 +341,9 @@ export function PlaceFinder({ initial, pickLabel, saveText, onPick, ideas: ideas
       )}
       {ideas && ideas.ideas.length === 0 && <p className="state">No specific places came up in guides or articles.</p>}
       {withIdeas && asked && !reading && !ideas && google && (
-        <button type="button" className="btn btn-ghost btn-small" onClick={() => void readIdeas(asked.q, asked.scope, latest.current)}>
-          <Icon name="sparkle" size={16} className="icon-inline" />
+        <Button variant="text" size="sm" onClick={() => void readIdeas(asked.q, asked.scope, latest.current)}>
           Ideas from guides and articles for “{asked.q}”
-        </button>
+        </Button>
       )}
       {found !== null && <p className="caption">From Google Maps</p>}
       {shown && ideas && ideas.ideas.length > 0 && <p className="caption">Guide ideas are their words, with a link to each page. Check opening times before you go.</p>}

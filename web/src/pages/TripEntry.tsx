@@ -2,6 +2,7 @@ import { type FormEvent, useState } from "react";
 
 import { api, type Booking, type Trip } from "../api";
 import { ConfirmBox } from "../components/ConfirmBox";
+import { Button, Chip } from "../components/ui";
 
 /** What the editor adds: a booking kind, a ticket (a booked plan), or an idea (a plan
  * without a day, "place" here and in the API's own words). */
@@ -196,9 +197,9 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
       {!entry && booking && (
         <div className="chips" role="group" aria-label="What kind of booking">
           {BOOKINGS.map((b) => (
-            <button key={b.kind} type="button" className="day-pill" aria-pressed={f.kind === b.kind} onClick={() => pick(b.kind)}>
+            <Chip key={b.kind} pressed={f.kind === b.kind} onClick={() => pick(b.kind)}>
               {b.label}
-            </button>
+            </Chip>
           ))}
         </div>
       )}
@@ -249,9 +250,9 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
             {lists.length > 0 && (
               <div className="chips">
                 {lists.map((name) => (
-                  <button key={name} type="button" className="day-pill" aria-pressed={f.list === name} onClick={() => setF({ ...f, list: f.list === name ? "" : name })}>
+                  <Chip key={name} pressed={f.list === name} onClick={() => setF({ ...f, list: f.list === name ? "" : name })}>
                     {name}
-                  </button>
+                  </Chip>
                 ))}
               </div>
             )}
@@ -384,21 +385,21 @@ export function EntryEditor({ trip, home, entry, preset, lists = [], onDone, onM
       )}
       {!confirming && (
       <div className="actions">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <Button type="submit" variant="primary" disabled={busy}>
           {entry ? "Save" : "Add"}
-        </button>
-        <button type="button" className="btn" onClick={() => onDone(false)}>
+        </Button>
+        <Button onClick={() => onDone(false)}>
           Cancel
-        </button>
+        </Button>
         {entry && entry.kind === "activity" && onMove && (
-          <button type="button" className="btn btn-soft" onClick={onMove}>
+          <Button variant="secondary" onClick={onMove}>
             Move to…
-          </button>
+          </Button>
         )}
         {entry && (
-          <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => setConfirming(true)}>
+          <Button variant="danger" disabled={busy} onClick={() => setConfirming(true)}>
             Remove
-          </button>
+          </Button>
         )}
       </div>
       )}

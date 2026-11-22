@@ -19,6 +19,7 @@ import { PackingCard, WeatherCard } from "./TripExtras";
 import { AddTodoForm, CoverRow, CoverSheet, localDay, PrepChoiceSheet, TodoRow, type PrepChoice } from "./TripPrepParts";
 import { useAppRole } from "./TripBits";
 import { type Fix, sortedText, stillToSort } from "./TripStage";
+import { Button, Section } from "../components/ui";
 
 const failure = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -60,15 +61,18 @@ function NotesEditor({ trip, onChange }: { trip: Trip; onChange: () => void }) {
   }
 
   return (
-    <section className="card prep-notes" aria-labelledby="trip-notes">
-      <div className="card-head">
-        <h2 id="trip-notes">Notes</h2>
-        {done && (
+    <Section
+      id="trip-notes"
+      title="Notes"
+      action={
+        done && (
           <span className="caption" role="status">
             Saved
           </span>
-        )}
-      </div>
+        )
+      }
+      className="prep-notes"
+    >
       <form onSubmit={(e) => void save(e)} aria-label="Trip notes">
         <label className="field">
           Notes
@@ -83,9 +87,9 @@ function NotesEditor({ trip, onChange }: { trip: Trip; onChange: () => void }) {
           />
         </label>
         <div className="prep-notes-actions">
-          <button type="submit" className="btn btn-soft" disabled={!changed || busy}>
+          <Button type="submit" variant="secondary" disabled={!changed || busy}>
             {busy ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       </form>
       {error && (
@@ -93,7 +97,7 @@ function NotesEditor({ trip, onChange }: { trip: Trip; onChange: () => void }) {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -141,11 +145,7 @@ function GettingReady({
   // Once the trip is over there is nothing to get ready for; to-dos still left are shown, not added to.
   if (finished && prep.todos.length === 0) return null;
   return (
-    <section className="card prep-card" aria-labelledby="prep-ready">
-      <div className="card-head">
-        <h2 id="prep-ready">Getting ready</h2>
-        {count > 0 && <span className="caption">{count} to do</span>}
-      </div>
+    <Section id="prep-ready" title="Getting ready" action={count > 0 && <span className="caption">{count} to do</span>} className="prep-card">
       {count === 0 && !finished && (
         <p className="sorted-line" role="status">
           <Icon name="check" size={16} className="icon-inline" />
@@ -162,34 +162,30 @@ function GettingReady({
               <div className="prep-main">
                 <span className="prep-title">{g.text}</span>
               </div>
-              <button type="button" className="btn btn-soft btn-small" onClick={() => onFix(g.fix)} aria-label={`${g.action}: ${g.text}`}>
+              <Button variant="secondary" size="sm" onClick={() => onFix(g.fix)} aria-label={`${g.action}: ${g.text}`}>
                 {g.action}
-              </button>
+              </Button>
             </li>
           ))}
           {suggestions.map((s) => (
             <li key={s.key} className="prep-row prep-suggestion">
-              <span className="prep-icon" aria-hidden="true">
-                <Icon name="sparkle" size={20} />
-              </span>
               <div className="prep-main">
                 <span className="prep-title">{s.text}</span>
                 <span className="prep-sub">{s.sub}</span>
               </div>
               <div className="prep-actions">
-                <button
-                  type="button"
-                  className="btn btn-soft btn-small"
+                <Button
+                  variant="secondary" size="sm"
                   disabled={busy !== null}
                   aria-label={`Add: ${s.text}`}
                   onClick={() => (s.action === "add_cover" ? onCover(kindOfSuggestion(s)) : void onAddTodo(s.text, null))}
                 >
                   Add
-                </button>
-                <button type="button" className="btn btn-ghost btn-small prep-act" disabled={busy !== null} aria-label={`Not needed: ${s.text}`} onClick={() => onDismiss(s.key)}>
+                </Button>
+                <Button variant="text" size="sm" className="prep-act" disabled={busy !== null} aria-label={`Not needed: ${s.text}`} onClick={() => onDismiss(s.key)}>
                   <Icon name="x" size={16} />
                   Not needed
-                </button>
+                </Button>
               </div>
             </li>
           ))}
@@ -204,7 +200,7 @@ function GettingReady({
         </p>
       )}
       {!finished && <AddTodoForm onAdd={onAddTodo} inputRef={inputRef} />}
-    </section>
+    </Section>
   );
 }
 
@@ -224,10 +220,7 @@ function CoverCard({
   // Once the trip is over nothing is added; what was kept is still there to read.
   if (trip.status === "finished" && covers.length === 0) return null;
   return (
-    <section className="card prep-card" aria-labelledby="prep-cover">
-      <div className="card-head">
-        <h2 id="prep-cover">Cover and documents</h2>
-      </div>
+    <Section id="prep-cover" title="Cover and documents" className="prep-card">
       {covers.length === 0 ? (
         <p className="state">Travel insurance, visas and other documents go here.</p>
       ) : (
@@ -238,14 +231,14 @@ function CoverCard({
         </ul>
       )}
       {trip.status !== "finished" && (
-        <button type="button" className="btn btn-ghost prep-add-cover" onClick={() => onOpen(null)}>
+        <Button variant="text" className="prep-add-cover" onClick={() => onOpen(null)}>
           <Icon name="plus" size={16} />
           Add cover or a document
-        </button>
+        </Button>
       )}
       {/* A guest has no chat to tell. */}
       {trip.status !== "finished" && role !== "guest" && <p className="caption">Or tell Nexus: "Add travel insurance, Harbour Cover, SGD 89, policy TX-4471".</p>}
-    </section>
+    </Section>
   );
 }
 

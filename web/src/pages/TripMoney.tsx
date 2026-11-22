@@ -24,6 +24,7 @@ import { day } from "./TripBits";
 import { tripBody } from "./TripEntry";
 import { KIND_LABEL, LogAction, LogConfirm, useCoverLog } from "./TripPrepParts";
 import { balanceAmount, stageOf } from "./TripStage";
+import { Button, Row, RowList, Section } from "../components/ui";
 
 const amount = (m: Money | null) => (m ? Number(m.amount) : 0);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -388,9 +389,9 @@ export function NameChips({
           />
         </label>
         {!addOnBlur && (
-          <button type="button" className="btn btn-soft" disabled={busy || text.trim() === ""} onClick={add}>
+          <Button variant="secondary" disabled={busy || text.trim() === ""} onClick={add}>
             Add
-          </button>
+          </Button>
         )}
       </div>
       {problem && (
@@ -557,12 +558,12 @@ function PaidForm({ trip, home, payment, onChange, onDone }: { trip: Trip; home:
         </fieldset>
       )}
       <div className="people-actions">
-        <button type="submit" className="btn btn-primary" disabled={!ready || busy}>
+        <Button type="submit" variant="primary" disabled={!ready || busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
-        <button type="button" className="btn" onClick={onDone} disabled={busy}>
+        </Button>
+        <Button onClick={onDone} disabled={busy}>
           Cancel
-        </button>
+        </Button>
       </div>
       {error && (
         <p className="error-text" role="alert">
@@ -643,16 +644,16 @@ function SettleRow({ trip, b, onSettled }: { trip: Trip; b: Balance; onSettled: 
           )}
         </div>
         {hasParts && !confirming && (
-          <button type="button" className="btn btn-soft" aria-label={`Settle up with ${b.person}`} onClick={() => setConfirming(true)}>
+          <Button variant="secondary" aria-label={`Settle up with ${b.person}`} onClick={() => setConfirming(true)}>
             Settle up
-          </button>
+          </Button>
         )}
       </div>
       {hasParts && (
-        <button type="button" className="btn btn-ghost btn-small todo-more" aria-expanded={open} aria-controls={`settle-parts-${key}`} onClick={() => setOpen(!open)}>
+        <Button variant="text" size="sm" className="todo-more" aria-expanded={open} aria-controls={`settle-parts-${key}`} onClick={() => setOpen(!open)}>
           Details
           <Icon name="chevron" size={16} className="money-chev" />
-        </button>
+        </Button>
       )}
       {open && <BalanceParts b={b} id={`settle-parts-${key}`} />}
       {confirming && (
@@ -665,12 +666,12 @@ function SettleRow({ trip, b, onSettled }: { trip: Trip; b: Balance; onSettled: 
             </label>
           )}
           <div className="people-actions">
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void settle()}>
+            <Button variant="primary" disabled={busy} onClick={() => void settle()}>
               {busy ? "Recording…" : "Mark settled"}
-            </button>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setConfirming(false)}>
+            </Button>
+            <Button variant="text" disabled={busy} onClick={() => setConfirming(false)}>
               Not now
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -732,8 +733,7 @@ function TodoCard({ detail, onChange }: { detail: TripDetail; onChange: () => vo
     }, "Couldn't change that");
 
   return (
-    <section className="card money-todo" aria-labelledby="money-todo">
-      <h2 id="money-todo">To do</h2>
+    <Section id="money-todo" title="To do" className="money-todo">
       {balances.length > 0 && <p className="money-note">Nexus records what you say happened. It doesn't move money.</p>}
       {outcome && (
         <div className="split-outcome" role="status">
@@ -774,53 +774,52 @@ function TodoCard({ detail, onChange }: { detail: TripDetail; onChange: () => vo
                   <span className="todo-sub">{toSplitSub(items, home)}</span>
                 </div>
                 {!confirming && (
-                  <button type="button" className="btn btn-soft" disabled={busy} aria-label="Split all evenly" onClick={() => setConfirming(true)}>
+                  <Button variant="secondary" disabled={busy} aria-label="Split all evenly" onClick={() => setConfirming(true)}>
                     Split
-                  </button>
+                  </Button>
                 )}
               </div>
               {confirming && (
                 <div className="confirm-box" role="group" aria-label="Confirm splitting all">
                   <p>{splitAskText(items, others, home)}</p>
                   <div className="people-actions">
-                    <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void split({ all: true })}>
+                    <Button variant="primary" disabled={busy} onClick={() => void split({ all: true })}>
                       {busy ? "Splitting…" : "Split evenly"}
-                    </button>
-                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setConfirming(false)}>
+                    </Button>
+                    <Button variant="text" disabled={busy} onClick={() => setConfirming(false)}>
                       Not now
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
-              <button type="button" className="btn btn-ghost btn-small todo-more" aria-expanded={seeing} aria-controls="todo-costs" onClick={() => setSeeing(!seeing)}>
+              <Button variant="text" size="sm" className="todo-more" aria-expanded={seeing} aria-controls="todo-costs" onClick={() => setSeeing(!seeing)}>
                 See costs
                 <Icon name="chevron" size={16} className="money-chev" />
-              </button>
+              </Button>
               {seeing && (
-                <ul className="money-rows" id="todo-costs" aria-label="To split">
+                <RowList id="todo-costs" aria-label="To split">
                   {items.map((i) => {
                     const name = i.counterparty ?? "this cost";
                     return (
-                      <li key={i.transaction_id}>
-                        <div className="money-row">
-                          <div className="money-row-main">
-                            <span className="money-row-title">{i.counterparty ?? "Expense"}</span>
-                            <span className="money-row-sub">{day(i.day)}</span>
-                          </div>
-                          <span className="num money-row-amount">{formatWithHome(i.amount, i.home)}</span>
-                          <span className="money-row-actions">
-                            <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
+                      <Row
+                        key={i.transaction_id}
+                        title={i.counterparty ?? "Expense"}
+                        sub={day(i.day)}
+                        trailing={formatWithHome(i.amount, i.home)}
+                        actions={
+                          <>
+                            <Button variant="secondary" size="sm" disabled={busy} aria-label={`Split ${name} evenly`} onClick={() => void split({ transaction_ids: [i.transaction_id] })}>
                               Split
-                            </button>
-                            <button type="button" className="btn btn-soft btn-small" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id])}>
+                            </Button>
+                            <Button variant="secondary" size="sm" disabled={busy} aria-label={`Keep ${name} as just mine`} onClick={() => void keepMine([i.transaction_id])}>
                               Just mine
-                            </button>
-                          </span>
-                        </div>
-                      </li>
+                            </Button>
+                          </>
+                        }
+                      />
                     );
                   })}
-                </ul>
+                </RowList>
               )}
             </li>
           )}
@@ -843,7 +842,7 @@ function TodoCard({ detail, onChange }: { detail: TripDetail; onChange: () => vo
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -874,7 +873,7 @@ function PaidByOthersPanel({ detail, onChange }: { detail: TripDetail; onChange:
   return (
     <>
       <p className="money-note">Your share is what you owe them</p>
-      <ul className="money-rows" aria-label="Paid by others">
+      <RowList aria-label="Paid by others">
         {payments.map((p) => {
           const what = `${p.person}${p.note ? `, ${p.note}` : ""}`;
           if (editing === p.id) {
@@ -885,50 +884,48 @@ function PaidByOthersPanel({ detail, onChange }: { detail: TripDetail; onChange:
             );
           }
           return (
-            <li key={p.id} className={p.settled ? "is-settled" : undefined}>
-              <div className="money-row">
-                <div className="money-row-main">
-                  <span className="money-row-title">
-                    {p.person} paid{p.note ? ` for ${p.note}` : ""}
-                  </span>
-                  <span className="money-row-sub">
-                    {day(p.paid_on)} · split with you{p.split_with.length > 0 ? `, ${joinNames(p.split_with)}` : ""}
-                    {p.settled && " · settled"}
-                  </span>
-                </div>
-                <span className="money-row-amount">
-                  <span className="num">{formatMoney(p.amount)}</span>
-                  <span className="money-row-sub">your share {formatMoney(p.my_share)}</span>
-                </span>
-                {!p.settled && removing !== p.id && (
-                  <span className="money-row-actions">
-                    <button type="button" className="btn btn-ghost btn-small" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
+            <Row
+              key={p.id}
+              className={p.settled ? "is-settled" : undefined}
+              title={`${p.person} paid${p.note ? ` for ${p.note}` : ""}`}
+              sub={`${day(p.paid_on)} · split with you${p.split_with.length > 0 ? `, ${joinNames(p.split_with)}` : ""}${p.settled ? " · settled" : ""}`}
+              trailing={
+                <>
+                  <span>{formatMoney(p.amount)}</span>
+                  <span className="row-sub">your share {formatMoney(p.my_share)}</span>
+                </>
+              }
+              actions={
+                !p.settled && removing !== p.id ? (
+                  <>
+                    <Button variant="text" size="sm" aria-label={`Change what ${what} paid`} onClick={() => setEditing(p.id)}>
                       <Icon name="edit" size={16} />
                       Edit
-                    </button>
-                    <button type="button" className="btn btn-ghost btn-danger btn-small" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
+                    </Button>
+                    <Button variant="danger" size="sm" aria-label={`Remove what ${what} paid`} onClick={() => setRemoving(p.id)}>
                       Remove
-                    </button>
-                  </span>
-                )}
-              </div>
+                    </Button>
+                  </>
+                ) : undefined
+              }
+            >
               {removing === p.id && (
                 <div className="confirm-box" role="group" aria-label={`Remove what ${what} paid`}>
                   <p>Remove this? It won't count towards what you owe {p.person}.</p>
                   <div className="people-actions">
-                    <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => void remove(p)}>
+                    <Button variant="danger" disabled={busy} onClick={() => void remove(p)}>
                       Remove
-                    </button>
-                    <button type="button" className="btn" disabled={busy} onClick={() => setRemoving(null)}>
+                    </Button>
+                    <Button disabled={busy} onClick={() => setRemoving(null)}>
                       Keep
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
-            </li>
+            </Row>
           );
         })}
-      </ul>
+      </RowList>
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -941,22 +938,19 @@ function PaidByOthersPanel({ detail, onChange }: { detail: TripDetail; onChange:
 /** The + on the Money tab, once someone else is going: a planned cost, or a cost someone else paid. */
 function AddChoice({ onPick, onCancel }: { onPick: (kind: "planned" | "paid") => void; onCancel: () => void }) {
   return (
-    <section className="card" aria-labelledby="add-choice">
-      <div className="card-head">
-        <h2 id="add-choice">What are you adding?</h2>
-      </div>
+    <Section id="add-choice" title="What are you adding?">
       <div className="people-actions choice-actions">
-        <button type="button" className="btn btn-soft" onClick={() => onPick("planned")}>
+        <Button variant="secondary" onClick={() => onPick("planned")}>
           A planned cost
-        </button>
-        <button type="button" className="btn btn-soft" onClick={() => onPick("paid")}>
+        </Button>
+        <Button variant="secondary" onClick={() => onPick("paid")}>
           Someone else paid
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+        </Button>
+        <Button variant="text" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -1011,43 +1005,44 @@ function ExpensesPanel({
       {detail.items.length === 0 ? (
         <p className="money-note">None yet.</p>
       ) : (
-        <ul className="money-rows" aria-label="Trip expenses">
+        <RowList aria-label="Trip expenses">
           {detail.items.map((i) => {
             const tag = expenseTag(detail, i.transaction_id);
             const name = i.counterparty ?? "this cost";
             return (
-              <li key={i.transaction_id}>
-                <div className="money-row">
-                  <div className="money-row-main">
-                    <span className="money-row-title">{i.counterparty ?? "Expense"}</span>
-                    <span className="money-row-sub">
-                      {day(i.day)}
-                      {i.category && ` · ${i.category}`}
-                      {i.linked && " · added by hand"}
-                      {tag && (
-                        <>
-                          {" "}
-                          <span className={`money-tag${tag.split ? " money-tag-split" : ""}`}>{tag.text}</span>
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  <span className="num money-row-amount">{formatWithHome(i.amount, i.home)}</span>
-                  <span className="money-row-actions">
-                    {tag?.text === "Just mine" && trip.split_evenly && (
-                      <button type="button" className="btn btn-ghost btn-small" disabled={busy} aria-label={`Offer ${name} for splitting again`} onClick={() => void offerAgain(i.transaction_id)}>
-                        Offer again
-                      </button>
+              <Row
+                key={i.transaction_id}
+                title={i.counterparty ?? "Expense"}
+                sub={
+                  <>
+                    {day(i.day)}
+                    {i.category && ` · ${i.category}`}
+                    {i.linked && " · added by hand"}
+                    {tag && (
+                      <>
+                        {" · "}
+                        <span className={`money-tag${tag.split ? " money-tag-split" : ""}`}>{tag.text}</span>
+                      </>
                     )}
-                    <button type="button" className="btn btn-ghost btn-small" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
+                  </>
+                }
+                trailing={formatWithHome(i.amount, i.home)}
+                actions={
+                  <>
+                    {tag?.text === "Just mine" && trip.split_evenly && (
+                      <Button variant="text" size="sm" disabled={busy} aria-label={`Offer ${name} for splitting again`} onClick={() => void offerAgain(i.transaction_id)}>
+                        Offer again
+                      </Button>
+                    )}
+                    <Button variant="text" size="sm" onClick={() => onTakeOff(i.transaction_id)} aria-label={`Take ${i.counterparty ?? "this expense"} off the trip`}>
                       Take off
-                    </button>
-                  </span>
-                </div>
-              </li>
+                    </Button>
+                  </>
+                }
+              />
             );
           })}
-        </ul>
+        </RowList>
       )}
       {error && (
         <p className="error-text" role="alert">
@@ -1061,10 +1056,10 @@ function ExpensesPanel({
             <PaidForm trip={trip} home={home} onChange={onChange} onDone={onPayDone} />
           </div>
         ) : (
-          <button type="button" className="btn btn-ghost money-add" onClick={onPay}>
+          <Button variant="text" className="money-add" onClick={onPay}>
             <Icon name="plus" size={16} />
             Someone else paid
-          </button>
+          </Button>
         ))}
     </>
   );
@@ -1111,12 +1106,12 @@ function PlannedForm({ trip, currency, onChange, onDone }: { trip: Trip; currenc
           Amount ({currency})
           <input className="input" value={value} inputMode="decimal" onChange={(e) => setValue(e.target.value)} placeholder="0" />
         </label>
-        <button type="submit" className="btn btn-primary" disabled={!ready || busy}>
+        <Button type="submit" variant="primary" disabled={!ready || busy}>
           {busy ? "Saving…" : "Save"}
-        </button>
-        <button type="button" className="btn" onClick={onDone} disabled={busy}>
+        </Button>
+        <Button onClick={onDone} disabled={busy}>
           Cancel
-        </button>
+        </Button>
       </form>
       {error && (
         <p className="error-text" role="alert">
@@ -1170,27 +1165,24 @@ function PlannedPanel({
       {entries.length === 0 ? (
         <p className="money-note">None yet.</p>
       ) : (
-        <ul className="money-rows" aria-label="Planned costs">
+        <RowList aria-label="Planned costs">
           {entries.map(([name, cost]) => {
             const spent = spentIn(name);
             return (
-              <li key={name}>
-                <div className="money-row">
-                  <div className="money-row-main">
-                    <span className="money-row-title">{name}</span>
-                    <span className="money-row-sub">{spent > 0 ? `${formatMoney(moneyOf(spent, home))} spent so far` : "Nothing spent yet"}</span>
-                  </div>
-                  <span className="num money-row-amount">{formatMoney(cost)}</span>
-                  <span className="money-row-actions">
-                    <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
-                      Remove
-                    </button>
-                  </span>
-                </div>
-              </li>
+              <Row
+                key={name}
+                title={name}
+                sub={spent > 0 ? `${formatMoney(moneyOf(spent, home))} spent so far` : "Nothing spent yet"}
+                trailing={formatMoney(cost)}
+                actions={
+                  <Button variant="danger" size="sm" disabled={busy !== null} onClick={() => void remove(name)} aria-label={`Remove planned cost ${name}`}>
+                    Remove
+                  </Button>
+                }
+              />
             );
           })}
-        </ul>
+        </RowList>
       )}
       {error && (
         <p className="error-text" role="alert">
@@ -1200,10 +1192,10 @@ function PlannedPanel({
       {adding ? (
         <PlannedForm trip={trip} currency={home} onChange={onChange} onDone={onAddDone} />
       ) : (
-        <button type="button" className="btn btn-ghost money-add" onClick={onAdd}>
+        <Button variant="text" className="money-add" onClick={onAdd}>
           <Icon name="plus" size={16} />
           Add a planned cost
-        </button>
+        </Button>
       )}
     </>
   );
@@ -1213,19 +1205,14 @@ function PlannedPanel({
 function CoverPaid({ cover, tripId, onChange }: { cover: Cover; tripId: string; onChange: () => void }) {
   const log = useCoverLog(tripId, cover, () => onChange());
   return (
-    <li>
-      <div className="money-row">
-        <div className="money-row-main">
-          <span className="money-row-title">{cover.name}</span>
-          <span className="money-row-sub">{KIND_LABEL[cover.kind]} · from Prep</span>
-        </div>
-        <span className="num money-row-amount">{cover.cost && formatMoney(cover.cost)}</span>
-        <span className="money-row-actions">
-          <LogAction cover={cover} log={log} />
-        </span>
-      </div>
+    <Row
+      title={cover.name}
+      sub={`${KIND_LABEL[cover.kind]} · from Prep`}
+      trailing={cover.cost && formatMoney(cover.cost)}
+      actions={<LogAction cover={cover} log={log} />}
+    >
       {log.confirming && <LogConfirm cover={cover} log={log} />}
-    </li>
+    </Row>
   );
 }
 
@@ -1238,24 +1225,19 @@ function BookingsPanel({ detail, onChange }: { detail: TripDetail; onChange: () 
   return (
     <>
       {positive(unlogged) && <p className="money-note">{formatMoney(unlogged)} not logged as an expense yet</p>}
-      <ul className="money-rows" aria-label="Bookings paid">
+      <RowList aria-label="Bookings paid">
         {costed.map((b) => (
-          <li key={b.id}>
-            <div className="money-row">
-              <div className="money-row-main">
-                <span className="money-row-title">{b.title}</span>
-                <span className="money-row-sub">
-                  {day(b.starts)} · {b.logged ? "Logged as an expense" : "Not logged yet"}
-                </span>
-              </div>
-              <span className="num money-row-amount">{b.cost && formatMoney(b.cost)}</span>
-            </div>
-          </li>
+          <Row
+            key={b.id}
+            title={b.title}
+            sub={`${day(b.starts)} · ${b.logged ? "Logged as an expense" : "Not logged yet"}`}
+            trailing={b.cost && formatMoney(b.cost)}
+          />
         ))}
         {covers.map((c) => (
           <CoverPaid key={c.id} cover={c} tripId={detail.trip.id} onChange={onChange} />
         ))}
-      </ul>
+      </RowList>
     </>
   );
 }
@@ -1268,7 +1250,7 @@ const coversPaid = (detail: TripDetail) => (detail.covers ?? []).filter((c) => c
 type SectionId = "where" | "planned" | "aside" | "bookings" | "expenses" | "paid" | "travellers";
 
 /** One row of the Details accordion: a 56px header button, and its content when open. */
-function Section({ id, title, summary, open, onToggle, children }: { id: SectionId; title: string; summary: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+function DetailRow({ id, title, summary, open, onToggle, children }: { id: SectionId; title: string; summary: string; open: boolean; onToggle: () => void; children: ReactNode }) {
   const base = `money-sec-${id}`;
   return (
     <div className="money-sec">
@@ -1323,10 +1305,7 @@ export function MoneySummary({ detail }: { detail: TripDetail }) {
   const barLabel = `${parts.map((p) => `${p.text.toLowerCase()} ${formatMoney(moneyOf(p.value, cur))}`).join(", ") || "nothing yet"}${t.budget ? ` of ${formatMoney(t.budget)}` : ""}`;
 
   return (
-    <section className="card money-summary" aria-labelledby="money-summary">
-      <h2 id="money-summary" className="money-label">
-        {label}
-      </h2>
+    <Section id="money-summary" title={label} className="money-summary">
       <p className="money-figure">
         <CountUp value={formatMoney(moneyOf(headline, cur))} />
         {t.budget && <> <span className="money-of">of {formatMoney(t.budget)}</span></>}
@@ -1361,7 +1340,7 @@ export function MoneySummary({ detail }: { detail: TripDetail }) {
         <p className={`money-left${diff > 0 ? " money-over" : ""}`}>{diff === 0 ? "On budget" : `${Math.abs(diff)}% ${diff > 0 ? "over" : "under"} budget`}</p>
       )}
       {after && t.companions.length > 0 && <p className="money-note">Your share, with {joinNames(t.companions)}</p>}
-    </section>
+    </Section>
   );
 }
 
@@ -1413,38 +1392,37 @@ export function MoneyTab({ detail, onChange, adding, onAddDone }: { detail: Trip
       {stage === "after" && todo}
       <MoneySummary detail={detail} />
       {stage !== "after" && todo}
-      <section className="card money-details" aria-labelledby="money-details">
-        <h2 id="money-details">Details</h2>
+      <Section id="money-details" title="Details" className="money-details">
         <div className="money-secs">
-          <Section id="where" title="Where it goes" summary={s ? plural(s.categories.length, "category", "categories") : ""} open={open === "where"} onToggle={() => toggle("where")}>
+          <DetailRow id="where" title="Where it goes" summary={s ? plural(s.categories.length, "category", "categories") : ""} open={open === "where"} onToggle={() => toggle("where")}>
             <WhereItGoes detail={detail} />
-          </Section>
-          <Section id="planned" title="Planned costs" summary={planned === 0 ? "None yet" : plural(planned, "cost")} open={open === "planned"} onToggle={() => toggle("planned")}>
+          </DetailRow>
+          <DetailRow id="planned" title="Planned costs" summary={planned === 0 ? "None yet" : plural(planned, "cost")} open={open === "planned"} onToggle={() => toggle("planned")}>
             <PlannedPanel detail={detail} onChange={onChange} adding={showForm("planned")} onAdd={() => setForm("planned")} onAddDone={formDone} />
-          </Section>
+          </DetailRow>
           {detail.saving && trip.status === "upcoming" && (
-            <Section id="aside" title="Setting money aside" summary={positive(detail.saving.per_payday) ? "Monthly" : "Not set"} open={open === "aside"} onToggle={() => toggle("aside")}>
+            <DetailRow id="aside" title="Setting money aside" summary={positive(detail.saving.per_payday) ? "Monthly" : "Not set"} open={open === "aside"} onToggle={() => toggle("aside")}>
               <SetAside detail={detail} />
-            </Section>
+            </DetailRow>
           )}
           {costed > 0 && (
-            <Section id="bookings" title="Bookings paid" summary={plural(costed, "booking")} open={open === "bookings"} onToggle={() => toggle("bookings")}>
+            <DetailRow id="bookings" title="Bookings paid" summary={plural(costed, "booking")} open={open === "bookings"} onToggle={() => toggle("bookings")}>
               <BookingsPanel detail={detail} onChange={onChange} />
-            </Section>
+            </DetailRow>
           )}
-          <Section id="expenses" title="Expenses" summary={detail.items.length === 0 ? "None yet" : `${detail.items.length} so far`} open={open === "expenses"} onToggle={() => toggle("expenses")}>
+          <DetailRow id="expenses" title="Expenses" summary={detail.items.length === 0 ? "None yet" : `${detail.items.length} so far`} open={open === "expenses"} onToggle={() => toggle("expenses")}>
             <ExpensesPanel detail={detail} onTakeOff={(t) => void takeOff(t)} onChange={onChange} paying={showForm("paid")} onPay={() => setForm("paid")} onPayDone={formDone} />
-          </Section>
+          </DetailRow>
           {payments.length > 0 && (
-            <Section id="paid" title="Paid by others" summary={plural(payments.length, "payment")} open={open === "paid"} onToggle={() => toggle("paid")}>
+            <DetailRow id="paid" title="Paid by others" summary={plural(payments.length, "payment")} open={open === "paid"} onToggle={() => toggle("paid")}>
               <PaidByOthersPanel detail={detail} onChange={onChange} />
-            </Section>
+            </DetailRow>
           )}
-          <Section id="travellers" title="Travellers" summary={joinNames(["You", ...trip.companions])} open={open === "travellers"} onToggle={() => toggle("travellers")}>
+          <DetailRow id="travellers" title="Travellers" summary={joinNames(["You", ...trip.companions])} open={open === "travellers"} onToggle={() => toggle("travellers")}>
             <TravellersPanel trip={trip} onChange={onChange} />
-          </Section>
+          </DetailRow>
         </div>
-      </section>
+      </Section>
       {error && (
         <p className="error-text" role="alert">
           {error}

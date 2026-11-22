@@ -6,6 +6,7 @@ import { Sheet } from "../components/Sheet";
 import { formatMoney } from "../format";
 import { isMember, useHome } from "./TripBits";
 import { dayName } from "./TripEntry";
+import { Button, ButtonLink, Chip, Row, RowList } from "../components/ui";
 
 // The parts of the Prep tab: to-do rows and their form, cover and document rows and their sheet, the
 // confirmation before a cover's cost is logged (Prep and Money both use it) and the + button's choice.
@@ -67,9 +68,9 @@ export function TodoRow({ todo, today, onToggle, onRemove }: { todo: Todo; today
           </span>
         )}
       </div>
-      <button type="button" className="btn btn-ghost prep-remove" aria-label={`Remove ${todo.text}`} onClick={onRemove}>
+      <Button variant="text" className="prep-remove" aria-label={`Remove ${todo.text}`} onClick={onRemove}>
         <Icon name="x" size={18} />
-      </button>
+      </Button>
     </li>
   );
 }
@@ -102,9 +103,9 @@ export function AddTodoForm({ onAdd, inputRef }: { onAdd: (text: string, due: st
           By (optional)
           <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
         </label>
-        <button type="submit" className="btn btn-soft" disabled={!text.trim() || busy}>
+        <Button type="submit" variant="secondary" disabled={!text.trim() || busy}>
           Add
-        </button>
+        </Button>
       </div>
       <p className="caption">With a date, Nexus reminds you the day before.</p>
     </form>
@@ -126,10 +127,10 @@ export function CopyReference({ reference }: { reference: string }) {
     }
   }
   return (
-    <button type="button" className="btn btn-ghost btn-small prep-act" onClick={() => void copy()} aria-label={`Copy reference ${reference}`}>
+    <Button variant="text" size="sm" className="prep-act" onClick={() => void copy()} aria-label={`Copy reference ${reference}`}>
       <Icon name="copy" size={16} />
       {copied ? "Copied" : "Copy"}
-    </button>
+    </Button>
   );
 }
 
@@ -172,12 +173,12 @@ export function LogConfirm({ cover, log }: { cover: Cover; log: CoverLog }) {
     <div className="confirm-box" role="group" aria-label={`Log ${cover.name}`}>
       <p>Record {formatMoney(cover.cost)} as spent on Travel? Nexus only records it.</p>
       <div className="people-actions">
-        <button type="button" className="btn btn-primary" disabled={log.busy} onClick={() => void log.log()}>
+        <Button variant="primary" disabled={log.busy} onClick={() => void log.log()}>
           {log.busy ? "Logging…" : "Log it"}
-        </button>
-        <button type="button" className="btn btn-ghost" disabled={log.busy} onClick={log.cancel}>
+        </Button>
+        <Button variant="text" disabled={log.busy} onClick={log.cancel}>
           Not now
-        </button>
+        </Button>
       </div>
       {log.error && (
         <p className="error-text" role="alert">
@@ -201,9 +202,9 @@ export function LogAction({ cover, log, label = "Log it" }: { cover: Cover; log:
   }
   if (log.confirming) return null;
   return (
-    <button type="button" className="btn btn-soft btn-small" aria-label={`${label}: ${cover.name}`} onClick={log.ask}>
+    <Button variant="secondary" size="sm" aria-label={`${label}: ${cover.name}`} onClick={log.ask}>
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -232,10 +233,10 @@ export function CoverRow({ cover, tripId, onOpen, onLogged }: { cover: Cover; tr
       {(cover.phone || cover.reference) && (
         <div className="prep-acts">
           {cover.phone && (
-            <a className="btn btn-ghost btn-small prep-act" href={`tel:${callable}`}>
+            <ButtonLink variant="text" size="sm" className="prep-act" href={`tel:${callable}`}>
               <Icon name="phone" size={16} />
               Call {cover.phone}
-            </a>
+            </ButtonLink>
           )}
           {cover.reference && <CopyReference reference={cover.reference} />}
         </div>
@@ -259,21 +260,19 @@ function KindChips({ value, onChange }: { value: CoverKind; onChange: (kind: Cov
   return (
     <div className="chips" role="radiogroup" aria-label="Kind">
       {COVER_KINDS.map((k, i) => (
-        <button
+        <Chip
           key={k}
           ref={(el) => {
-            chips.current[i] = el;
+            chips.current[i] = el as HTMLButtonElement | null;
           }}
-          type="button"
           role="radio"
           aria-checked={value === k}
           tabIndex={value === k ? 0 : -1}
-          className="day-pill"
           onClick={() => onChange(k)}
           onKeyDown={(e) => move(e, i)}
         >
           {KIND_LABEL[k]}
-        </button>
+        </Chip>
       ))}
     </div>
   );
@@ -374,14 +373,14 @@ export function CoverSheet({
       footer={
         <div className="prep-sheet-foot">
           {cover && !asking && (
-            <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => setAsking(true)}>
+            <Button variant="danger" disabled={busy} onClick={() => setAsking(true)}>
               <Icon name="trash" size={16} />
               Delete
-            </button>
+            </Button>
           )}
-          <button type="submit" className="btn btn-primary" disabled={busy || !form.name.trim()}>
+          <Button type="submit" variant="primary" disabled={busy || !form.name.trim()}>
             {busy ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       }
     >
@@ -429,13 +428,13 @@ export function CoverSheet({
           <div className="confirm-box" role="group" aria-label={`Delete ${cover.name}`}>
             <p>Delete {cover.name}? An expense you already logged for it stays in the ledger.</p>
             <div className="people-actions">
-              <button type="button" className="btn btn-ghost btn-danger" disabled={busy} onClick={() => void remove()}>
+              <Button variant="danger" disabled={busy} onClick={() => void remove()}>
                 <Icon name="trash" size={16} />
                 {busy ? "Deleting…" : `Delete ${cover.name}`}
-              </button>
-              <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setAsking(false)}>
+              </Button>
+              <Button variant="text" disabled={busy} onClick={() => setAsking(false)}>
                 Keep it
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -453,29 +452,21 @@ export function CoverSheet({
 
 export type PrepChoice = "todo" | "cover" | "pack";
 
-const CHOICES: { choice: PrepChoice; icon: IconName; title: string; text: string }[] = [
-  { choice: "todo", icon: "checkbox", title: "A to-do", text: "Something to sort before you go. With a date, you get a reminder." },
-  { choice: "cover", icon: "shield", title: "Cover or a document", text: "Insurance, a visa or another document." },
-  { choice: "pack", icon: "suitcase", title: "Something to pack", text: "Add it to the packing list." },
+const CHOICES: { choice: PrepChoice; title: string; text: string }[] = [
+  { choice: "todo", title: "A to-do", text: "Something to sort before you go. With a date, you get a reminder." },
+  { choice: "cover", title: "Cover or a document", text: "Insurance, a visa or another document." },
+  { choice: "pack", title: "Something to pack", text: "Add it to the packing list." },
 ];
 
 /** What the Prep tab's + adds. Picking one closes this and takes you to the matching form. */
 export function PrepChoiceSheet({ onPick, onClose }: { onPick: (choice: PrepChoice) => void; onClose: () => void }) {
   return (
     <Sheet title="Add to prep" onClose={onClose}>
-      <div className="ways">
+      <RowList className="prep-choices">
         {CHOICES.map((c) => (
-          <button key={c.choice} type="button" className="way" onClick={() => onPick(c.choice)}>
-            <span className="way-icon" aria-hidden="true">
-              <Icon name={c.icon} size={22} />
-            </span>
-            <span>
-              <strong>{c.title}</strong>
-              <span className="caption">{c.text}</span>
-            </span>
-          </button>
+          <Row key={c.choice} title={c.title} sub={c.text} onClick={() => onPick(c.choice)} />
         ))}
-      </div>
+      </RowList>
     </Sheet>
   );
 }

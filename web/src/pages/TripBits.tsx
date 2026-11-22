@@ -7,6 +7,8 @@ import { Icon } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { PlaceLine } from "./TripPlaces";
 
+import "./travel.css";
+
 export const day = (iso: string) => formatShortDate(iso, "UTC");
 
 /** Today in the browser's own time zone, as YYYY-MM-DD. */
@@ -99,7 +101,7 @@ export function TripCard({ trip }: { trip: Trip }) {
       <span className="trip-card-photo" style={{ backgroundImage: photoBackground(trip) }} aria-hidden="true" />
       <span className="trip-card-body">
         <span className="trip-card-top">
-          <Link className="trip-card-link accent-serif" to={`/travel/trips/${trip.id}`}>
+          <Link className="trip-card-link" to={`/travel/trips/${trip.id}`}>
             {trip.destination}
           </Link>
           <span className="trip-card-when">{tripWhen(trip)}</span>
@@ -333,7 +335,7 @@ export function stopOfDay(stops: TripStop[], iso: string): TripStop | null {
 
 /** A stop's colour, by its place in the order: the same on the stops row, the day pills
  * and the Ideas map. */
-const STOP_COLORS = ["var(--accent)", "var(--emerald-accent)", "var(--status-warning)", "var(--cyan-accent)"];
+const STOP_COLORS = ["var(--accent)", "var(--pal-slate)", "var(--status-warning)", "var(--pal-track)"];
 export const stopColor = (index: number) => STOP_COLORS[((index % STOP_COLORS.length) + STOP_COLORS.length) % STOP_COLORS.length];
 
 /** Plain words for what a place is, tried in order on its Google kind and its category. */

@@ -6,6 +6,9 @@ import { api, ApiError, type SharedBooking, type SharedTrip } from "../api";
 import { Icon, type IconName } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { PhotoCredit, coverStyle, legTimes, stopOfDay, todayIso, tripWhen } from "./TripBits";
+import { ButtonLink } from "../components/ui";
+
+import "./travel.css";
 
 const DAY_MS = 86400000;
 const day = (iso: string) => formatShortDate(iso, "UTC");
@@ -18,15 +21,15 @@ const KIND_ICON: Record<SharedBooking["kind"], IconName> = { flight: "flight", h
  * keeps the link itself from going with it. */
 function MapsLink({ query, name }: { query: string; name: string }) {
   return (
-    <a
-      className="btn btn-ghost btn-small"
+    <ButtonLink
+      variant="text" size="sm"
       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`}
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`Open ${name} in Google Maps`}
     >
       Maps
-    </a>
+    </ButtonLink>
   );
 }
 
@@ -146,7 +149,7 @@ export function SharedDays({ trip }: { trip: SharedTrip }) {
               {title && (
                 <>
                   {" "}
-                  <span className="accent-serif shared-day-title">{title}</span>
+                  <span className="shared-day-title">{title}</span>
                 </>
               )}
             </h3>
@@ -210,7 +213,7 @@ export function SharedTripPage() {
         <header className="trip-hero shared-hero">
           <div className={`trip-hero-photo${trip?.photo ? "" : " no-photo"}`} style={trip ? heroStyle(trip) : undefined}>
             <div className="trip-hero-bar">
-              <span className="trip-chip shared-chip">Shared with you · read only</span>
+              <span className="shared-chip">Shared with you · read only</span>
             </div>
             {trip?.photo && (
               <div className="trip-hero-credit">
@@ -219,7 +222,7 @@ export function SharedTripPage() {
             )}
           </div>
           <div className="trip-hero-body">
-            <h1 className="accent-serif shared-title">{trip?.destination ?? "A shared trip"}</h1>
+            <h1 className="shared-title">{trip?.destination ?? "A shared trip"}</h1>
             {trip && (
               <p className="trip-hero-meta">
                 <span>

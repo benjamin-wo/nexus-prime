@@ -5,6 +5,7 @@ import { api, type Trip, type TripShare } from "../api";
 import { ConfirmBox } from "../components/ConfirmBox";
 import { Sheet } from "../components/Sheet";
 import { PeopleSection } from "./TripPeople";
+import { Button } from "../components/ui";
 
 /** The trip's share sheet. People: who is on the trip, inviting someone (the owner) or leaving
  * (a member). Read-only link, for the owner only: made, copied, replaced or stopped here;
@@ -108,9 +109,9 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
         </p>
       )}
       {share.isSuccess && !link && (
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void create()}>
+        <Button variant="primary" disabled={busy} onClick={() => void create()}>
           {busy ? "Making the link…" : "Create a link"}
-        </button>
+        </Button>
       )}
       {link && (
         <>
@@ -119,9 +120,9 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
               The trip's link
             </label>
             <input id="share-link" ref={field} className="input" value={link} readOnly onFocus={(e) => e.target.select()} />
-            <button type="button" className="btn btn-primary" onClick={() => void copy()}>
+            <Button variant="primary" onClick={() => void copy()}>
               {copied ? "Copied" : "Copy"}
-            </button>
+            </Button>
           </div>
           {asking === "renew" && (
             <ConfirmBox
@@ -147,12 +148,12 @@ function ReadOnlyLink({ trip }: { trip: Trip }) {
           )}
           {!asking && (
             <div className="share-actions">
-              <button type="button" className="btn btn-ghost btn-small" disabled={busy} onClick={() => setAsking("renew")}>
+              <Button variant="text" size="sm" disabled={busy} onClick={() => setAsking("renew")}>
                 Make a new link
-              </button>
-              <button type="button" className="btn btn-ghost btn-danger btn-small" disabled={busy} onClick={() => setAsking("stop")}>
+              </Button>
+              <Button variant="danger" size="sm" disabled={busy} onClick={() => setAsking("stop")}>
                 Stop sharing
-              </button>
+              </Button>
             </div>
           )}
         </>

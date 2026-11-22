@@ -1,12 +1,12 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, type Reply, type Trip } from "../api";
-import { Icon, type IconName } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { formatShortDate } from "../format";
 import { EntryEditor, type EntryKind } from "./TripEntry";
 import { useAppRole, useHome } from "./TripBits";
 import { SavePlaces } from "./TripPlaces";
+import { Button, buttonClass, Row, RowList } from "../components/ui";
 
 export type AddPreset = {
   kind: EntryKind;
@@ -19,10 +19,10 @@ export type AddPreset = {
 };
 
 /** The three things a trip holds, each with its own short form. */
-const CHOICES: { form: "booking" | "plan" | "idea"; icon: IconName; title: string; text: string; kind: EntryKind }[] = [
-  { form: "booking", icon: "ticket", title: "A booking", text: "Flight, stay, train or ticket. It sits at its time on its day.", kind: "flight" },
-  { form: "plan", icon: "calendar", title: "A plan", text: "Something you mean to do on a day. Time is optional.", kind: "activity" },
-  { form: "idea", icon: "place", title: "An idea", text: "A place you might go. Put it on a day later.", kind: "place" },
+const CHOICES: { form: "booking" | "plan" | "idea"; title: string; text: string; kind: EntryKind }[] = [
+  { form: "booking", title: "A booking", text: "Flight, stay, train or ticket. It sits at its time on its day.", kind: "flight" },
+  { form: "plan", title: "A plan", text: "Something you mean to do on a day. Time is optional.", kind: "activity" },
+  { form: "idea", title: "An idea", text: "A place you might go. Put it on a day later.", kind: "place" },
 ];
 
 /** The form a preset opens straight into. */
@@ -98,9 +98,9 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
               {line.buttons && line.buttons.length > 0 && (
                 <div className="quick">
                   {line.buttons.flat().map((b) => (
-                    <button key={b.data} type="button" className="btn btn-soft btn-small" disabled={busy} onClick={() => press(i, b.data, b.label)}>
+                    <Button key={b.data} variant="secondary" size="sm" disabled={busy} onClick={() => press(i, b.data, b.label)}>
                       {b.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -122,9 +122,9 @@ function TypeIt({ trip, preset, onChanged }: { trip: Trip; preset: AddPreset | n
           onChange={(e) => setText(e.target.value)}
           placeholder={(preset && HINTS[preset.kind]) ?? HINT}
         />
-        <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+        <Button type="submit" variant="primary" disabled={busy || !text.trim()}>
           {busy ? "…" : "Send"}
-        </button>
+        </Button>
       </form>
     </div>
   );
@@ -170,36 +170,28 @@ export function AddSheet({
     <Sheet title={title} titleId="add-sheet-title" onClose={onClose} onBack={view !== "menu" ? () => setView("menu") : undefined} backLabel="Back to the ways to add">
       {view === "menu" && (
         <>
-          <div className="ways">
+          <RowList className="add-choices">
             {CHOICES.map((c) => (
-              <button
+              <Row
                 key={c.form}
-                type="button"
-                className="way main"
+                title={c.title}
+                sub={c.text}
                 onClick={() => {
                   setKind(c.kind);
                   setView(c.form);
                 }}
-              >
-                <span className="way-icon" aria-hidden="true">
-                  <Icon name={c.icon} size={22} />
-                </span>
-                <span>
-                  <strong>{c.title}</strong>
-                  <span className="caption">{c.text}</span>
-                </span>
-              </button>
+              />
             ))}
-          </div>
+          </RowList>
           <div className="quick-ways">
             <span className="caption">Quick ways</span>
             <div className="quick">
               {typing && (
-                <button type="button" className="btn btn-soft" onClick={() => setView("type")}>
+                <Button variant="secondary" onClick={() => setView("type")}>
                   Type it
-                </button>
+                </Button>
               )}
-              <label className="btn btn-soft">
+              <label className={buttonClass({ variant: "secondary" })}>
                 Screenshot or photo
                 <input
                   className="sr-only"
@@ -217,9 +209,9 @@ export function AddSheet({
                 />
               </label>
               {places && (
-                <button type="button" className="btn btn-soft" onClick={() => setView("place")}>
+                <Button variant="secondary" onClick={() => setView("place")}>
                   Find a place
-                </button>
+                </Button>
               )}
             </div>
           </div>

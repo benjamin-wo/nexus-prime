@@ -5,6 +5,7 @@ import { api, type Booking, type Trip, type TripWeather } from "../api";
 import { Icon } from "../components/Icon";
 import { formatShortDate } from "../format";
 import { degrees, WeatherIcon } from "./TripExtras";
+import { Button, ButtonLink } from "../components/ui";
 
 /** What a day's panel on the Plan tab says about the day beyond its plans: the weather on
  * one line and the night's stay as a strip (``DayWeather``, ``StayStrip``); and the pieces
@@ -27,9 +28,9 @@ function Copy({ text, label, children = "Copy" }: { text: string; label: string;
     }
   }
   return (
-    <button type="button" className="btn btn-soft btn-small" onClick={() => void copy()} aria-label={label}>
+    <Button variant="secondary" size="sm" onClick={() => void copy()} aria-label={label}>
       {copied ? "Copied" : children}
-    </button>
+    </Button>
   );
 }
 
@@ -50,9 +51,9 @@ function Reference({ booking }: { booking: Booking }) {
 export function PlaceActions({ name, address, copyText = "Copy" }: { name: string; address: string | null; copyText?: string }) {
   return (
     <span className="quick">
-      <a className="btn btn-soft btn-small" href={mapsLink(address ? `${name}, ${address}` : name)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name} in Maps`}>
+      <ButtonLink variant="secondary" size="sm" href={mapsLink(address ? `${name}, ${address}` : name)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${name} in Maps`}>
         Maps
-      </a>
+      </ButtonLink>
       {address && (
         <Copy text={address} label={`Copy the address of ${name}`}>
           {copyText}
