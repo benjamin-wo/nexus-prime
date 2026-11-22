@@ -1,0 +1,29 @@
+/* Figures (DESIGN.md §3 Figure, §5): a label, the amount in Bricolage with tabular lining digits, and a muted
+   line under it. Figure.tsx writes .tile (large) or .mini-tile (small, in a .mini-tiles row); page CSS that
+   targets them (".tiles-quiet .tile", ".spend-card .mini-tiles") stays in styles.css. */
+.tile, .mini-tile { display: grid; align-content: start; min-width: 0; container-type: inline-size; }
+
+/* Large: a headline figure of its own. */
+.tile { gap: var(--space-2); }
+.tile .caption { font-size: 0.875rem; color: var(--text-secondary); }
+.tile .value {
+  font-family: var(--font-ui); font-weight: 600; color: var(--text-strong); letter-spacing: -0.03em; line-height: 1.15;
+  font-variant-numeric: tabular-nums lining-nums; overflow-wrap: break-word;
+  /* It sizes to its box, so an amount never breaks inside its figure. */
+  font-size: clamp(1.25rem, 14cqi, 1.875rem);
+}
+.tile .extra { font-size: 0.8125rem; color: var(--text-muted); }
+
+/* Small: one of a row of figures. */
+.mini-tile { gap: 6px; padding: var(--space-4); border-radius: 16px; background: var(--bg-card-hover); }
+.mini-value {
+  font-family: var(--font-ui); font-weight: 600; color: var(--text-strong); letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums lining-nums; overflow-wrap: break-word;
+  font-size: clamp(1rem, 13cqi, 1.25rem);
+}
+.mini-value.good { color: var(--emerald-accent); }
+
+@media (max-width: 720px) {
+  .tile { padding: var(--space-4); }
+  .mini-tile { padding: var(--space-3); }
+}

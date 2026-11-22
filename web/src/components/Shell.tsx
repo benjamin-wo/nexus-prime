@@ -11,7 +11,7 @@ import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { NexusMark } from "./NexusMark";
-import { Button } from "./ui";
+import { Button, Tabs } from "./ui";
 
 /** True while the page is being scrolled down (past its top, short of its end):
  * the floating buttons step aside then, so they never sit on what's being read,
@@ -258,18 +258,7 @@ export function Shell({
         <div className="content" ref={content}>
           {/* One tab is no choice: only show the bar when there are two or more. */}
           {here && here.tabs.length > 1 && (
-            <nav className="dept-tabs" aria-label={`${here.label} pages`}>
-              {here.tabs.map((tab) => (
-                <NavLink
-                  key={tab.to}
-                  to={tab.to}
-                  end={tab.end}
-                  className={({ isActive }) => `dept-tab${isActive ? " active" : ""}`}
-                >
-                  {tab.label}
-                </NavLink>
-              ))}
-            </nav>
+            <Tabs label={`${here.label} pages`} items={here.tabs} />
           )}
           {children}
         </div>

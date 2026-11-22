@@ -46,6 +46,9 @@ const Settings = lazyNamed(() => import("./pages/Settings"), "Settings");
 const SettingsSection = lazyNamed(() => import("./pages/Settings"), "SettingsSection");
 const TripInvite = lazyNamed(() => import("./pages/TripInvite"), "TripInvite");
 const Upcoming = lazyNamed(() => import("./pages/Upcoming"), "Upcoming");
+/** Dev only: every building block in each state. Vite folds import.meta.env.DEV to false in a production
+ * build, so the import is dropped and the page never ships. */
+const BlocksGallery = import.meta.env.DEV ? lazyNamed(() => import("./pages/BlocksGallery"), "BlocksGallery") : null;
 
 const pageLoading = <p className="state">Loading…</p>;
 
@@ -242,6 +245,7 @@ function Cockpit({ me }: { me: Me }) {
             <Route path="/budgets" element={<Navigate to="/accounting/budgets" replace />} />
             <Route path="/email" element={<Navigate to="/settings/email" replace />} />
             <Route path="/import" element={<Navigate to="/settings/import" replace />} />
+            {BlocksGallery && <Route path="/dev/blocks" element={<BlocksGallery />} />}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </EditTransactionProvider>

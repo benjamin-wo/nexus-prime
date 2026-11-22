@@ -357,19 +357,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .nav-link.active { background: var(--bg-card-hover); color: var(--text-strong); }
 .nav-link.active .nav-glyph { color: var(--nav-active-glyph); }
 .nav-glyph { width: 20px; height: 20px; margin-right: var(--space-3); display: grid; place-items: center; flex: none; }
-/* A department's own pages, as tabs along the top of its section. */
-.dept-tabs {
-  display: flex; gap: var(--space-1); padding: var(--space-1); width: fit-content; max-width: 100%;
-  overflow-x: auto; scrollbar-width: none; border-radius: 14px; background: var(--bg-card);
-  border: 1px solid var(--border-card);
-}
-.dept-tabs::-webkit-scrollbar { display: none; }
-.dept-tab {
-  flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 38px; padding: 0 var(--space-4);
-  border-radius: 10px; color: var(--text-secondary); text-decoration: none; font-weight: 500; white-space: nowrap;
-}
-.dept-tab:hover { color: var(--text-primary); }
-.dept-tab.active { color: var(--text-strong); background: var(--tab-active-bg); box-shadow: var(--shadow-tab); }
 /* Home: the front desk. */
 .feed { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .feed-item {
@@ -440,14 +427,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 
 /* --- dashboard --- */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-4); }
-.tile { min-width: 0; }
-.tile { display: grid; gap: var(--space-2); align-content: start; }
-.tile .caption { font-size: 0.875rem; color: var(--text-secondary); }
-.tile .value {
-  font-size: clamp(1.5rem, 6vw, 1.875rem); font-weight: 600; color: var(--text-strong); letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere;
-}
-.tile .extra { font-size: 0.8125rem; color: var(--text-muted); }
 .dash-grid { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); gap: var(--space-6); align-items: start; }
 .quick { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
@@ -707,18 +686,12 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 }
 @media (max-width: 720px) {
   h1 { font-size: 1.625rem; }
-  /* One row, the tabs sharing the width (a long list still scrolls, never wraps). */
-  .dept-tabs { width: 100%; }
-  .dept-tab { flex: 1 0 auto; justify-content: center; min-height: 40px; padding: 0 var(--space-2); font-size: 0.875rem; }
   .content { gap: var(--space-4); }
   .card { padding: var(--space-4); border-radius: 18px; }
   .page-head { align-items: center; }
   /* Two side by side; a last one left on its own takes the full row. */
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
   .tiles > :last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .tile { padding: var(--space-4); }
-  .tile .value { font-size: clamp(1.15rem, 5.6vw, 1.625rem); }
-  .tile .extra { font-size: 0.8125rem; }
   h2 { font-size: 1.0625rem; }
   /* Category name on its own line, then the bar and its value. */
   .bar-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--space-1); }
@@ -756,9 +729,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 }
 @media (max-width: 359px) {
   .page-head-row { flex-wrap: wrap; }
-  /* The smallest phones: the tabs tighten (and may shorten) rather than scroll. */
-  .dept-tabs { gap: 2px; }
-  .dept-tab { flex: 1 1 auto; min-width: 0; padding: 0 4px; font-size: 0.8125rem; overflow: hidden; text-overflow: ellipsis; }
 }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
@@ -1200,9 +1170,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .key.now { background: var(--accent); }
 .key.line { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed var(--text-secondary); }
 .mini-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
-.mini-tile { display: grid; gap: 6px; align-content: start; min-width: 0; padding: var(--space-4); border-radius: 16px; background: var(--bg-card-hover); }
-.mini-value { font-size: 1.25rem; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere; }
-.mini-value.good { color: var(--emerald-accent); }
 .rows { display: grid; margin: 0; padding: 0; list-style: none; }
 .rows > li + li, .rows > .row + .row { border-top: 1px solid var(--border-card); }
 .row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) 0; min-width: 0; }
@@ -1220,8 +1187,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
   .figure-value { font-size: 1.75rem; }
   .month-plot { height: 160px; }
   .mini-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2); }
-  .mini-tile { padding: var(--space-3); }
-  .mini-value { font-size: 1.0625rem; }
   .row { padding: var(--space-3) 0; }
   .row-icon { width: 38px; height: 38px; border-radius: 12px; }
 }
@@ -1498,7 +1463,6 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
 @media (max-width: 720px) {
   h1 { font-size: 1.75rem; }
   h2 { font-size: 1.125rem; }
-  .tile .extra { font-size: 0.8125rem; }
 
   .page-head > :not(:first-child) { flex: 1 1 100%; }
   .page-head > .btn, .page-head .quick > .btn, .page-head .actions > .btn { flex: 1 1 auto; min-height: 44px; }
@@ -1518,13 +1482,6 @@ html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
     opacity: 0; transform: translateY(24px) scale(0.9); pointer-events: none;
   }
 }
-
-/* An amount never breaks inside its figure: it sizes to its box, and if it must
-   wrap, it wraps between the currency and the number. */
-.tile, .mini-tile { container-type: inline-size; }
-.tile .value, .mini-value { overflow-wrap: break-word; }
-.tile .value { font-size: clamp(1.25rem, 14cqi, 1.875rem); }
-.mini-value { font-size: clamp(1rem, 13cqi, 1.25rem); }
 
 
 /* A row's second line: category, date, card and receipt. The category and the date have their own
@@ -1584,7 +1541,6 @@ table.ledger tbody tr.day-row:hover { background: none; }
 
 /* --- The light layout: a hero on Home, titled blocks, a dark bottom bar --- */
 .main-viewport { background: var(--bg-shell); }
-.dept-tabs { background: var(--tabs-bg); border-color: transparent; }
 
 /* Round icon buttons, white glass on the hero. White stays white in the dark theme: the hero is deep indigo in both. */
 .round-btn {
@@ -1656,11 +1612,6 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .start-row.is-done .wrap { color: var(--text-muted); }
 .start-note { margin: var(--space-2) 0 0; }
 
-/* A section whose title sits above its card. */
-.block { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
-.block > .card { flex: 1; }
-.block-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 34px; padding: 0 var(--space-1); }
-.block-head h2 { font-size: 1.0625rem; }
 
 /* The Nexus button: in the rail on a wide screen, in the middle of the bar on a phone. */
 .nexus-button {
@@ -2349,22 +2300,10 @@ a.photo-credit:hover { text-decoration: underline; }
 .money-add { justify-self: start; }
 .money-form { display: grid; gap: var(--space-2); }
 .money-switch { display: grid; gap: var(--space-1); }
-/* Rows inside a section: title, a 13px line under it, the amount on the right; divided, not carded. */
-.money-rows { list-style: none; margin: 0; padding: 0; display: grid; }
-.money-rows > li + li { border-top: 1px solid var(--border-subtle); }
-.money-rows > li.is-settled .money-row-title, .money-rows > li.is-settled .money-row-sub, .money-rows > li.is-settled .num { color: var(--text-muted); }
-.money-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3) 0; }
-.money-row-main { flex: 1 1 160px; min-width: 0; display: grid; gap: 2px; }
-.money-row-title { font-weight: 500; overflow-wrap: anywhere; }
-.money-row-sub { font-size: 0.8125rem; line-height: 1.4; color: var(--text-muted); overflow-wrap: anywhere; }
-.money-row-amount { flex: none; display: grid; justify-items: end; gap: 2px; max-width: 100%; text-align: right; }
-.money-row-actions { flex: none; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
 .money-tag { display: inline-flex; align-items: center; min-height: 20px; padding: 0 8px; border-radius: 999px; background: var(--bg-raised); color: var(--text-secondary); font-size: 0.8125rem; font-weight: 600; }
 .money-tag-split { background: var(--status-warning-soft); color: var(--status-warning); }
-@media (pointer: coarse) { .money-row .btn-small { min-height: 44px; } }
 @media (max-width: 720px) {
   .money-figure { font-size: 1.5rem; }
-  .money-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-left: -12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .money-chev { transition: none; }
@@ -2915,9 +2854,9 @@ button.set-row:disabled { cursor: default; opacity: 0.6; }
    A fine pointer (a mouse) keeps the compact sizes above. Last in the file so these win over the
    smaller sizes set earlier. e2e/tap-targets.spec.ts measures it. */
 @media (pointer: coarse) {
-  /* .btn, .chip-btn, .day-pill and .ask-chip get theirs in components/ui/button.css and chip.css; these are the
+  /* .btn, .chip-btn, .day-pill, .ask-chip and .dept-tab get theirs in components/ui (button.css, chip.css, tabs.css); these are the
      rest, and the buttons whose own class sets a smaller size (the trail's links, "Show more" in a trip's money). */
-  .dept-tab, .trip-chip, .trip-tab, .seg-btn, .trail-link, .todo-more { min-height: 44px; }
+  .trip-chip, .trip-tab, .seg-btn, .trail-link, .todo-more { min-height: 44px; }
   /* Icon-only buttons: the month arrows, the chat's close, the trip's Back and the round ones. */
   .month-step, .trip-chip, .trip-icon-button { min-width: 44px; }
   .trip-icon-button { width: 44px; height: 44px; }

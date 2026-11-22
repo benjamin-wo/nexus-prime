@@ -1,0 +1,17 @@
+/* Sections (DESIGN.md §5 Surfaces and radius): a heading row over a soft block. The block is --bg-card on the
+   ground with a 14px radius, no border and no shadow. Rows sit in it with 4px 16px padding (a row has its own
+   12px); anything else (a chart, a few lines of text) gets 16px all round. Section.tsx writes the markup.
+   The body keeps the old .card class for page CSS that targets it; the global .card itself is not changed here. */
+.block { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.block-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  min-height: 34px; padding: 0 var(--space-1);
+}
+.block-head h2 { margin: 0; font-size: 1.1875rem; letter-spacing: -0.02em; line-height: 1.25; }
+
+.block > .card {
+  flex: 1; background: var(--bg-card); border: 0; border-radius: 14px; box-shadow: none; padding: var(--space-4);
+}
+.block > .card:has(> :is(ul, ol, .row-list, .money-rows, .rows, .feed):first-child) {
+  padding-block: var(--space-1);
+}
