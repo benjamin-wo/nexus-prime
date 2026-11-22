@@ -76,7 +76,7 @@ export function LoginPage({ trip = false }: { trip?: boolean }) {
         ) : (
           <>
             <h1>
-              Just ask <span style={{ color: "var(--accent-text)" }}>Nexus</span>
+              Just ask Nexus
             </h1>
             {token ? (
               <p className="secondary">You've been invited. Sign in with Telegram to accept.</p>

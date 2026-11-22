@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { fakeApi } from "./fake-api";
+import { fakeApi, openChat } from "./fake-api";
 import { showOnly } from "./ledger-filters";
 
 // On failure, print what the page did: API calls, console errors and uncaught exceptions.
@@ -440,7 +440,7 @@ test("bulk delete acts at once and can be undone", async ({ page }, info) => {
 test("chat asks before deleting and confirms", async ({ page }) => {
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("delete the grab ride");
   await chat.getByRole("button", { name: "Send" }).click();
@@ -457,7 +457,7 @@ test("chat asks before deleting and confirms", async ({ page }) => {
 test("the chat opens on the running conversation, from the web and Telegram", async ({ page }) => {
   await fakeApi(page, { chatHistory: true });
   await page.goto("/");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   await expect(chat.locator(".msg-user").first()).toHaveText(/kopi 4\.20/);
   await expect(chat.locator(".msg-bot").first()).toContainText("Logged SGD 4.20 at Kopi.");
@@ -478,7 +478,7 @@ test("the app never throws while chatting", async ({ page }) => {
   page.on("pageerror", (e) => errors.push(e.message));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   for (const message of ["one", "two"]) {
     await chat.getByLabel("Message").fill(message);
@@ -1022,20 +1022,25 @@ test("see and forget what Nexus remembers", async ({ page }) => {
   await expect(card.getByText(/Nothing yet/)).toBeVisible();
 });
 
-test("Nexus sits in the middle of the bar on a phone, in the rail on a wide screen, and opens the chat", async ({ page }, info) => {
+test("the Nexus mark sits in the middle of the bar on a phone, in the rail on a wide screen, and opens the chat", async ({ page }, info) => {
   await fakeApi(page);
   await page.goto("/accounting/budgets");
   const where = info.project.name === "mobile" ? "Main (mobile)" : "Main";
-  const nexus = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus", exact: true });
-  await expect(nexus).toBeVisible();
+  const ask = page.getByRole("navigation", { name: where, exact: true }).getByRole("button", { name: "Ask Nexus", exact: true });
+  await expect(ask).toBeVisible();
   if (info.project.name === "mobile") {
-    // Two tabs either side of it, each pair in its own half of the bar.
+    // The mark alone in the middle of the bar: two tabs either side, a hit area of at least 44 x 44.
+    await expect(ask.locator("svg.nexus-mark")).toHaveCount(1);
+    const box = (await ask.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
     const bar = page.getByRole("navigation", { name: "Main (mobile)" });
-    await expect(bar.locator(":scope > *").nth(1)).toHaveAccessibleName("Ask Nexus");
-    await expect(bar.locator(":scope > .bar-side").nth(0).getByRole("link")).toHaveCount(2);
-    await expect(bar.locator(":scope > .bar-side").nth(1).getByRole("link")).toHaveCount(2);
+    await expect(bar.locator(":scope > *").nth(2)).toHaveAccessibleName("Ask Nexus");
+  } else {
+    await expect(ask).toHaveText("Ask Nexus");
+    await expect(ask.locator("svg.nexus-mark")).toHaveCount(1);
   }
-  await nexus.click();
+  await ask.click();
   await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
 });
 
@@ -1155,7 +1160,7 @@ test("home has no typing box; the Nexus button opens the chat", async ({ page })
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Just ask Nexus" })).toBeVisible();
   await expect(page.locator("#ask-input, .ask-input")).toHaveCount(0);
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
 });
 
@@ -4251,7 +4256,7 @@ test("a voice note in the chat is sent and answered like a typed message", async
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   // The mic stands where Send does while the box is empty.
   await expect(chat.getByRole("button", { name: "Send" })).toHaveCount(0);
@@ -4279,7 +4284,7 @@ test("a voice note that is too long is refused in the server's words", async ({ 
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page, { voiceFails: 413 });
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByRole("button", { name: "Record a voice note" }).click();
   await chat.getByRole("button", { name: "Stop and send" }).click();
@@ -4293,7 +4298,7 @@ test("cancelling a recording sends nothing", async ({ page }) => {
   await page.addInitScript(STUB_RECORDER);
   const state = await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByRole("button", { name: "Record a voice note" }).click();
   await chat.getByRole("button", { name: "Cancel recording" }).click();
@@ -4306,7 +4311,7 @@ test("without a microphone the chat says so and still types", async ({ page }) =
   await page.addInitScript(() => Object.defineProperty(navigator, "mediaDevices", { value: undefined, configurable: true }));
   await fakeApi(page);
   await page.goto("/accounting");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   const mic = chat.getByRole("button", { name: "Record a voice note" });
   await expect(mic).toHaveAttribute("aria-disabled", "true");

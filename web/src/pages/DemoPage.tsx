@@ -51,7 +51,7 @@ export function DemoPage() {
           <NexusWordmark height={26} alt="Nexus" />
         </div>
         <p className="caption">
-          Just ask <span style={{ color: "var(--accent-text)" }}>Nexus</span>
+          Just ask Nexus
         </p>
         {step === "working" && (
           <>

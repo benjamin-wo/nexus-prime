@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { fakeApi } from "./fake-api";
+import { fakeApi, openChat } from "./fake-api";
 
 // A drag in the chat belongs to the chat: it scrolls the messages, and neither pulls the page behind it to
 // refresh nor slides the chat down with it.
@@ -34,7 +34,7 @@ test("a hard swipe down in the chat scrolls the chat, not the page", async ({ pa
   const homeFetches = countHomeFetches(page);
   await page.goto("/");
   await expect(page.getByRole("region", { name: "Money this month" })).toBeVisible();
-  await page.getByRole("button", { name: "Ask Nexus" }).last().click();
+  await openChat(page);
 
   const drawer = page.locator(".drawer");
   const messages = drawer.locator(".messages");
@@ -54,6 +54,9 @@ test("a hard swipe down in the chat scrolls the chat, not the page", async ({ pa
   const send = (type: "touchStart" | "touchMove" | "touchEnd", y?: number) =>
     cdp.send("Input.dispatchTouchEvent", { type, touchPoints: y === undefined ? [] : [{ x: 180, y }] });
   const mid = Math.round(box.y + box.height / 2);
+  // The chat is a sheet on a phone (24px of the page above it): where it starts is where it must stay.
+  await page.waitForTimeout(600); // the sheet has slid up
+  const top = (await drawer.boundingBox())!.y;
   const tops: number[] = [];
   let pulled = false;
   await send("touchStart", mid);
@@ -66,7 +69,7 @@ test("a hard swipe down in the chat scrolls the chat, not the page", async ({ pa
   await page.waitForTimeout(400);
 
   expect(pulled).toBe(false);
-  expect(tops.every((top) => top === 0)).toBe(true);
+  expect(tops.every((t) => t === top)).toBe(true);
   expect(await messages.evaluate((el) => el.scrollTop)).toBeLessThan(before);
   expect(homeFetches()).toBe(fetched);
 });
@@ -88,7 +91,7 @@ test("the page keeps its place and its pull to refresh after the chat closes", a
   const placed = await main.evaluate((el) => el.scrollTop);
   expect(placed).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: "Ask Nexus" }).last().click();
+  await openChat(page);
   await expect(page.locator(".drawer")).toBeVisible();
   await expect(main).toHaveCSS("overflow-y", "hidden");
   await page.getByRole("button", { name: "Close chat" }).click();

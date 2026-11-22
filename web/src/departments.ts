@@ -5,7 +5,7 @@ export type DepartmentTab = { to: string; label: string; end?: boolean };
 export type DepartmentView = {
   name: string;
   label: string;
-  /** What the bottom bar on a phone calls it, under its icon. */
+  /** What the bottom bar on a phone calls it, on the phone bar. */
   short: string;
   icon: string;
   path: string;
@@ -58,7 +58,7 @@ export const DEPARTMENTS: DepartmentView[] = [
   {
     name: "travel",
     label: "Travel",
-    short: "Travel",
+    short: "Trips",
     menu: "show_travel",
     icon: "✈️",
     path: "/travel",

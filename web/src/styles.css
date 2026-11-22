@@ -103,6 +103,7 @@
 
   --radius: 20px;
   --radius-inner: 12px;
+  --radius-section: 14px;
   --shadow-frame: none;
   --shadow-card: none;
   --shadow-tab: none;
@@ -338,7 +339,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 }
 .rail {
   display: flex; flex-direction: column; gap: var(--space-1); padding: 28px var(--space-4);
-  background: var(--bg-frame); border-right: 1px solid var(--border-subtle);
+  background: var(--bg-shell); border-right: 1px solid var(--border-card);
 }
 .rail .brand {
   display: flex; align-items: center; gap: 10px; padding: 0 var(--space-2);
@@ -349,14 +350,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .state-mark, .budget-first-text { display: flex; align-items: center; gap: var(--space-3); }
 .state-mark > span, .budget-first-text > span { min-width: 0; }
 .brand-accent { color: var(--accent-text); }
-.nav-link {
-  display: flex; align-items: center; min-height: 46px; padding: 0 14px; border-radius: 14px;
-  color: var(--text-secondary); text-decoration: none; font-weight: 500;
-}
-.nav-link:hover { background: var(--bg-card-hover); color: var(--text-primary); }
-.nav-link.active { background: var(--bg-card-hover); color: var(--text-strong); }
-.nav-link.active .nav-glyph { color: var(--nav-active-glyph); }
-.nav-glyph { width: 20px; height: 20px; margin-right: var(--space-3); display: grid; place-items: center; flex: none; }
 /* Home: the front desk. */
 .feed { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
 .feed-item {
@@ -420,9 +413,9 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 @media (prefers-reduced-motion: reduce) { .ptr-refreshing .ptr-spinner { animation: none; } .ptr-active .content { transition: none; } }
 .content { max-width: 1420px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
 .page-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: var(--space-4); }
-.bottom-nav { display: none; }
 
-.card { background: var(--bg-glass); border: 1px solid var(--border-card); border-radius: var(--radius); padding: var(--space-6); box-shadow: var(--shadow-card); }
+/* The soft section (DESIGN.md §5): --bg-card on the ground, no border, no shadow. */
+.card { background: var(--bg-card); border: 0; border-radius: var(--radius-section); padding: var(--space-6); box-shadow: none; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-5); }
 
 /* --- dashboard --- */
@@ -579,7 +572,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .entry-form .actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 /* Delete, when the sheet edits an existing entry: bottom-left, away from Save. */
 .entry-form .actions .btn-danger { margin-right: auto; }
-/* The chat: an Overlay panel, a side panel here and full screen on a phone. Two classes so it wins over .overlay-panel. */
+/* The chat: an Overlay panel, a side panel here and a sheet on a phone (overlay.css). Two classes so it wins over .overlay-panel. */
 .overlay-panel.drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: var(--z-overlay);
   background: var(--bg-frame); border: 0; border-left: 1px solid var(--border-subtle); box-shadow: var(--shadow-modal);
@@ -667,27 +660,12 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
   /* Room below the last card for the fixed bottom bar: the bar's own height (Shell measures it into
      --bar-h; 68px of bar is the fallback) with the safe-area inset, and a little air. */
   .main-viewport { padding: var(--space-4) var(--space-4) calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + var(--space-6)); }
-  .bottom-nav {
-    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; justify-content: space-around;
-    background: var(--bg-frame); border-top: 1px solid var(--border-subtle);
-    padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
-  }
-  /* Equal tabs that may shrink below their label's natural width. */
-  .bottom-nav { gap: var(--space-1); }
-  .bottom-nav .nav-link, .bottom-nav .btn {
-    flex: 1 1 0; min-width: 0; justify-content: center; min-height: 44px;
-    padding: 0 var(--space-1); font-size: 0.8125rem; white-space: nowrap; overflow: hidden;
-  }
-  .bottom-nav .nav-icon { flex: 0 0 44px; }
-  /* On a phone each tab is its icon over a short label. */
-  .bottom-nav .nav-link { flex-direction: column; gap: 2px; font-size: 0.8125rem; line-height: 1.2; }
-  .bottom-nav .nav-glyph { margin: 0; font-size: 1.05rem; }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 720px) {
   h1 { font-size: 1.625rem; }
   .content { gap: var(--space-4); }
-  .card { padding: var(--space-4); border-radius: 18px; }
+  .card { padding: var(--space-4); }
   .page-head { align-items: center; }
   /* Two side by side; a last one left on its own takes the full row. */
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
@@ -1331,16 +1309,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 @keyframes ring-fill { from { --ring-pct: 0%; } }
 
 
-@media (max-width: 900px) {
-  /* The phone's bottom bar. */
-  .bottom-nav {
-    left: var(--space-3); right: var(--space-3); bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
-    border: 1px solid var(--border-card); border-radius: 22px; padding: var(--space-1);
-    background: var(--bar-bg); -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
-    box-shadow: var(--shadow-bar);
-  }
-  .bottom-nav .nav-link { border-radius: 16px; }
-}
 /* While typing on a phone (viewport.ts): the tab bar and floating buttons step aside
    instead of riding up on the keyboard. */
 html.keyboard .bottom-nav, html.keyboard .fab, html.keyboard .trip-fab {
@@ -1612,58 +1580,6 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .start-row.is-done .wrap { color: var(--text-muted); }
 .start-note { margin: var(--space-2) 0 0; }
 
-
-/* The Nexus button: in the rail on a wide screen, in the middle of the bar on a phone. */
-.nexus-button {
-  border: 0; cursor: pointer; font: inherit; font-weight: 600; color: var(--on-accent);
-  background: var(--nexus-from); box-shadow: none;
-  transition: transform var(--t-micro);
-}
-.nexus-button:active { transform: scale(0.96); }
-.nexus-button.in-rail { display: flex; align-items: center; gap: 10px; min-height: 44px; margin-top: var(--space-3); padding: 0 var(--space-4); border-radius: 14px; }
-.nexus-button.in-bar { display: none; }
-.rail { background: var(--bg-card); }
-
-@media (max-width: 900px) {
-  .bottom-nav {
-    left: 0; right: 0; bottom: 0; align-items: center; justify-content: space-between; gap: var(--space-1);
-    padding: 10px var(--space-4) calc(10px + env(safe-area-inset-bottom));
-    border: 0; border-radius: 26px 26px 0 0; background: var(--bar-bg);
-    -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--shadow-bar);
-  }
-  .bottom-nav .nav-link { flex: 1 1 0; min-height: 48px; padding: 0; border-radius: 14px; color: var(--bar-text); background: transparent; }
-  .bottom-nav .nav-link:hover { background: transparent; color: var(--bar-text-active); }
-  .bottom-nav .nav-link.active, .bottom-nav .nav-link.active .nav-glyph { color: var(--bar-text-active); background: transparent; }
-  /* Each tab is its icon over a short label (Home, Money, Invest, Travel). The active one is
-     Lime and bold on a soft pill with a Lime underline, so it reads without colour alone. */
-  .bottom-nav .nav-label { display: block; max-width: 100%; font-size: 0.8125rem; font-weight: 500; line-height: 1.2; letter-spacing: 0; overflow: hidden; }
-  .bottom-nav .nav-link { position: relative; }
-  .bottom-nav .nav-link.active { background: var(--bar-active-bg); }
-  .bottom-nav .nav-link.active::after { content: ""; position: absolute; left: 22%; right: 22%; bottom: 3px; height: 2px; border-radius: 2px; background: var(--bar-indicator); }
-  .bottom-nav .nav-link.active .nav-label { font-weight: 700; }
-  .bottom-nav .nav-glyph { width: 24px; height: 24px; }
-  /* In the bar the N is just the full-colour mark: no pill, no fill, no shadow. The tap target is 56x48. */
-  .nexus-button.in-bar {
-    display: grid; place-items: center; flex: 0 0 auto; width: 56px; height: 48px; padding: 0; border-radius: 14px;
-    background: transparent; box-shadow: none;
-  }
-  .nexus-button.in-bar:focus-visible { outline: 2px solid var(--bar-text-active); outline-offset: 2px; }
-  /* The bar is dark in both themes, so the mark's Midnight pixels always take their dark-surface colours here. */
-  .nexus-button.in-bar .nexus-mark .nm-K { fill: #2563EB; }
-  .nexus-button.in-bar .nexus-mark .nm-k, .nexus-button.in-bar .nexus-mark .nm-b { fill: #22D3EE; }
-  /* The places sit in two equal halves either side of the Nexus button, so it stays in the middle whether the
-     bar has three, four or five items (Invest and Travel are in the menu only when turned on). */
-  .bottom-nav .bar-side { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: space-around; gap: var(--space-1); }
-  .bottom-nav .bar-side .nav-link { max-width: 88px; }
-}
-/* The smallest phones: the bar gives its side padding back to the four labelled tabs. */
-@media (max-width: 359px) {
-  .bottom-nav { padding-left: var(--space-1); padding-right: var(--space-1); gap: 2px; }
-  .nexus-button.in-bar { width: 48px; }
-  .nexus-button.in-bar .nexus-mark { width: 28px; height: 28px; }
-  .bottom-nav .bar-side { gap: 0; }
-  .bottom-nav .nav-label { font-size: 0.8125rem; letter-spacing: 0; }
-}
 
 /* Trip page: tabs and plan */
 /* Next up: the one thing to do next, a slim card under the header. */
@@ -2089,7 +2005,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .trip-hero-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; color: var(--text-secondary); }
 .trip-hero-shared { margin: 0; color: var(--text-muted); font-size: 0.8125rem; }
 @media (min-width: 901px) {
-  .trip-v2 .trip-hero { margin: 0; border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+  .trip-v2 .trip-hero { margin: 0; border: 1px solid var(--border-card); border-radius: var(--radius); }
   .trip-hero-photo { height: 240px; border-radius: var(--radius) var(--radius) 0 0; }
   .trip-hero-photo.no-photo { height: 140px; }
   .trip-hero-bar { inset: 16px 16px auto 16px; }
@@ -2321,10 +2237,10 @@ a.photo-credit:hover { text-decoration: underline; }
 @media (min-width: 1280px) { .trip-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .trip-card {
   position: relative; display: flex; flex-direction: column; overflow: hidden;
-  border-radius: var(--radius); border: 1px solid var(--border-card); background: var(--bg-card); box-shadow: var(--shadow-card);
+  border-radius: var(--radius); border: 1px solid var(--border-card); background: var(--bg-card);
   transition: translate var(--t-standard), box-shadow var(--t-standard), border-color var(--t-standard);
 }
-.trip-card:hover { translate: 0 -2px; box-shadow: var(--shadow-frame); border-color: var(--accent-border); }
+.trip-card:hover { translate: 0 -2px; border-color: var(--accent-border); }
 .trip-card:focus-within { outline: 2px solid var(--ring); outline-offset: 2px; }
 .trip-card-photo { display: block; height: 140px; background-color: var(--bg-raised); background-size: cover; background-position: center; }
 .trip-card-body { display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4) var(--space-4); }
@@ -2395,13 +2311,13 @@ a.photo-credit:hover { text-decoration: underline; }
 .shared-body > p { margin: 0; }
 @media (min-width: 901px) {
   .shared-page { padding-top: 40px; }
-  .shared-hero { border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+  .shared-hero { border: 1px solid var(--border-card); border-radius: var(--radius); }
   .shared-title { font-size: 3rem; }
   .shared-body { padding: 0; }
 }
 .shared-plan { display: grid; gap: var(--space-3); }
 .shared-plan > .caption { margin: 0; }
-.shared-day { display: grid; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-card); border-radius: var(--radius); background: var(--bg-card); box-shadow: var(--shadow-card); scroll-margin-top: var(--space-4); }
+.shared-day { display: grid; gap: var(--space-2); padding: var(--space-4); border: 1px solid var(--border-card); border-radius: var(--radius); background: var(--bg-card); scroll-margin-top: var(--space-4); }
 .shared-day[aria-current="date"] { border-color: var(--accent-border); }
 .shared-day-head { margin: 0; font-weight: 400; }
 .shared-day-meta { display: block; font-size: 0.8125rem; font-weight: 500; line-height: 1.4; color: var(--text-muted); }
@@ -2593,7 +2509,7 @@ a.photo-credit:hover { text-decoration: underline; }
 .set-group > .section-title { margin: 0 var(--space-4); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .set-list {
   display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; overflow: hidden;
-  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius); box-shadow: var(--shadow-card);
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius);
 }
 .set-list > li + li { border-top: 1px solid var(--border-card); }
 .set-list > li { min-width: 0; }
@@ -2765,18 +2681,11 @@ a.set-row:focus-visible { outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { .steps .msg-avatar { animation: none; } }
 
 /* ===== Nexus mark and wordmark (components/NexusMark.tsx; assets in docs/brand/README.md) =====
-   The mark's colours are the brand palette, fixed on purpose. Only its Midnight pixels change with the
-   theme: on a dark surface the left stroke turns Blue, the diagonal's edge and the inner blue turn Teal. */
+   One colour: the mark is the text colour around it, its spark is --accent (NexusMark.tsx). */
 .nexus-mark, .nexus-wordmark { display: block; flex: none; }
 .nexus-mark-big { margin: 0 auto; }
 .brand-hero { display: grid; justify-items: center; gap: var(--space-3); }
 .brand-hero .nexus-wordmark { color: var(--text-strong); }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .nexus-mark .nm-K { fill: #2563EB; }
-  :root:not([data-theme="light"]) .nexus-mark .nm-k, :root:not([data-theme="light"]) .nexus-mark .nm-b { fill: #22D3EE; }
-}
-:root[data-theme="dark"] .nexus-mark .nm-K { fill: #2563EB; }
-:root[data-theme="dark"] .nexus-mark .nm-k, :root[data-theme="dark"] .nexus-mark .nm-b { fill: #22D3EE; }
 
 /* Ledger selection. A long press on a row starts it; on a touch screen the rows must not raise the
    browser's own text selection or callout while held. Only rows: the search box and filters stay selectable. */
@@ -2790,7 +2699,7 @@ a.set-row:focus-visible { outline-offset: -2px; }
   .bulkbar {
     position: fixed; z-index: 16; left: var(--space-3); right: var(--space-3);
     bottom: calc(var(--bar-h, calc(68px + env(safe-area-inset-bottom))) + var(--space-2));
-    padding: var(--space-2) var(--space-3); flex-wrap: nowrap; gap: var(--space-2); border-radius: 18px; box-shadow: var(--shadow-bar);
+    padding: var(--space-2) var(--space-3); flex-wrap: nowrap; gap: var(--space-2); border-radius: 18px; border-color: var(--border-edge);
     animation: rise var(--t-standard);
   }
   .bulkbar .btn { min-height: 44px; flex: none; }

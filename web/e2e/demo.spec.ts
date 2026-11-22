@@ -1,10 +1,8 @@
 import { expect, test } from "@playwright/test";
 
-import { fakeApi } from "./fake-api";
+import { fakeApi, openChat } from "./fake-api";
 
 const banner = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Demo account" });
-const openChat = (page: import("@playwright/test").Page) =>
-  page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
 
 test("a signed-out visitor sees the landing page and goes into the demo from it", async ({ page }) => {
   const state = await fakeApi(page, { signedIn: false });

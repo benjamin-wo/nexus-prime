@@ -25,6 +25,20 @@ html.overlay-open .main-viewport { overflow: hidden; }
 /* The grab area of a panel (the chat header): dragged down to close on a phone. */
 .overlay-handle { flex: none; touch-action: none; }
 @media (max-width: 480px) { .overlay-panel-side .overlay-grab { display: block; } }
+/* The chat on a phone is a sheet, not a page: it leaves 24px of the page (dimmed) showing at the top, has the
+   rounded top corners and the grab handle of the other sheets, and a swipe down closes it. The dimming is a
+   fixed layer on the root while the chat is open, so the chat needs no backdrop element. Two classes plus .overlay-panel-side so it
+   wins over the side panel in styles.css. */
+@media (max-width: 480px) {
+  .overlay-panel.drawer.overlay-panel-side {
+    top: calc(24px + env(safe-area-inset-top)); width: 100%; border-left: 0; border-radius: 20px 20px 0 0;
+    animation: sheet-up var(--t-emphasis);
+  }
+  html:has(.overlay-panel.drawer)::before { content: ""; position: fixed; inset: 0; z-index: calc(var(--z-overlay) - 1); background: var(--overlay); animation: fade var(--t-standard); }
+  /* With the keyboard up the sheet grows to the whole visual viewport (viewport.ts's --vv-top and --vv-height,
+     applied by styles.css's html.keyboard .drawer): no gap above, square corners. */
+  html.keyboard .overlay-panel.drawer.overlay-panel-side { top: var(--vv-top, 0px); border-radius: 0; }
+}
 
 /* Sheet pieces */
 .sheet-handle { flex: none; touch-action: none; }

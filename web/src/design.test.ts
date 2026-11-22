@@ -28,6 +28,7 @@ const CSS_PATH = join(SRC, "styles.css");
 const UI_DIR = join(SRC, "components/ui");
 const OTHER_CSS = [
   join(SRC, "components/overlay/overlay.css"),
+  join(SRC, "components/shell.css"),
   ...readdirSync(UI_DIR).filter((f) => f.endsWith(".css")).sort().map((f) => join(UI_DIR, f)),
 ];
 
@@ -148,8 +149,6 @@ const KNOWN_OFFENDERS: string[] = [
   ".ledger td.select input[type=\"checkbox\"]:checked, .ledger th input[type=\"checkbox\"]:checked, .import-table td.select input[type=\"checkbox\"]:checked, .import-table th input[type=\"checkbox\"]:checked :: shadow",
   ".money-seg-planned :: gradient",
   ".month-bar.over :: gradient",
-  ".nexus-button.in-bar .nexus-mark .nm-K :: colour",
-  ".nexus-button.in-bar .nexus-mark .nm-k, .nexus-button.in-bar .nexus-mark .nm-b :: colour",
   ".quick-ways .btn:focus-within :: shadow",
   ".ring :: gradient",
   ".seg-btn[aria-pressed=\"true\"] :: shadow",

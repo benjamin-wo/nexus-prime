@@ -175,7 +175,7 @@ function Hero({
 }
 
 /** One-tap questions; each opens the chat with it. To ask anything else, open the chat with the
- * Nexus button (the N in the phone's bottom bar, "Ask Nexus" in the desktop rail). */
+ * ask bar (pinned at the foot of the page). */
 function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => void }) {
   return (
     <Block id="ask" title="Just ask Nexus" className="ask-panel">

@@ -174,6 +174,17 @@ function Cockpit({ me }: { me: Me }) {
   const editTx = useCallback((tx: Transaction) => setSheet({ editing: tx }), []);
   const closeSheet = useCallback(() => setSheet(null), []);
   const closeChat = useCallback(() => setChat(null), []);
+  // Ctrl/⌘ + K opens the chat from anywhere, empty: the way in on a keyboard, whichever page is open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setChat((open) => open ?? {});
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // Pulling a page down: what it shows, fetched again whatever its staleTime.
   const pullRefresh = useCallback(() => refetchActive(client, true), [client]);
   // Expenses logged with no connection are kept on the phone and sent when it can (outbox.ts).

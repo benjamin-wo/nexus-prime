@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-/** A phone: the chat panel goes full screen. styles.css's `@media (max-width: 480px)` uses the same number. */
+/** A phone: the chat panel is a sheet that leaves 24px of the page showing. styles.css's `@media (max-width: 480px)` uses the same number. */
 export const PHONE = 480;
 /** Compact: a sheet is a bottom sheet. overlay.css's `@media (max-width: 720px)` uses the same number. */
 export const COMPACT = 720;
