@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -20,7 +20,8 @@ import { type CardDetails, detailsBody, NO_DETAILS, payingWallets, tracksCards, 
 import { CardFields } from "./CardFields";
 import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
-import { useDragToClose, useMediaQuery } from "../useDragToClose";
+import { useEscapeStack } from "./overlay/useEscapeStack";
+import { Sheet } from "./Sheet";
 
 /** The "Paid with" option that opens the inline new-card form; never a wallet id. */
 const ADD_CARD = "__add-card__";
@@ -115,35 +116,12 @@ export function EntrySheet({
   // Made once per sheet, sent with every attempt: an entry that arrives twice is recorded once.
   const entryKey = useRef<string | null>(null);
   const online = useOnline();
-  const first = useRef<HTMLInputElement>(null);
-  const addingRef = useRef(false);
-  addingRef.current = adding;
   const categoryFormOpen = addingCategory && !isMove && !moving;
-  const categoryFormRef = useRef(false);
-  categoryFormRef.current = categoryFormOpen;
 
-  const sheet = useRef<HTMLFormElement>(null);
-  const backdrop = useRef<HTMLDivElement>(null);
-  const handle = useRef<HTMLDivElement>(null);
-  // On a phone the sheet rises from the bottom: drag its grab bar or title down to close it.
-  const bottomSheet = useMediaQuery("(max-width: 720px)");
-  useDragToClose({ handle, panel: sheet, backdrop, onClose, enabled: bottomSheet });
-  useEffect(() => {
-    // An existing entry is opened to read it, fix one thing or delete it: on a phone, don't raise
-    // the keyboard (and hide the bottom bar) for that. The dialog itself takes the focus instead.
-    const touchScreen = window.matchMedia?.("(pointer: coarse)").matches === true;
-    if (editing && touchScreen) sheet.current?.focus({ preventScroll: true });
-    else first.current?.focus();
-    // Escape closes an inline form first, and only then the sheet.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (categoryFormRef.current) setAddingCategory(false);
-      else if (addingRef.current) setAdding(false);
-      else onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // An existing entry is opened to read it, fix one thing or delete it: on a phone, don't raise the keyboard
+  // (and hide the bottom bar) for that. The dialog itself takes the focus instead; otherwise the Amount.
+  const touchScreen = useRef(window.matchMedia?.("(pointer: coarse)").matches === true);
+  const initialFocus = editing && touchScreen.current ? "dialog" : undefined;
 
   function openCardForm() {
     setCard(NO_DETAILS);
@@ -323,25 +301,39 @@ export function EntrySheet({
           ? "Log money out"
           : "Log money in";
   const cardFormOpen = track && adding && !isMove && !moving && side === "out";
+  // Escape closes an inline form first (it registers after the sheet, so it hears Escape first), and only then the sheet.
+  useEscapeStack(() => setAddingCategory(false), categoryFormOpen);
+  useEscapeStack(() => setAdding(false), cardFormOpen);
   const needsWallet = moving && wallets.data !== undefined && elsewhere.length === 0;
   // Only a new entry can wait for a connection; an edit, a transfer or "make it a transfer" cannot.
   const needsConnection = !online && (Boolean(editing) || moving);
   return (
-    <div ref={backdrop} className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form
-        ref={sheet}
-        tabIndex={-1}
-        className="sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="entry-title"
-        aria-describedby={error ? "entry-error" : undefined}
-        onSubmit={submit}
-      >
-        <div ref={handle} className="sheet-handle">
-          <span className="entry-grab" aria-hidden="true" />
-          <h3 id="entry-title">{title}</h3>
+    <Sheet
+      as="form"
+      className="entry-form"
+      title={title}
+      titleId="entry-title"
+      describedBy={error ? "entry-error" : undefined}
+      initialFocus={initialFocus}
+      onClose={onClose}
+      onSubmit={submit}
+      footer={
+        <div className="actions">
+          {/* Only an entry that exists and isn't already deleted; the toast the page shows has Undo. */}
+          {editing && !editing.deleted && onDeleted && (
+            <button type="button" className="btn btn-danger" disabled={saving || !online} onClick={() => void remove()}>
+              Delete
+            </button>
+          )}
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || needsConnection || cardFormOpen || categoryFormOpen}>
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
+      }
+    >
         {editing && isMove ? (
           <p className="caption">{moveLabel(editing)} · not counted as spending or income</p>
         ) : (
@@ -357,7 +349,6 @@ export function EntrySheet({
           <label className="field">
             Amount
             <input
-              ref={first}
               className="input num"
               inputMode="decimal"
               required
@@ -612,21 +603,6 @@ export function EntrySheet({
             {error}
           </p>
         )}
-        <div className="actions">
-          {/* Only an entry that exists and isn't already deleted; the toast the page shows has Undo. */}
-          {editing && !editing.deleted && onDeleted && (
-            <button type="button" className="btn btn-danger" disabled={saving || !online} onClick={() => void remove()}>
-              Delete
-            </button>
-          )}
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || needsConnection || cardFormOpen || categoryFormOpen}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </form>
-    </div>
+    </Sheet>
   );
 }

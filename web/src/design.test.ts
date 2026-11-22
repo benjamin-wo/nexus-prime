@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * Guards DESIGN.md's token-only rule in styles.css.
+ * Guards DESIGN.md's token-only rule in styles.css and the stylesheets split out of it (overlay.css).
  *
  * - Colour literals (hex, rgb(), rgba(), hsl(), hsla()) live only in `:root` blocks (the light tokens, the dark
  *   tokens under prefers-color-scheme and under data-theme). Everywhere else a colour is a `var(--token)`.
@@ -22,7 +22,10 @@ import { describe, expect, it } from "vitest";
 
 type Kind = "colour" | "gradient" | "shadow" | "font";
 
-const CSS_PATH = join(dirname(fileURLToPath(import.meta.url)), "styles.css");
+const SRC = dirname(fileURLToPath(import.meta.url));
+const CSS_PATH = join(SRC, "styles.css");
+/** Split-out stylesheets are held to the same rules (styles.css is being split up, overlay.css first). */
+const OTHER_CSS = [join(SRC, "components/overlay/overlay.css")];
 
 const FONT_STACKS = [
   // Paper: Bricolage Grotesque (headings, figures, UI) and Newsreader (body), plus mono.
@@ -149,7 +152,7 @@ const KNOWN_OFFENDERS: string[] = [
   ".voice-preset[aria-pressed=\"true\"] :: shadow",
 ];
 
-const found = violations(readDeclarations(readFileSync(CSS_PATH, "utf8")));
+const found = violations(readDeclarations([CSS_PATH, ...OTHER_CSS].map((f) => readFileSync(f, "utf8")).join("\n")));
 
 describe("styles.css follows DESIGN.md", () => {
   it("reads the token blocks", () => {

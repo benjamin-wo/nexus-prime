@@ -75,10 +75,29 @@ describe("ChatDrawer on a phone", () => {
     mockApi({});
     window.matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as typeof window.matchMedia;
     renderWithProviders(<ChatDrawer onClose={() => {}} onChanged={() => {}} />);
-    const grab = document.querySelector(".drawer-grab");
+    const grab = document.querySelector(".overlay-grab");
     expect(grab).not.toBeNull();
-    expect(grab?.closest(".drawer-handle")?.querySelector("header")).not.toBeNull();
+    expect(grab?.closest(".overlay-handle")?.querySelector("header")).not.toBeNull();
+    expect(screen.getByRole("dialog", { name: "Chat" })).toHaveAttribute("aria-modal", "true");
     // @ts-expect-error jsdom has none
     delete window.matchMedia;
+  });
+
+  it("is not modal on a desktop", () => {
+    mockApi({});
+    renderWithProviders(<ChatDrawer onClose={() => {}} onChanged={() => {}} />);
+    expect(screen.getByRole("dialog", { name: "Chat" })).toHaveAttribute("aria-modal", "false");
+  });
+
+  it("returns focus to what opened it when it closes", () => {
+    mockApi({});
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const { unmount } = renderWithProviders(<ChatDrawer onClose={() => {}} onChanged={() => {}} />);
+    expect(screen.getByLabelText("Message")).toHaveFocus();
+    unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
   });
 });

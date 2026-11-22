@@ -108,9 +108,9 @@ describe("the sheet", () => {
       </Sheet>,
     );
     expect(screen.getByRole("dialog")).toHaveFocus();
-    expect(document.body.style.overflow).toBe("hidden");
+    expect(document.documentElement).toHaveClass("overlay-open");
     unmount();
-    expect(document.body.style.overflow).toBe("");
+    expect(document.documentElement).not.toHaveClass("overlay-open");
   });
 
   it("can be a form that submits", async () => {

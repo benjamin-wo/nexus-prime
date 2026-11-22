@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDragToClose } from "./useDragToClose";
 
 const haptic = vi.fn();
-vi.mock("./native", () => ({ nativeHaptic: (k: string) => haptic(k) }));
+vi.mock("../../native", () => ({ nativeHaptic: (k: string) => haptic(k) }));
 
 function Harness({ onClose, enabled = true }: { onClose: () => void; enabled?: boolean }) {
   const handle = useRef<HTMLDivElement>(null);
@@ -156,5 +156,95 @@ describe("useDragToClose", () => {
     move(grab, 300, 0, 500);
     fireEvent.pointerUp(grab, { pointerId: 1 });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useDragToClose pulling down from the top of the scroller", () => {
+  function Pull({ onClose, scrollTop = 0 }: { onClose: () => void; scrollTop?: number }) {
+    const panel = useRef<HTMLDivElement>(null);
+    const backdrop = useRef<HTMLDivElement>(null);
+    const scroller = useRef<HTMLDivElement>(null);
+    useDragToClose({ panel, backdrop, scroller, onClose, enabled: true });
+    return (
+      <div ref={backdrop}>
+        <div ref={panel} data-testid="panel">
+          <div
+            ref={(el) => {
+              (scroller as { current: HTMLDivElement | null }).current = el;
+              if (el) el.scrollTop = scrollTop;
+            }}
+            data-testid="body"
+          >
+            <p data-testid="text">Content</p>
+            <input data-testid="field" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const touch = (y: number, x = 0) => ({ touches: [{ clientX: x, clientY: y }] });
+  const start = (el: Element, y = 0) => fireEvent.touchStart(el, touch(y));
+  const drag = (el: Element, y: number, x = 0, dt = 100) => {
+    now += dt;
+    return fireEvent.touchMove(el, touch(y, x));
+  };
+
+  it("closes when pulled past the threshold from scrollTop 0, and takes the gesture", () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Pull onClose={onClose} />);
+    const text = getByTestId("text");
+    start(text);
+    drag(text, 5, 0, 300);
+    const notPrevented = drag(text, 200, 0, 300);
+    expect(notPrevented).toBe(false); // preventDefault was called
+    expect(getByTestId("panel").style.transform).toBe("translateY(200px)");
+    fireEvent.touchEnd(text);
+    act(() => void vi.advanceTimersByTime(300));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when the body is scrolled", () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Pull onClose={onClose} scrollTop={30} />);
+    const text = getByTestId("text");
+    start(text);
+    drag(text, 5);
+    expect(drag(text, 250)).toBe(true);
+    fireEvent.touchEnd(text);
+    act(() => void vi.advanceTimersByTime(300));
+    expect(getByTestId("panel").style.transform).toBe("");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("gives up on an upward start, and one that starts in a field", () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Pull onClose={onClose} />);
+    const text = getByTestId("text");
+    start(text);
+    drag(text, -20);
+    expect(drag(text, 300)).toBe(true);
+    fireEvent.touchEnd(text);
+    const field = getByTestId("field");
+    start(field);
+    drag(field, 20);
+    drag(field, 300);
+    fireEvent.touchEnd(field);
+    act(() => void vi.advanceTimersByTime(300));
+    expect(getByTestId("panel").style.transform).toBe("");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("springs back on touchcancel", () => {
+    const onClose = vi.fn();
+    const { getByTestId } = render(<Pull onClose={onClose} />);
+    const text = getByTestId("text");
+    start(text);
+    drag(text, 20, 0, 300);
+    drag(text, 300, 0, 500);
+    fireEvent.touchCancel(text);
+    expect(getByTestId("panel").style.transform).toBe("translateY(0)");
+    act(() => void vi.advanceTimersByTime(300));
+    expect(getByTestId("panel").style.transform).toBe("");
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
