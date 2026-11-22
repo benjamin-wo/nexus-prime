@@ -1,0 +1,160 @@
+/* Settings and the pages inside it (DESIGN.md §5): the Settings list, Notifications, Time zone, Wallets, Model costs,
+   the voice card, the sign-in pages. Sections, rows and buttons come from components/ui; this is what is left. Colours
+   are tokens only (design.test.ts). */
+
+/* A small plain block for what Settings pages say with no heading of their own. */
+.upcoming { display: grid; gap: var(--space-2); padding: var(--space-2) 0; }
+.upcoming p { margin: 0; }
+.upcoming p:first-child { font-family: var(--font-body); font-size: 1rem; line-height: 1.5; color: var(--text-secondary); }
+
+.login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: var(--space-4); }
+.login .login-panel { width: min(420px, 100%); padding: var(--space-6) var(--space-4); display: grid; gap: var(--space-4); text-align: center; }
+
+.wallet-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.wallet-note { flex: 1 1 100%; margin: 0; }
+.wallet-usual { display: grid; gap: var(--space-2); margin-top: var(--space-4); max-width: 420px; }
+.wallet-spend { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.wallet-spend-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.wallet-spend-head h3 { margin: 0; }
+.wallet-spend-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.wallet-spend-list > li + li { border-top: 1px solid var(--border-card); }
+.wallet-spend-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); padding: var(--space-3) 0; }
+.wallet-spend-name { font-weight: 600; flex: 1 1 10rem; min-width: 0; }
+.wallet-spend-figure { font-variant-numeric: tabular-nums lining-nums; }
+
+/* Settings: the investment fields inside the Telegram updates card. */
+.settings-group { display: grid; gap: var(--space-4); margin-top: var(--space-5); padding-top: var(--space-5); border-top: 1px solid var(--border-card); }
+.quiet-times { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.quiet-times .field { flex: 1 1 140px; }
+.setting { display: grid; gap: var(--space-1); }
+.setting > p { margin: 0; }
+.setting .share-switch { min-height: 44px; }
+
+/* --- Settings: a short list of rows, each opening its own page --- */
+.set-page { width: 100%; max-width: 720px; margin: 0 auto; display: grid; gap: var(--space-6); align-content: start; }
+.set-group { display: grid; gap: var(--space-2); }
+.set-group > .section-title { margin: 0 var(--space-1); font-size: 1.1875rem; font-weight: 600; letter-spacing: -0.02em; text-transform: none; color: var(--text-strong); }
+/* The list is a soft section: --bg-card, the section radius, no border and no shadow. Rows sit in it with their own 12px. */
+.set-list { padding: var(--space-1) var(--space-4); background: var(--bg-card); border: 0; border-radius: var(--radius-section); box-shadow: none; }
+.set-list .row-trailing { max-width: 55%; min-width: 0; font-size: 0.875rem; font-weight: 400; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-switch-item { cursor: pointer; }
+.set-switch-row { cursor: pointer; justify-content: space-between; flex-wrap: nowrap; gap: var(--space-3); }
+.set-switch-row:has(.switch:disabled) { cursor: default; }
+.set-error { flex: 1 1 100%; margin: 0; padding: 0 0 var(--space-3); }
+/* A caption under a section's heading, at the top of its body. */
+.set-intro { margin: 0 0 var(--space-3); }
+
+/* --- Notifications: what was sent on Telegram, a day at a time --- */
+.note-line { align-items: flex-start; }
+.note-text {
+  font-family: var(--font-body); margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-weight: 500; color: var(--text-strong);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.note-text.open { display: block; overflow: visible; }
+.note-text a { color: inherit; text-decoration: none; }
+.note-text a:hover, .note-text a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.note-toggle { justify-self: start; margin-left: -12px; color: var(--accent-text); }
+.note-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.note-urgent { color: var(--status-warning); }
+.note-status { max-width: 100%; line-height: 1.3; white-space: normal; }
+.note-sent { color: var(--emerald-accent); }
+.note-held { color: var(--status-warning); }
+.note-digested { color: var(--accent-text); }
+.note-dropped { color: var(--text-muted); }
+
+/* Settings: the Time zone card. */
+.tz-now strong { font-size: 1.0625rem; font-variant-numeric: tabular-nums lining-nums; color: var(--text-strong); }
+.tz-now p { margin: 0; }
+.tz-actions, .tz-picker .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.tz-picker { display: grid; gap: var(--space-3); margin-top: var(--space-4); }
+.tz-picker select { min-height: 9.5rem; }
+.tz-picker .actions { margin-top: 0; }
+
+/* Settings: the How Nexus talks card. */
+.voice-card { grid-column: 1 / -1; }
+.voice-lead { margin: 0 0 var(--space-4); }
+.voice-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--space-2); }
+.voice-preset { display: grid; gap: 2px; align-content: start; min-width: 0; min-height: 44px; padding: var(--space-3); border-radius: 12px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-micro), border-color var(--t-micro); }
+.voice-preset:hover, .voice-preset:focus-visible { background: var(--bg-card-hover); }
+.voice-preset[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+.voice-preset-label { font-weight: 600; }
+.voice-preset[aria-pressed="true"] .voice-preset-label { color: var(--accent-text); }
+.voice-preset-blurb { font-size: 0.8125rem; line-height: 1.35; color: var(--text-muted); overflow-wrap: anywhere; }
+.voice-dials { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--space-3) var(--space-4); margin-top: var(--space-4); }
+.voice-dial { display: grid; gap: var(--space-1); min-width: 0; }
+.voice-dial-label { font-weight: 500; font-size: 0.8125rem; color: var(--text-secondary); }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1); padding: var(--space-1); border-radius: 12px; background: var(--bg-input); border: 1px solid var(--border-card); }
+.seg-btn { min-width: 0; min-height: 40px; padding: 0 var(--space-2); border-radius: 8px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 600; cursor: pointer; transition: background var(--t-micro), color var(--t-micro); }
+.seg-btn:hover, .seg-btn:focus-visible { background: var(--bg-card-hover); }
+.seg-btn[aria-pressed="true"] { background: var(--bg-card); color: var(--accent-text); box-shadow: 0 0 0 1px var(--accent-border); }
+.voice-note { margin-top: var(--space-4); }
+.voice-note-count { margin: var(--space-1) 0 0; }
+.voice-preview { margin-top: var(--space-4); }
+.voice-preview-title { margin: 0 0 var(--space-2); font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); }
+.voice-replies { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.voice-reply { display: grid; gap: 2px; min-width: 0; padding: var(--space-3); border-radius: 12px; background: var(--bg-card-hover); }
+.voice-said, .voice-text { overflow-wrap: anywhere; }
+.voice-error { margin: var(--space-3) 0 0; }
+@media (max-width: 560px) {
+  .voice-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .voice-preset { padding: var(--space-2) var(--space-3); }
+  .voice-preset-blurb { font-size: 0.8125rem; }
+}
+
+/* --- Model costs (owner only): a day-by-day bar chart and lists with a share bar --- */
+.cost-chart { display: grid; gap: var(--space-3); }
+.cost-readout { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0; min-height: 1.5em; }
+.cost-bars {
+  height: 180px; margin: 0; padding: 0; list-style: none; border-bottom: 1px dashed var(--border-card);
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 1px; align-items: stretch;
+}
+.cost-bars li { min-width: 0; }
+.cost-hit {
+  display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 100%; margin: 0; padding: 0;
+  border: 0; background: none; cursor: pointer;
+}
+.cost-hit:focus-visible { outline: 2px solid var(--sky-text); outline-offset: 1px; border-radius: 4px; }
+.cost-bar { display: block; width: 100%; max-width: 18px; border-radius: 3px 3px 0 0; background: var(--pal-teal); transition: background var(--t-micro); }
+.cost-hit.on .cost-bar { background: var(--accent); }
+.cost-axis { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 0.8125rem; color: var(--text-muted); }
+.cost-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.cost-list li { display: grid; gap: var(--space-2); min-width: 0; }
+.cost-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+.cost-name { min-width: 0; overflow-wrap: anywhere; color: var(--text-strong); font-weight: 500; }
+.cost-line .num { white-space: nowrap; }
+
+/* A section page already titles itself with its h1; the card's own heading stays for screen readers only. */
+.set-page > .block > .block-head { min-height: 0; }
+.set-page > .block > .block-head h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* A page that failed to render, and an address that matches no page. */
+.page-error, .not-found { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; }
+.page-error p, .not-found p { margin: 0; }
+.page-error-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.page-error .page-error-detail { font-size: 0.8125rem; color: var(--text-muted); overflow-wrap: anywhere; font-family: var(--font-mono); }
+
+/* A failed load, with its Retry (LoadError). Inside a card it is a row; the page variant is a card. */
+.load-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) 0 var(--space-4); }
+.load-error-text { flex: 1 1 12rem; min-width: 0; margin: 0; font-size: 0.9375rem; }
+.load-error-page { padding: var(--space-4); background: var(--bg-glass); border: 1px solid var(--border-card); border-radius: var(--radius); }
+
+/* Settings: a time field that saves when left (the status sits on the label's line, so nothing moves). */
+.time-field { position: relative; display: grid; gap: var(--space-1); min-width: 0; }
+.time-field .error-text { margin: 0; }
+.time-status { position: absolute; top: 0; right: 0; }
+.quiet-times .time-field { flex: 1 1 140px; }
+
+/* Settings: the Account group (rows) and the invite link card, here and in the desktop rail. */
+.invite-row .row-line:disabled { cursor: default; opacity: 0.6; }
+.invite-card { display: grid; gap: var(--space-3); padding: var(--space-3) 0 var(--space-4); }
+.rail .invite-card { padding: var(--space-3) 0 0; border-top: 0; background: none; }
+.invite-note { margin: 0; font-size: 0.875rem; }
+.invite-actions { display: flex; align-items: center; gap: var(--space-3); }
+.invite-actions p { margin: 0; }
+.invite-card .btn { width: auto; }
+.invite-row { flex: 1 1 100%; min-width: 0; }
+.invite-row .row-line { width: 100%; }
+.invite-row .error-text { margin: 0; padding: 0 0 var(--space-3); }
+
+.memory-row { flex-wrap: wrap; }
+.memory-row > .confirm-box, .memory-row > .error-text { flex: 1 1 100%; margin-top: 0; }

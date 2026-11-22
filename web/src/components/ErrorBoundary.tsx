@@ -1,4 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Button } from "./ui";
+
+import "../pages/settings.css";
 
 type Props = {
   children: ReactNode;
@@ -39,9 +42,9 @@ export class ErrorBoundary extends Component<Props, { failed: boolean; detail?: 
     return (
       <div className="state" role="alert">
         <p>Something went wrong on this page.</p>
-        <button type="button" className="btn" onClick={() => window.location.reload()}>
+        <Button onClick={() => window.location.reload()}>
           Reload
-        </button>
+        </Button>
       </div>
     );
   }
@@ -68,12 +71,12 @@ export function pageFallback(reset: () => void, detail?: string): ReactNode {
       <p>This page hit a problem.</p>
       {detail && <p className="page-error-detail">{detail}</p>}
       <div className="page-error-actions">
-        <button type="button" className="btn btn-primary" onClick={reset}>
+        <Button variant="primary" onClick={reset}>
           Try again
-        </button>
-        <button type="button" className="btn" onClick={() => window.location.reload()}>
+        </Button>
+        <Button onClick={() => window.location.reload()}>
           Reload
-        </button>
+        </Button>
       </div>
     </div>
   );

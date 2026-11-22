@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type DevicePoll, type DeviceStart, api, ApiError } from "../api";
+import { Button, ButtonLink } from "./ui";
+
+import "../pages/settings.css";
 
 const POLL_MS = 2000;
 
@@ -97,9 +100,9 @@ export function AppSignIn({
         <p className="error-text" role="alert">
           Couldn't get a sign-in code. Check your connection and try again.
         </p>
-        <button type="button" className="btn" onClick={again}>
+        <Button onClick={again}>
           Try again
-        </button>
+        </Button>
       </div>
     );
   }
@@ -107,9 +110,9 @@ export function AppSignIn({
     return (
       <div className="app-signin">
         <p className="secondary">That code has expired.</p>
-        <button type="button" className="btn btn-primary" onClick={again}>
+        <Button variant="primary" onClick={again}>
           Get a new code
-        </button>
+        </Button>
       </div>
     );
   }
@@ -122,9 +125,9 @@ export function AppSignIn({
       <p className="app-signin-code" aria-label={`Sign-in code ${code}`}>
         {code}
       </p>
-      <a className="btn btn-primary landing-cta" href={`https://t.me/${bot}?start=app-${plain}`}>
+      <ButtonLink variant="primary" className="landing-cta" href={`https://t.me/${bot}?start=app-${plain}`}>
         Open Telegram
-      </a>
+      </ButtonLink>
       <p className="secondary">
         Or send <span className="num">/app {code}</span> to @{bot}
       </p>

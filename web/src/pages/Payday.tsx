@@ -4,6 +4,9 @@ import { type FormEvent, useState } from "react";
 import { api, type Me, type Salary } from "../api";
 import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 const RULES = [
   { value: "monthly_day", label: "A day of the month" },
@@ -92,11 +95,8 @@ export function PaydaySection({ me }: { me: Me }) {
   }
 
   return (
-    <section className="card" aria-labelledby="payday">
-      <div className="card-head">
-        <h2 id="payday">Payday</h2>
-        <span className="caption">A check-in on payday; weekends move to Friday</span>
-      </div>
+    <Section id="payday" title="Payday">
+      <p className="caption set-intro">A check-in on payday; weekends move to Friday</p>
       {pay.isLoading && <p className="state">Loading…</p>}
       {pay.isError && <LoadError message="Couldn't load your pay schedule." query={pay} />}
 
@@ -115,26 +115,25 @@ export function PaydaySection({ me }: { me: Me }) {
             </span>
             {!confirming ? (
               <span className="quick">
-                <button type="button" className="btn btn-ghost" onClick={startEditing}>
+                <Button variant="text" onClick={startEditing}>
                   Change
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+                </Button>
+                <Button variant="text" onClick={() => setConfirming(true)}>
                   Remove
-                </button>
+                </Button>
               </span>
             ) : (
               <span className="quick">
                 <span>Stop payday check-ins?</span>
-                <button
-                  type="button"
-                  className="btn btn-danger"
+                <Button
+                  variant="danger"
                   onClick={() => run(() => api("/salary", { method: "DELETE" })).then(() => setConfirming(false))}
                 >
                   Remove
-                </button>
-                <button type="button" className="btn" onClick={() => setConfirming(false)}>
+                </Button>
+                <Button onClick={() => setConfirming(false)}>
                   Keep
-                </button>
+                </Button>
               </span>
             )}
           </div>
@@ -148,9 +147,9 @@ export function PaydaySection({ me }: { me: Me }) {
             with {current.payer}?
           </span>
           <span className="quick">
-            <button type="button" className="btn" onClick={fillIn}>
+            <Button onClick={fillIn}>
               Fill in
-            </button>
+            </Button>
           </span>
         </div>
       )}
@@ -208,13 +207,13 @@ export function PaydaySection({ me }: { me: Me }) {
               onChange={(e) => setPayer(e.target.value)}
             />
           </label>
-          <button type="submit" className="btn btn-primary">
+          <Button type="submit" variant="primary">
             Save
-          </button>
+          </Button>
           {editing && (
-            <button type="button" className="btn" onClick={() => setEditing(false)}>
+            <Button onClick={() => setEditing(false)}>
               Cancel
-            </button>
+            </Button>
           )}
         </form>
       )}
@@ -232,9 +231,9 @@ export function PaydaySection({ me }: { me: Me }) {
               required
             />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={!usual.trim()}>
+          <Button type="submit" variant="primary" disabled={!usual.trim()}>
             Save
-          </button>
+          </Button>
         </form>
       )}
       {error && (
@@ -243,6 +242,6 @@ export function PaydaySection({ me }: { me: Me }) {
         </p>
       )}
       <p className="caption">Your salary is only what you tell Nexus; it's never guessed from your transactions.</p>
-    </section>
+    </Section>
   );
 }

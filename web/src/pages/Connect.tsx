@@ -2,6 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { api } from "../api";
+import { ButtonLink } from "../components/ui";
+
+import "./settings.css";
 
 /**
  * Opened from a one-time link (often in the phone's browser, from Telegram), so it
@@ -21,7 +24,7 @@ export function ConnectGmail() {
 
   return (
     <main className="connect">
-      <section className="card connect-card" aria-labelledby="connect-title">
+      <section className="connect-card" aria-labelledby="connect-title">
         <h1 id="connect-title">Connect Gmail</h1>
         {link.isLoading && <p className="state">Checking your link…</p>}
         {(!token || link.isError || link.data?.valid === false) && (
@@ -47,9 +50,9 @@ export function ConnectGmail() {
                 Tap <strong>Allow</strong>.
               </li>
             </ol>
-            <a className="btn btn-primary" href={`/api/email/gmail/start?t=${encodeURIComponent(token)}`}>
+            <ButtonLink variant="primary" href={`/api/email/gmail/start?t=${encodeURIComponent(token)}`}>
               Continue to Google
-            </a>
+            </ButtonLink>
           </>
         )}
       </section>
@@ -68,7 +71,7 @@ export function ConnectDone() {
   const error = params.get("error");
   return (
     <main className="connect">
-      <section className="card connect-card" aria-labelledby="done-title">
+      <section className="connect-card" aria-labelledby="done-title">
         <h1 id="done-title">{error ? "Not connected" : "Gmail connected"}</h1>
         {error ? (
           <p>{PROBLEMS[error] ?? PROBLEMS.declined}</p>

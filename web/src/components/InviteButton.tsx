@@ -1,6 +1,9 @@
 import { useRef, useState } from "react";
 
 import { api } from "../api";
+import { Button } from "./ui";
+
+import "../pages/settings.css";
 
 type Invite = { url: string; expires_at?: string };
 
@@ -36,9 +39,9 @@ function InviteCard({ invite }: { invite: Invite }) {
         <input ref={field} className="input" readOnly value={invite.url} onFocus={(e) => e.currentTarget.select()} />
       </label>
       <div className="invite-actions">
-        <button type="button" className="btn btn-small" onClick={() => void copyLink()}>
+        <Button size="sm" onClick={() => void copyLink()}>
           Copy
-        </button>
+        </Button>
         <p className={`caption${copy === "failed" ? " error-text" : ""}`} role="status">
           {copy === "copied" ? "Copied" : copy === "failed" ? "Couldn't copy. Select the link and copy it." : ""}
         </p>
@@ -69,16 +72,16 @@ export function InviteButton({ variant = "rail" }: { variant?: "rail" | "row" })
   return (
     <div className={variant === "row" ? "invite invite-row" : "invite"}>
       {variant === "row" ? (
-        <button type="button" className="set-row" disabled={busy} onClick={() => void create()}>
-          <span className="set-text">
-            <span className="set-row-title">Invite someone</span>
-            <span className="caption">Make a link that lets one person sign in</span>
+        <button type="button" className="row-line row-press" disabled={busy} onClick={() => void create()}>
+          <span className="row-text">
+            <span className="row-title">Invite someone</span>
+            <span className="row-sub">Make a link that lets one person sign in</span>
           </span>
         </button>
       ) : (
-        <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void create()}>
+        <Button variant="text" disabled={busy} onClick={() => void create()}>
           Invite someone
-        </button>
+        </Button>
       )}
       {invite && <InviteCard key={invite.url} invite={invite} />}
       {error && (

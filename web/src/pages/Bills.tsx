@@ -4,6 +4,9 @@ import { type FormEvent, useState } from "react";
 import { api, type Bill, type Me, type Wallet } from "../api";
 import { LoadError } from "../components/LoadError";
 import { formatMoney } from "../format";
+import { Button, Section } from "../components/ui";
+
+import "./settings.css";
 
 const CADENCES = [
   { value: "monthly", label: "Every month" },
@@ -114,18 +117,18 @@ function BillRow({ bill, home, wallets, onChanged, onPaid }: {
                 </option>
               ))}
             </select>
-            <button type="submit" className="btn btn-primary btn-small">
+            <Button type="submit" variant="primary" size="sm">
               Save
-            </button>
-            <button type="button" className="btn btn-small" onClick={() => setLinking(false)}>
+            </Button>
+            <Button size="sm" onClick={() => setLinking(false)}>
               Cancel
-            </button>
+            </Button>
           </form>
         ) : (
           <span className="quick">
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => setLinking(true)}>
+            <Button variant="text" size="sm" onClick={() => setLinking(true)}>
               Link to a wallet
-            </button>
+            </Button>
           </span>
         ))}
       <div className="budget-foot">
@@ -152,37 +155,37 @@ function BillRow({ bill, home, wallets, onChanged, onPaid }: {
                 onChange={(e) => setPaidAmount(e.target.value)}
               />
             </label>
-            <button type="submit" className="btn btn-primary" disabled={!paidAmount.trim()}>
+            <Button type="submit" variant="primary" disabled={!paidAmount.trim()}>
               Log and mark paid
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => void markPaid(null)}>
+            </Button>
+            <Button variant="text" onClick={() => void markPaid(null)}>
               Just mark paid
-            </button>
-            <button type="button" className="btn" onClick={() => setPaying(false)}>
+            </Button>
+            <Button onClick={() => setPaying(false)}>
               Cancel
-            </button>
+            </Button>
           </form>
         ) : !confirming ? (
           <span className="quick">
-            <button type="button" className="btn btn-ghost" onClick={startPaid}>
+            <Button variant="text" onClick={startPaid}>
               {spending ? "Mark paid" : "Mark done"}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => act("/snooze")} disabled={bill.snoozed}>
+            </Button>
+            <Button variant="text" onClick={() => act("/snooze")} disabled={bill.snoozed}>
               Snooze
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+            </Button>
+            <Button variant="text" onClick={() => setConfirming(true)}>
               Remove
-            </button>
+            </Button>
           </span>
         ) : (
           <span className="quick">
             <span>Stop tracking {bill.name}?</span>
-            <button type="button" className="btn btn-danger" onClick={() => act("", "DELETE")}>
+            <Button variant="danger" onClick={() => act("", "DELETE")}>
               Remove
-            </button>
-            <button type="button" className="btn" onClick={() => setConfirming(false)}>
+            </Button>
+            <Button onClick={() => setConfirming(false)}>
               Keep
-            </button>
+            </Button>
           </span>
         )}
       </div>
@@ -246,11 +249,8 @@ export function BillsSection({ me }: { me: Me }) {
   }
 
   return (
-    <section className="card" aria-labelledby="bills">
-      <div className="card-head">
-        <h2 id="bills">Scheduled payments</h2>
-        <span className="caption">Reminders 7, 3 and 1 days before</span>
-      </div>
+    <Section id="bills" title="Scheduled payments">
+      <p className="caption set-intro">Reminders 7, 3 and 1 days before</p>
       {bills.isLoading && <p className="state">Loading…</p>}
       {bills.isError && <LoadError message="Couldn't load scheduled payments." query={bills} />}
       {bills.data?.length === 0 && (
@@ -331,9 +331,9 @@ export function BillsSection({ me }: { me: Me }) {
             </select>
           </label>
         )}
-        <button type="submit" className="btn btn-primary" disabled={!name.trim() || !due}>
+        <Button type="submit" variant="primary" disabled={!name.trim() || !due}>
           Add
-        </button>
+        </Button>
       </form>
       )}
       {error && (
@@ -344,6 +344,6 @@ export function BillsSection({ me }: { me: Me }) {
       <p className="caption">
         Nexus only reminds you; it never pays, invests or moves money.
       </p>
-    </section>
+    </Section>
   );
 }
