@@ -36,7 +36,7 @@ html.overlay-open .main-viewport { overflow: hidden; }
 }
 .sheet-icon:hover, .sheet-icon:focus-visible { background: var(--bg-card-hover); color: var(--text-primary); }
 @media (hover: none) { .sheet-icon:hover { background: transparent; color: var(--text-secondary); } }
-.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; gap: var(--space-3); align-content: start; padding: var(--space-2) var(--space-5) var(--space-5); }
+.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: grid; grid-auto-rows: max-content; gap: var(--space-3); align-content: start; padding: var(--space-2) var(--space-5) var(--space-5); }
 .sheet-foot { flex: none; padding: var(--space-3) var(--space-5) var(--space-5); border-top: 1px solid var(--border-subtle); }
 
 @media (max-width: 720px) {
