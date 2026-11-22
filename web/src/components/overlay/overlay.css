@@ -35,9 +35,11 @@ html.overlay-open .main-viewport { overflow: hidden; }
     animation: sheet-up var(--t-emphasis);
   }
   html:has(.overlay-panel.drawer)::before { content: ""; position: fixed; inset: 0; z-index: calc(var(--z-overlay) - 1); background: var(--overlay); animation: fade var(--t-standard); }
-  /* With the keyboard up the sheet grows to the whole visual viewport (viewport.ts's --vv-top and --vv-height,
-     applied by styles.css's html.keyboard .drawer): no gap above, square corners. */
-  html.keyboard .overlay-panel.drawer.overlay-panel-side { top: var(--vv-top, 0px); border-radius: 0; }
+  /* With the keyboard up (the chat focuses its field as it opens) the sheet fits the visual viewport
+     (viewport.ts's --vv-top and --vv-height) but keeps its 24px of page above, so it still reads as a sheet. */
+  html.keyboard .overlay-panel.drawer.overlay-panel-side {
+    top: calc(var(--vv-top, 0px) + 24px); height: calc(var(--vv-height, 100%) - 24px);
+  }
 }
 
 /* Sheet pieces */
