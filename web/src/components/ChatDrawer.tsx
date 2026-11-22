@@ -1,5 +1,4 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { api, apiForm, ApiError, type ChatHistory, type Demo, type Reply } from "../api";
 import {
@@ -14,9 +13,10 @@ import {
 import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
-import { useDragToClose, useMediaQuery } from "../useDragToClose";
 import { Icon } from "./Icon";
 import { NexusMark } from "./NexusMark";
+import { PHONE_QUERY, useMediaQuery } from "./overlay/breakpoints";
+import { Overlay } from "./overlay/Overlay";
 
 type Message = {
   from: "user" | "bot";
@@ -202,10 +202,8 @@ export function ChatDrawer({
   const stopButton = useRef<HTMLButtonElement>(null);
   const end = useRef<HTMLDivElement>(null);
   // Full screen on a phone (the CSS's 480px breakpoint): the grab bar and header drag the chat down to close.
-  const phone = useMediaQuery("(max-width: 480px)");
-  const drawer = useRef<HTMLElement>(null);
+  const phone = useMediaQuery(PHONE_QUERY);
   const handle = useRef<HTMLDivElement>(null);
-  useDragToClose({ handle, panel: drawer, onClose, enabled: phone });
   // Whether the list is scrolled to the newest message, so it can stay there when the keyboard resizes it.
   const atEnd = useRef(true);
   // Keep to the newest message, except right after loading older ones.
@@ -213,9 +211,6 @@ export function ChatDrawer({
 
   // Effects use braces so nothing is returned: React would call a returned value as a
   // cleanup, and newer browsers return a promise from scrollIntoView().
-  useEffect(() => {
-    input.current?.focus();
-  }, []);
   useEffect(() => {
     if (stick.current) end.current?.scrollIntoView?.({ block: "end" });
     stick.current = true;
@@ -276,12 +271,6 @@ export function ChatDrawer({
     setOldest(history.lines[0]?.id ?? oldest);
     setMessages((m) => [...fromHistory(history), ...m]);
   }
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   async function run(call: Promise<Reply[]>, failed?: (e: unknown) => void) {
     setBusy(true);
     try {
@@ -419,16 +408,10 @@ export function ChatDrawer({
 
   // In the body, not in the page: the page's pull-to-refresh listens on (and slides) everything inside
   // it, and a drag in the chat must neither refresh the page nor move the chat.
-  return createPortal(
-    <aside
-      ref={drawer}
-      className="drawer"
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby="chat-title"
-    >
-      <div ref={handle} className="drawer-handle">
-      <span className="drawer-grab" aria-hidden="true" />
+  return (
+    <Overlay shape="panel" modal={phone} className="drawer" labelledBy="chat-title" initialFocus="#chat-input" onClose={onClose} handle={handle}>
+      <div ref={handle} className="overlay-handle">
+      <span className="overlay-grab" aria-hidden="true" />
       <header>
         <h2 id="chat-title">Chat</h2>
         {demo && (
@@ -588,7 +571,6 @@ export function ChatDrawer({
           </button>
         )}
       </form>
-    </aside>,
-    document.body,
+    </Overlay>
   );
 }
