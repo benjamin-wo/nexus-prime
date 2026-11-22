@@ -108,6 +108,16 @@ describe("TodayCard", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("is a section whose Why did it move? is a text button with no sparkle", async () => {
+    mockApi({ "GET /investments/today": () => today() });
+    renderWithProviders(<TodayCard />);
+    const card = await screen.findByRole("region", { name: "Today" });
+    expect(card).toHaveClass("block");
+    const button = within(card).getByRole("button", { name: /Why did it move/ });
+    expect(button).toHaveClass("btn-ghost");
+    expect(button.querySelector("svg")).toBeNull();
+  });
+
   it("answers Why did it move? in place, with where it came from", async () => {
     const calls = mockApi({
       "GET /investments/today": () => today(),

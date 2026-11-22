@@ -1,0 +1,77 @@
+/* Home (DESIGN.md §5 "Home headline" and "Today (Home)"): the headline on the ground, For today, Working on, Get
+   started and the three views at a glance. On a phone they stack in the order Home.tsx writes them; from 1024px
+   they sit in two columns (3 to 2), the trip view across the top. Colours are tokens only (design.test.ts). */
+.home { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+.home-glance { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+@media (max-width: 720px) {
+  .home, .home-glance { gap: var(--space-4); }
+}
+
+@media (min-width: 1024px) {
+  .home {
+    display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); column-gap: var(--space-6); row-gap: 0;
+    grid-template-rows: auto auto auto auto auto minmax(0, 1fr); align-items: start;
+    grid-template-areas: "trip trip" "head glance" "today glance" "work glance" "start glance" "fill glance";
+  }
+  /* Spacing is a margin, so a section that is not there leaves no gap. */
+  .home > * { margin-bottom: var(--space-6); }
+  .home > .home-head { grid-area: head; }
+  .home > [aria-labelledby="trip-mode"] { grid-area: trip; }
+  .home > [aria-labelledby="for-today"] { grid-area: today; }
+  .home > [aria-labelledby="working-on"] { grid-area: work; }
+  .home > [aria-labelledby="get-started"] { grid-area: start; }
+  .home > .home-glance { grid-area: glance; margin-bottom: 0; }
+}
+
+/* The headline block: no panel, no gradient, no round buttons. */
+.home-head { display: grid; gap: var(--space-2); padding: 0 var(--space-1); min-width: 0; }
+.home-label { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: 44px; }
+.home-date { margin: 0; font-size: 0.8125rem; font-weight: 500; line-height: 1.3; color: var(--text-muted); }
+.home-label-actions { display: flex; align-items: center; margin-right: calc(-1 * var(--space-3)); }
+.home-label-actions .btn { min-height: 44px; }
+.home-figure {
+  margin: 0; font-size: 3.5rem; font-weight: 700; line-height: 1; letter-spacing: -0.04em; color: var(--text-strong);
+  font-variation-settings: "opsz" 96; font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere;
+}
+.home-figure.is-over { color: var(--rose-accent); }
+@media (max-width: 360px) { .home-figure { font-size: 3rem; } }
+.home-sentence { margin: 0; max-width: 36rem; font-family: var(--font-body); font-size: 1rem; line-height: 1.5; color: var(--text-secondary); }
+.home-num { font-family: var(--font-ui); font-weight: 600; font-variant-numeric: tabular-nums lining-nums; color: var(--text-strong); }
+
+/* For today: the word at the right is a text button (a link row's word is the row's own link). */
+.today-word { font-family: var(--font-ui); font-size: 0.9375rem; font-weight: 600; }
+.row-trailing > .today-word { color: var(--accent-text); }
+.row-trailing > .today-word.is-now { color: var(--status-warning); }
+.row-trailing > .today-word.is-today { color: var(--text-muted); font-weight: 500; }
+.btn.today-word.is-now { color: var(--status-warning); }
+.btn.today-quiet { color: var(--text-muted); font-weight: 500; }
+.today-error { flex: 1 1 100%; margin: 0; text-align: right; }
+/* One action stays at the right of the row on a phone too; two or more wrap under the text. */
+@media (max-width: 720px) {
+  :is(.today-row:not(.today-multi), .start-row) .row-actions-end { flex: none; margin-left: 0; justify-content: flex-end; }
+}
+
+/* Working on: a title, its progress line, a thin bar (ink on the wash) and Cancel. */
+.run-item { padding: var(--space-3) 0; min-height: 56px; box-sizing: border-box; }
+.run-item .row-text { flex: 1 1 200px; }
+.run-bar { display: block; height: 4px; margin-top: var(--space-2); border-radius: 999px; background: var(--pal-wash); overflow: hidden; }
+.run-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--text-strong); transition: width var(--t-standard); }
+
+/* Get started. */
+.start-head { display: inline-flex; align-items: center; gap: var(--space-1); }
+.start-row.is-done .row-title { color: var(--text-muted); }
+.start-done { font-family: var(--font-ui); font-size: 0.9375rem; font-weight: 500; color: var(--text-muted); }
+.start-note { margin: 0; padding: var(--space-2) 0 var(--space-3); }
+
+/* At a glance: a view's figure, its line and, against a budget, two thin bars (share used, share of the month gone). */
+.glance { display: grid; gap: var(--space-2); align-content: start; }
+.glance > p { margin: 0; }
+.glance-figure { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.15; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere; }
+.glance-line { font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
+.pace-ahead { color: var(--status-warning); font-weight: 600; }
+.glance-bars { display: grid; gap: 6px; margin: var(--space-1) 0; }
+.glance .meter { height: 4px; border: 0; background: var(--pal-wash); }
+.glance .meter span { background: var(--text-strong); }
+.glance .meter-warn span { background: var(--status-warning); }
+.glance .meter-over span { background: var(--rose-accent); }
+.glance .meter-time span { background: var(--text-muted); }

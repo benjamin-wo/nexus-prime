@@ -2,31 +2,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 
 import { api, type Me, type Page, type Setup } from "../api";
-import { Block } from "./Block";
-import { Icon } from "./Icon";
-import { NexusMark } from "./NexusMark";
-import { Button, ButtonLink } from "./ui";
+import { Button, ButtonLink, Row, RowList, Section } from "./ui";
 
-/** Done: a tick. To do: an empty ring. The state is also said in words for a screen reader. */
-function Tick({ done }: { done: boolean }) {
-  return (
-    <span className={`row-icon${done ? " in" : ""}`} aria-hidden="true">
-      {done ? <Icon name="check" size={18} /> : <span className="ring" />}
-    </span>
-  );
-}
-
-/** One row: a tick, what it is, and (until it is done) one small action. */
+/** One row: what it is and, at the right, "Done" or (until it is done) a "Set up" text button. The state is also
+ * said in words for a screen reader. */
 function Step({ done, label, children }: { done: boolean; label: string; children: ReactNode }) {
   return (
-    <li className={`row start-row${done ? " is-done" : ""}`}>
-      <Tick done={done} />
-      <span className="row-main">
-        <span className="wrap">{label}</span>
-        <span className="sr-only">{done ? "Done" : "To do"}</span>
-      </span>
-      {!done && children}
-    </li>
+    <Row
+      className={`start-row${done ? " is-done" : ""}`}
+      title={label}
+      sub={done ? undefined : <span className="sr-only">To do</span>}
+      trailing={done ? <span className="start-done">Done</span> : undefined}
+      actions={done ? undefined : children}
+    />
   );
 }
 
@@ -85,14 +73,9 @@ export function GetStarted({ me, onLog }: { me: Me; onLog: () => void }) {
   }
 
   return (
-    <Block
+    <Section
       id="get-started"
-      title={
-        <span className="title-mark">
-          <NexusMark size={30} />
-          Get started
-        </span>
-      }
+      title="Get started"
       className="start-card"
       action={
         <span className="start-head">
@@ -100,42 +83,41 @@ export function GetStarted({ me, onLog }: { me: Me; onLog: () => void }) {
             {steps.filter(Boolean).length} of {steps.length}
           </span>
           <Button variant="text" size="sm" className="start-hide" disabled={busy} onClick={() => void hide()}>
-            <Icon name="x" size={16} />
-            <span className="sr-only">Hide</span>
+            Hide
           </Button>
         </span>
       }
     >
-      <ul className="rows" aria-label="First steps">
+      <RowList aria-label="First steps">
         <Step done={hasTelegram} label="Connect Telegram">
           {config && (
-            <ButtonLink variant="secondary" size="sm" href={`https://t.me/${config.bot_username}`} target="_blank" rel="noopener noreferrer">
-              Open the bot<span className="sr-only"> in Telegram</span>
+            <ButtonLink variant="text" href={`https://t.me/${config.bot_username}`} target="_blank" rel="noopener noreferrer">
+              Set up<span className="sr-only"> Telegram</span>
             </ButtonLink>
           )}
         </Step>
         <Step done={hasEntry} label="Log your first expense">
-          <Button variant="secondary" size="sm" onClick={onLog}>
-            Log one<span className="sr-only"> expense</span>
+          <Button variant="text" onClick={onLog}>
+            Set up<span className="sr-only"> your first expense</span>
           </Button>
         </Step>
         <Step done={hasBudget} label="Set a monthly budget">
-          <ButtonLink variant="secondary" size="sm" to="/accounting/budgets">
-            Set one<span className="sr-only"> budget</span>
+          <ButtonLink variant="text" to="/accounting/budgets">
+            Set up<span className="sr-only"> a monthly budget</span>
           </ButtonLink>
         </Step>
         <Step done={hasReceipts} label="Get receipts in automatically">
-          <ButtonLink variant="secondary" size="sm" to="/settings/email">
-            Connect<span className="sr-only"> email</span>
+          <ButtonLink variant="text" to="/settings/email">
+            Set up<span className="sr-only"> email receipts</span>
           </ButtonLink>
         </Step>
-      </ul>
+      </RowList>
       <p className="caption start-note">Log in Telegram or the chat button; review here.</p>
       {error && (
         <p className="error-text" role="alert">
           {error}
         </p>
       )}
-    </Block>
+    </Section>
   );
 }

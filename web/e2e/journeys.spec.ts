@@ -75,7 +75,7 @@ test("inside Telegram the Mini App signs in by itself", async ({ page }) => {
     tgWebAppVersion: "8.0",
   });
   await page.goto(`/#${launch}`);
-  await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "For today" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(""); // launch data not left in the URL
   const calls = await page.evaluate(
     () => (window as unknown as { tgCalls: string[] }).tgCalls,
@@ -577,8 +577,8 @@ test("home says when less is left to spend than the budget shows", async ({ page
   const state = await fakeApi(page);
   state.budgets.push({ id: "b1", category_id: null, limit: 2000, spent: 600 });
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Nexus", exact: true })).toContainText(
-    /Left to spend is SGD.1,100\.00 after what's still due — less than your SGD.1,400\.00 budget left\./,
+  await expect(page.getByRole("region", { name: "For today" })).toContainText(
+    /Left to spend is SGD.1,100\.00 after what's still due, below the SGD.1,400\.00 budget left\./,
   );
 });
 
@@ -1099,10 +1099,10 @@ test("two payments flagged as one can be marked as two", async ({ page }) => {
   await expect(page.getByRole("row").filter({ hasText: "23.40" })).toHaveCount(2);
 });
 
-test("home is the front desk: what needs you, what's running, and each department", async ({ page }) => {
+test("home is the front desk: what is for today, what's running, and each department", async ({ page }) => {
   const state = await fakeApi(page, { running: true });
   await page.goto("/");
-  const needs = page.getByRole("region", { name: "Needs you" });
+  const needs = page.getByRole("region", { name: "For today" });
   await expect(needs.getByRole("link", { name: /2 receipts from email waiting for you/ })).toHaveAttribute(
     "href",
     "/settings/email",
@@ -1114,11 +1114,11 @@ test("home is the front desk: what needs you, what's running, and each departmen
   await working.getByRole("button", { name: "Cancel" }).click();
   await expect(working.getByText("Cancelled")).toBeVisible();
   expect(state.cancelled).toEqual(["r1"]);
-  // Nexus opens with a brief from the user's own figures, and a few one-tap questions.
-  const nexus = page.getByRole("region", { name: "Nexus", exact: true });
-  await expect(nexus).toContainText("spent this month");
-  await expect(nexus).toContainText("than by this time last month.");
-  await expect(nexus).toContainText("2 things need you below.");
+  // The headline is from the user's own figures: what was spent and how it compares, with no count of things to do.
+  const headline = page.getByRole("region", { name: "This month", exact: true });
+  await expect(headline).toContainText(/spent in \w+/);
+  await expect(headline).toContainText("than by this time in");
+  await expect(page.getByText(/things? needs? you/)).toHaveCount(0);
   // The chart and the budgets list are no longer on Home; the month, the portfolio and the next trip are at a glance.
   await expect(page.getByRole("list", { name: "Spending by month" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Budgets this month" })).toHaveCount(0);
@@ -1147,18 +1147,19 @@ test("the spending by month chart is on the Money overview", async ({ page }) =>
   await expect(page.getByRole("list", { name: "Spending by month" })).toHaveCount(0);
 });
 
-test("a suggested question on home opens the chat with it", async ({ page }) => {
+test("a suggested question in the empty chat sends it", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Where did my money go this month?" }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
-  await expect(chat.locator(".msg-user").first()).toHaveText("Where did my money go this month?");
+  await chat.getByRole("group", { name: "Suggestions" }).getByRole("button").first().click();
+  await expect(chat.locator(".msg-user").first()).toHaveText("How's my dining budget?");
 });
 
-test("home has no typing box; the Nexus button opens the chat", async ({ page }) => {
+test("home has no ask panel or typing box; the Nexus button opens the chat", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  await expect(page.getByRole("region", { name: "Just ask Nexus" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Just ask Nexus" })).toHaveCount(0);
   await expect(page.locator("#ask-input, .ask-input")).toHaveCount(0);
   await openChat(page);
   await expect(page.getByRole("dialog", { name: "Chat" })).toBeVisible();
@@ -1179,7 +1180,7 @@ test("departments have their own pages, and old links still work", async ({ page
   await expect(page.getByText(/never books anything/)).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Money pages" })).toHaveCount(0);
   await nav.getByRole("link", { name: "Home" }).click();
-  await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "For today" })).toBeVisible();
 });
 
 test("holdings from a screenshot are checked, saved, edited and removed", async ({ page }) => {
@@ -1786,7 +1787,7 @@ test("a trip is added and shows its spending, set-aside and settle-up", async ({
   await page.goto("/");
   const trip = page.getByRole("region", { name: "Next trip" });
   await expect(trip).toContainText("Tokyo in 43 days");
-  await expect(page.getByRole("region", { name: "Nexus", exact: true })).toContainText("Tokyo trip is in 43 days");
+  await expect(page.getByRole("region", { name: "For today" })).toContainText("Tokyo still needs a place to stay");
   await page.goto("/travel");
   const coming = page.getByRole("region", { name: "Coming up" });
   await expect(coming.getByRole("link", { name: "Tokyo" })).toBeVisible();
@@ -3180,15 +3181,15 @@ test("a shared link can leave bookings out, and the shared page says so", async 
 test("cards rise into view and figures count up, unless less motion is asked for", async ({ page }) => {
   await fakeApi(page);
   await page.goto("/");
-  const hero = page.getByRole("region", { name: "Nexus", exact: true });
-  await expect(hero).toHaveAttribute("data-reveal", "in");
-  await expect(hero.locator(".hero-value")).toHaveText("SGD 37.40");
-  await expect(page.getByRole("heading", { level: 1 }).locator("em.accent-serif")).toHaveText(/morning|afternoon|evening/);
+  const hero = page.getByRole("region", { name: "This month", exact: true });
+  const money = page.getByRole("region", { name: "Money this month" }).locator(".card");
+  await expect(money).toHaveAttribute("data-reveal", "in");
+  await expect(hero.locator(".home-figure")).toContainText("37.40");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload();
-  await expect(hero.locator(".hero-value")).toHaveText("SGD 37.40");
-  await expect(hero).not.toHaveAttribute("data-reveal", /.*/);
+  await expect(hero.locator(".home-figure")).toContainText("37.40");
+  await expect(money).not.toHaveAttribute("data-reveal", /.*/);
 });
 
 test("each section is its own rounded card, its title above it, with room either side", async ({ page }) => {
@@ -3794,7 +3795,7 @@ test("a payment that isn't spending can be linked to a wallet afterwards", async
 test("the Home nudge for a missed move settles with 'It went through' or 'Skip this month'", async ({ page }) => {
   const state = await fakeApi(page, { ibkr: true, missedMoves: true });
   await page.goto("/");
-  const needs = page.getByRole("region", { name: "Needs you" });
+  const needs = page.getByRole("region", { name: "For today" });
   const ibkr = needs.getByRole("listitem").filter({ hasText: "IBKR top-up" });
   const savings = needs.getByRole("listitem").filter({ hasText: "Savings top-up" });
   await expect(ibkr).toContainText("Your SGD 1,000.00 IBKR top-up on 25 Sep hasn't shown up. Did it go through?");
@@ -3826,7 +3827,7 @@ test("a nudge's button shows the error inline when the API refuses", async ({ pa
     route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "that bill has nothing left to pay" }) }),
   );
   await page.goto("/");
-  const needs = page.getByRole("region", { name: "Needs you" });
+  const needs = page.getByRole("region", { name: "For today" });
   const ibkr = needs.getByRole("listitem").filter({ hasText: "IBKR top-up" });
   await ibkr.getByRole("button", { name: "It went through" }).click();
   await expect(ibkr.getByRole("alert")).toHaveText("that bill has nothing left to pay");

@@ -30,6 +30,20 @@ export const formatMoney = (money: Money): string => show(money, false);
 /** For figures that are whole numbers at the source: "SGD 6,760". */
 export const formatWholeMoney = (money: Money): string => show(money, true);
 
+/** The figure alone, with no currency beside it ("1,842.60"), for a headline whose words say what it is. */
+export function formatAmount(money: Money, opts: MoneyOptions = {}): string {
+  const value = Number(money.amount);
+  try {
+    return moneyFormat(money.currency, opts.whole)
+      .formatToParts(value)
+      .filter((p) => p.type !== "currency" && p.type !== "literal")
+      .map((p) => p.value)
+      .join("");
+  } catch {
+    return opts.whole ? String(Math.round(value)) : value.toFixed(2);
+  }
+}
+
 /** A range with the currency once and an en dash: "SGD 4,602–6,760". One amount when both ends
  * are the same; "SGD 90.00 – USD 70.00" when the currencies differ. */
 export function formatRange(lo: Money, hi: Money, opts?: MoneyOptions): string {

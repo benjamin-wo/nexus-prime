@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ledgerParams, type Me, type Reply, type Transaction } from "./api";
 import { Amount } from "./components/Amount";
-import { brief, monthShare, notableMove, pace } from "./brief";
+import { monthShare, pace } from "./brief";
 import { CategoryBars } from "./components/CategoryBars";
 import { ChatDrawer } from "./components/ChatDrawer";
 import { formatMoney } from "./format";
@@ -224,120 +224,6 @@ describe("A trip's Type it in browsers where scrollIntoView returns a promise", 
     expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
     expect(calls.find((c) => c.path === "/chat")?.body).toEqual({ message: expect.stringMatching(/^For my Tokyo trip \(.+\), add this: Hotel Ume 13 to 15 Nov$/) });
     expect(changed).toBe(1);
-  });
-});
-
-describe("brief", () => {
-  const sgd = (amount: string) => ({ amount, currency: "SGD" });
-  const text = (parts: { text: string }[]) => parts.map((p) => p.text).join("");
-
-  it("weighs the month against the budget, else last month", () => {
-    const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("1000"), spent: sgd("412"), remaining: sgd("588"), percent: 41, unconverted: [] };
-    expect(text(brief({ spent: sgd("412"), overall }))).toMatch(/^You've spent SGD\s?412\.00 this month, SGD\s?588\.00 left in your budget\.$/);
-    expect(text(brief({ spent: sgd("1200"), overall }))).toMatch(/SGD\s?200\.00 over your budget\.$/);
-    expect(text(brief({ spent: sgd("300"), lastMonthToDate: sgd("400") }))).toMatch(/SGD\s?100\.00 less than by this time last month\.$/);
-    expect(text(brief({}))).toMatch(/^Nothing needs you right now/);
-  });
-
-  it("says when paying what's still due will take the budget over", () => {
-    const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("4500"), spent: sgd("4126.56"), remaining: sgd("373.44"), percent: 92, unconverted: [] };
-    const plan = (over: object = {}) => ({
-      currency: "SGD",
-      total_out: sgd("4126.56"),
-      left_to_spend: sgd("167.54"),
-      still_due_out: sgd("515.95"),
-      income: sgd("4810.05"),
-      budget_left: sgd("373.44"),
-      spending_due: sgd("515.95"),
-      budget_left_after_due: sgd("-142.51"),
-      tighter: "budget" as const,
-      plan_warning: null,
-      skipped: [],
-      ...over,
-    });
-    const said = text(brief({ spent: sgd("4126.56"), overall, plan: plan() }));
-    expect(said).toMatch(/SGD\s?373\.44 left in your budget\. Once the SGD\s?515\.95 still due is paid you'll be SGD\s?142\.51 over your budget\.$/);
-    // Nothing to add when the bills still due fit in the budget, or none of them are spending.
-    expect(text(brief({ overall, plan: plan({ budget_left_after_due: sgd("20"), spending_due: sgd("353.44") }) }))).toMatch(/^Nothing needs you/);
-    expect(text(brief({ overall, plan: plan({ left_to_spend: sgd("900"), budget_left_after_due: sgd("373.44"), spending_due: sgd("0") }) }))).toMatch(/^Nothing needs you/);
-  });
-
-  it("says when less is left to spend than the budget shows, and only then", () => {
-    const overall = { id: "b", category_id: null, name: "Overall", limit: sgd("2000"), spent: sgd("600"), remaining: sgd("1400"), percent: 30, unconverted: [] };
-    const plan = (over: object = {}) => ({
-      currency: "SGD",
-      total_out: sgd("2600"),
-      left_to_spend: sgd("1100"),
-      still_due_out: sgd("1300"),
-      income: sgd("5000"),
-      budget_left: sgd("1400"),
-      spending_due: sgd("300"),
-      budget_left_after_due: sgd("1100"),
-      tighter: "left_to_spend" as const,
-      plan_warning: null,
-      skipped: [],
-      ...over,
-    });
-    const said = text(brief({ overall, plan: plan() }));
-    expect(said).toMatch(/^Left to spend is SGD\s?1,100\.00 after what's still due — less than your SGD\s?1,400\.00 budget left\.$/);
-    const lit = brief({ overall, plan: plan() }).filter((p) => p.hl).map((p) => p.text);
-    expect(lit).toEqual([expect.stringMatching(/1,100\.00/), expect.stringMatching(/1,400\.00/)]);
-    // The budget is the tighter one, there is no overall budget, or there is no plan: nothing to add.
-    expect(text(brief({ overall, plan: plan({ tighter: "budget", left_to_spend: sgd("1800") }) }))).toMatch(/^Nothing needs you/);
-    expect(text(brief({ plan: plan() }))).toMatch(/^Nothing needs you/);
-    expect(text(brief({ overall, plan: plan({ budget_left: null, budget_left_after_due: null, tighter: null }) }))).toMatch(/^Nothing needs you/);
-    expect(text(brief({ overall }))).toMatch(/^Nothing needs you/);
-    // It sits before the rest of the brief.
-    const needs = [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }];
-    expect(text(brief({ overall, plan: plan(), needs }))).toMatch(/budget left\. 1 thing needs you below\.$/);
-  });
-
-  describe("across areas", () => {
-    const mover = (symbol: string, day_percent: string, held = true) => ({
-      symbol, held, price: "131.50", day_percent, price_kind: "live" as const, price_at: null, price_day: "2026-09-28", headline: null,
-    });
-    const today = (movers: ReturnType<typeof mover>[], session: "live" | "closed_today" | "previous" = "live") => ({
-      session, day: "2026-09-28", change: sgd("16.25"), percent: "0.96", price_kind: "live" as const, as_of_at: null, holds: true, movers, prices: true,
-    });
-
-    it("takes the held stock that moved most, when it moved by 3% or more", () => {
-      expect(notableMove(today([mover("AMD", "1.2"), mover("NVDA", "-5.1")]))).toEqual({ symbol: "NVDA", percent: -5.1, session: "live" });
-      expect(notableMove(today([mover("AMD", "2.9"), mover("NVDA", "-2.1")]))).toBeNull();
-      expect(notableMove(today([mover("AMD", "3")]))).toMatchObject({ symbol: "AMD" });
-      // A watched stock is not the user's, and no session is nothing to say.
-      expect(notableMove(today([mover("AMD", "9", false)]))).toBeNull();
-      expect(notableMove(undefined)).toBeNull();
-      expect(notableMove(null)).toBeNull();
-    });
-
-    it("adds one short market clause after the money, with the figure lit", () => {
-      const move = notableMove(today([mover("NVDA", "-5.1")]));
-      const parts = brief({ spent: sgd("300"), lastMonthToDate: sgd("400"), move });
-      expect(text(parts)).toMatch(/^You've spent SGD\s?300\.00 this month, SGD\s?100\.00 less than by this time last month\. NVDA is down 5% today\.$/);
-      expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/300\.00/), expect.stringMatching(/100\.00/), "5%"]);
-      expect(text(brief({ move: notableMove(today([mover("AMD", "4.4")])) }))).toBe("AMD is up 4% today.");
-      // After the close, and before the next open, it says which session.
-      expect(text(brief({ move: notableMove(today([mover("AMD", "4.4")], "closed_today")) }))).toBe("AMD rose 4% today.");
-      expect(text(brief({ move: notableMove(today([mover("NVDA", "-5.1")], "previous")) }))).toBe("NVDA fell 5% in the last session.");
-    });
-
-    it("says money, then the market, then the trip, then what needs the person", () => {
-      const move = notableMove(today([mover("NVDA", "-5.1")]));
-      const trip = {
-        trip: { destination: "Tokyo", status: "ongoing", day_number: 3, days: 6 },
-        ready: { nights_without_stay: [] },
-      } as unknown as Parameters<typeof brief>[0]["trip"];
-      const needs = [{ department: "investment", kind: "plan_hit", text: "x", link: "/", urgent: true, when: "now" as const, actions: [] }];
-      expect(text(brief({ spent: sgd("300"), move, trip, needs }))).toMatch(
-        /^You've spent SGD\s?300\.00 this month\. NVDA is down 5% today\. You're on day 3 of 6 in Tokyo\. 1 thing needs you below\.$/,
-      );
-    });
-  });
-
-  it("only highlights the figures", () => {
-    const parts = brief({ spent: sgd("10"), needs: [{ department: "accounting", kind: "bill", text: "x", link: "/", urgent: false, when: "soon" as const, actions: [] }] });
-    expect(parts.filter((p) => p.hl).map((p) => p.text)).toEqual([expect.stringMatching(/10\.00/)]);
-    expect(text(parts)).toMatch(/ 1 thing needs you below\.$/);
   });
 });
 

@@ -48,17 +48,20 @@ describe("GetStarted: each step's state", () => {
     const region = await card();
     expect(within(region).getByText("0 of 4")).toBeInTheDocument();
     const rows = within(region).getAllByRole("listitem");
-    expect(rows.map((r) => r.querySelector(".wrap")?.textContent)).toEqual([
+    expect(rows.map((r) => r.querySelector(".row-title")?.textContent)).toEqual([
       "Connect Telegram",
       "Log your first expense",
       "Set a monthly budget",
       "Get receipts in automatically",
     ]);
     for (const row of rows) expect(row).toHaveTextContent("To do");
-    expect(within(stepOf("Connect Telegram")).getByRole("link", { name: /Open the bot/ })).toHaveAttribute("href", "https://t.me/made_up_bot");
-    expect(within(stepOf("Log your first expense")).getByRole("button", { name: /Log one/ })).toBeInTheDocument();
-    expect(within(stepOf("Set a monthly budget")).getByRole("link", { name: /Set one/ })).toHaveAttribute("href", "/accounting/budgets");
-    expect(within(stepOf("Get receipts in automatically")).getByRole("link", { name: /Connect/ })).toHaveAttribute("href", "/settings/email");
+    expect(within(stepOf("Connect Telegram")).getByRole("link", { name: /^Set up\s?Telegram$/ })).toHaveAttribute("href", "https://t.me/made_up_bot");
+    expect(within(stepOf("Log your first expense")).getByRole("button", { name: /^Set up\s?your first expense$/ })).toBeInTheDocument();
+    expect(within(stepOf("Set a monthly budget")).getByRole("link", { name: /^Set up\s?a monthly budget$/ })).toHaveAttribute("href", "/accounting/budgets");
+    expect(within(stepOf("Get receipts in automatically")).getByRole("link", { name: /^Set up\s?email receipts$/ })).toHaveAttribute("href", "/settings/email");
+    // Each is a text button, and the section has no icon tile or mark.
+    for (const b of within(region).getAllByText("Set up")) expect(b.closest(".btn")).toHaveClass("btn-ghost");
+    expect(region.querySelector("svg, .row-icon, img")).toBeNull();
     expect(region).toHaveTextContent("Log in Telegram or the chat button; review here.");
   });
 
@@ -106,12 +109,12 @@ describe("GetStarted: each step's state", () => {
     expect(urls()).toContain("/api/transactions?limit=1");
   });
 
-  it("Log one opens the entry sheet", async () => {
+  it("Set up on the first expense opens the entry sheet", async () => {
     serve();
     onLog.mockClear();
     show(meWith());
     await card();
-    await userEvent.setup().click(within(stepOf("Log your first expense")).getByRole("button", { name: /Log one/ }));
+    await userEvent.setup().click(within(stepOf("Log your first expense")).getByRole("button", { name: /Set up/ }));
     expect(onLog).toHaveBeenCalledOnce();
   });
 });

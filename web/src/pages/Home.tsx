@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 
 import {
   api,
@@ -9,7 +8,7 @@ import {
   type FeedAction,
   type FeedItem,
   type Me,
-  type Money,
+  type NotificationEntry,
   type Portfolio,
   type Run,
   type Spending,
@@ -17,56 +16,30 @@ import {
   type Today,
   type TripDetail,
 } from "../api";
-import { brief, notableMove, pace, standing, suggestions } from "../brief";
-import { Block } from "../components/Block";
+import { dateLabel, forToday, headline, notableMove, pace, type TodayRow } from "../brief";
 import { GetStarted } from "../components/GetStarted";
-import { Icon, departmentIcon } from "../components/Icon";
+import { Icon } from "../components/Icon";
 import { LoadError } from "../components/LoadError";
 import { Toast } from "../components/Toast";
-import { Button, Chip, ChipGroup } from "../components/ui";
-import { DEPARTMENTS } from "../departments";
-import { formatMoney } from "../format";
+import { Button, ButtonLink, Row, RowList, Section } from "../components/ui";
+import { formatAmount } from "../format";
 import { livePolling } from "../prices";
-import { AccentTitle, CountUp } from "../motion";
-import { MoneyGlance, PortfolioGlance, TripGlance, TripMode } from "./HomeCards";
+import { CountUp } from "../motion";
+import { clock, dayLines, MoneyGlance, nextToday, PortfolioGlance, TripGlance, tripDay, TripMode } from "./HomeCards";
 
-function greeting(timezone: string): string {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-GB", {
-      hour: "numeric",
-      hourCycle: "h23",
-      timeZone: timezone,
-    }).format(new Date()),
-  );
-  return hour < 12
-    ? "Good morning"
-    : hour < 18
-      ? "Good afternoon"
-      : "Good evening";
-}
-
-function today(timezone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    timeZone: timezone,
-  }).format(new Date());
-}
+import "./home.css";
 
 const RUNNING = new Set<Run["status"]>(["queued", "running"]);
 
-function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
+/** One piece of research: its title, how far it has got, a thin bar and, while it runs, Cancel. */
+function RunItem({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
   const going = RUNNING.has(run.status);
-  const share = run.steps_total
-    ? Math.round((run.steps_done / run.steps_total) * 100)
-    : 0;
+  const share = run.steps_total ? Math.round((run.steps_done / run.steps_total) * 100) : 0;
   return (
-    <li className="run-row">
-      <span className="wrap">
-        {run.title}
-        <br />
-        <span className="caption">
+    <li className="row-item run-item">
+      <span className="row-text">
+        <span className="row-title">{run.title}</span>
+        <span className="row-sub">
           {going
             ? `${run.steps_done}/${run.steps_total} · ${run.progress}`
             : run.status === "failed"
@@ -77,7 +50,7 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
         </span>
         {going && (
           <span
-            className="progress"
+            className="run-bar"
             role="progressbar"
             aria-label={`${run.title} progress`}
             aria-valuenow={share}
@@ -89,10 +62,7 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
         )}
       </span>
       {going && (
-        <Button
-          size="sm"
-          onClick={() => onCancel(run)}
-        >
+        <Button variant="text" size="sm" onClick={() => onCancel(run)}>
           Cancel
         </Button>
       )}
@@ -100,93 +70,64 @@ function RunRow({ run, onCancel }: { run: Run; onCancel: (run: Run) => void }) {
   );
 }
 
-/** The top of Home, on an indigo gradient rather than in a card: the day and a
- * greeting, this month's spending as the one big figure with how it stands, and Nexus's
- * brief. What needs the person follows directly under it. */
-function Hero({
+/** The top of Home, on the ground with no panel: the date with the ways to Log and to Settings (and the bell, when
+ * there is something to read), the month's key figure, and one sentence that says what it is. */
+function Headline({
   date,
-  greeting: hello,
-  spent,
-  spentQuery,
-  stands,
-  parts,
+  hl,
+  query,
+  bell,
   onLog,
 }: {
   date: string;
-  greeting: string;
-  spent?: Money;
-  /** The query behind `spent`: when it failed, the figure says so, with a Retry. */
-  spentQuery: { isError: boolean; isFetching: boolean; refetch: () => unknown };
-  stands: ReturnType<typeof standing>;
-  parts: ReturnType<typeof brief>;
+  hl: ReturnType<typeof headline>;
+  /** The query behind the figure: when it failed, the figure says so, with a Retry. */
+  query: { isError: boolean; isFetching: boolean; refetch: () => unknown };
+  bell: boolean;
   onLog: () => void;
 }) {
   return (
-    <section className="hero" aria-label="Nexus">
-      <div className="hero-top">
-        <div>
-          <p className="hero-date">{date}</p>
-          <h1>
-            <AccentTitle text={hello} />
-          </h1>
-        </div>
-        <div className="hero-actions">
+    <section className="home-head" aria-label="This month">
+      <h1 className="sr-only">Today</h1>
+      <div className="home-label">
+        <p className="home-date">{date}</p>
+        <div className="home-label-actions">
           {/* A quick manual entry for when there's no time to chat. */}
-          <button type="button" className="round-btn" aria-label="Log expense" title="Log expense" onClick={onLog}>
-            <Icon name="plus" />
-          </button>
-          <Link className="round-btn" to="/settings/notifications" aria-label="Notifications" title="Notifications">
-            <Icon name="bell" />
-          </Link>
-          <Link className="round-btn" to="/settings" aria-label="Settings" title="Settings">
-            <Icon name="settings" />
-          </Link>
+          <Button variant="text" aria-label="Log expense" onClick={onLog}>
+            Log
+          </Button>
+          <ButtonLink variant="text" to="/settings">
+            Settings
+          </ButtonLink>
+          {bell && (
+            <ButtonLink variant="text" to="/settings/notifications" aria-label="Notifications" title="Notifications">
+              <Icon name="bell" />
+            </ButtonLink>
+          )}
         </div>
       </div>
-      <div className="hero-figure">
-        <span className="hero-value">
-          <CountUp value={spent ? formatMoney(spent) : spentQuery.isError ? "–" : "…"} />
-          {stands && (
-            <span className="hero-arrow" aria-hidden="true">
-              <Icon name={stands.good ? "down" : "up"} size={28} />
-            </span>
-          )}
-        </span>
-        {spentQuery.isError && !spent ? (
-          <LoadError message="Couldn't load this month's spending." query={spentQuery} />
-        ) : (
-          <span className="hero-label">spent this month</span>
-        )}
-      </div>
-      {stands && <p className="hero-note">{stands.text}.</p>}
-      <p className="hero-brief">
-        {parts.map((p, i) =>
-          p.hl ? (
-            <span key={i} className="hl">
-              {p.text}
-            </span>
-          ) : (
-            <span key={i}>{p.text}</span>
-          ),
-        )}
+      <p className={`home-figure${hl?.over ? " is-over" : ""}`}>
+        {hl && <span className="sr-only">{hl.figure.currency} </span>}
+        <CountUp value={hl ? formatAmount(hl.figure) : query.isError ? "–" : "…"} />
       </p>
+      {query.isError && !hl ? (
+        <LoadError message="Couldn't load this month's spending." query={query} />
+      ) : (
+        hl && (
+          <p className="home-sentence">
+            {hl.sentence.map((p, i) =>
+              p.hl ? (
+                <span key={i} className="home-num">
+                  {p.text}
+                </span>
+              ) : (
+                <span key={i}>{p.text}</span>
+              ),
+            )}
+          </p>
+        )
+      )}
     </section>
-  );
-}
-
-/** One-tap questions; each opens the chat with it. To ask anything else, open the chat with the
- * ask bar (pinned at the foot of the page). */
-function AskPanel({ chips, onAsk }: { chips: string[]; onAsk: (text: string) => void }) {
-  return (
-    <Block id="ask" title="Just ask Nexus" className="ask-panel">
-      <ChipGroup aria-label="Suggested questions">
-        {chips.map((c) => (
-          <Chip key={c} onClick={() => onAsk(c)}>
-            {c}
-          </Chip>
-        ))}
-      </ChipGroup>
-    </Block>
   );
 }
 
@@ -197,12 +138,12 @@ function messageOf(response: unknown): string | undefined {
   return typeof message === "string" && message !== "" ? message : undefined;
 }
 
-/** One thing that needs you: a link to where it's settled, and any buttons that settle it
- * right here. Each button calls the API as given (with its body, if it has one), then
- * everything it may have changed is fetched again, and what the API said is passed on to be
- * shown. An item that needs you now says so; one about today says Today. */
-function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: (message?: string) => void }) {
-  const dept = DEPARTMENTS.find((d) => d.name === item.department);
+/** One row of For today. It links to where the thing is settled. A row that needs a decision has its first action
+ * as the word at the right, a text button that settles it here, and any other action as a quieter text button
+ * beside it. Each button calls the API as given (with its body, if it has one), then everything it may have
+ * changed is fetched again, and what the API said is passed on to be shown. */
+function TodayItem({ row, onSettled }: { row: TodayRow; onSettled: (message?: string) => void }) {
+  const actions = row.item?.actions ?? [];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -222,93 +163,89 @@ function NeedsItem({ item, onSettled }: { item: FeedItem; onSettled: (message?: 
     }
   }
 
+  if (actions.length === 0)
+    return (
+      <Row
+        className="today-row"
+        to={row.link}
+        title={row.title}
+        sub={row.sub}
+        trailing={<span className={`today-word is-${row.when}`}>{row.word}</span>}
+      />
+    );
   return (
-    <li>
-      <Link className={`row row-link${item.when === "now" ? " urgent" : ""}`} to={item.link}>
-        <span className="row-icon" aria-hidden="true">
-          <Icon name={item.when === "now" ? "alert" : departmentIcon(item.department)} size={18} />
-        </span>
-        <span className="row-main">
-          <span className="wrap">{item.text}</span>
-          <span className="caption">
-            {dept?.label}
-            {item.when === "today" && " · Today"}
-          </span>
-        </span>
-        {item.when === "now" && <span className="badge badge-now">Now</span>}
-      </Link>
-      {item.actions.length > 0 && (
-        <div className="row-actions needs-actions">
-          {item.actions.map((a, i) => (
-            <Button key={a.key} variant={i === 0 ? "primary" : undefined} size="sm" disabled={busy} onClick={() => void run(a)}>
+    <Row
+      className={`today-row${actions.length > 1 ? " today-multi" : ""}`}
+      to={row.link}
+      title={row.title}
+      sub={row.sub}
+      actions={
+        <>
+          {actions.map((a, i) => (
+            <Button
+              key={a.key}
+              variant="text"
+              className={i === 0 ? `today-word is-${row.when}` : "today-quiet"}
+              disabled={busy}
+              onClick={() => void run(a)}
+            >
               {a.label}
             </Button>
           ))}
-        </div>
-      )}
-      {error && (
-        <p className="error-text needs-error" role="alert">
-          {error}
-        </p>
-      )}
-    </li>
+          {error && (
+            <p className="error-text today-error" role="alert">
+              {error}
+            </p>
+          )}
+        </>
+      }
+    />
   );
 }
 
-/** How many items Needs you shows before "Show all". */
-export const NEEDS_SHOWN = 5;
+/** How many rows For today shows before "See all". */
+export const TODAY_SHOWN = 5;
 
-function NeedsYou({
+function ForToday({
+  rows,
   feed,
   onSettled,
 }: {
+  rows: TodayRow[];
   feed: { data?: FeedItem[]; isLoading: boolean; isError: boolean; isFetching: boolean; refetch: () => unknown };
   onSettled: (message?: string) => void;
 }) {
   const [all, setAll] = useState(false);
-  const items = feed.data ?? [];
-  const shown = all ? items : items.slice(0, NEEDS_SHOWN);
+  const shown = all ? rows : rows.slice(0, TODAY_SHOWN);
   return (
-    <Block id="needs-you" title="Needs you">
-      {feed.isLoading && <p className="state">Loading…</p>}
-      {feed.isError && <LoadError message="Couldn't load what needs you." query={feed} />}
-      {feed.data?.length === 0 && (
-        <p className="state">Nothing needs you right now.</p>
-      )}
+    <Section
+      id="for-today"
+      title="For today"
+      action={
+        rows.length > TODAY_SHOWN ? (
+          <Button variant="text" size="sm" aria-expanded={all} onClick={() => setAll(!all)}>
+            {all ? "Show fewer" : `See all ${rows.length}`}
+          </Button>
+        ) : undefined
+      }
+    >
       {shown.length > 0 && (
-        <ul className="rows">
-          {shown.map((item) => (
-            <NeedsItem key={`${item.kind}:${item.text}`} item={item} onSettled={onSettled} />
+        <RowList>
+          {shown.map((row) => (
+            <TodayItem key={row.key} row={row} onSettled={onSettled} />
           ))}
-        </ul>
+        </RowList>
       )}
-      {items.length > NEEDS_SHOWN && (
-        <Button
-          variant="text"
-          size="sm"
-          className="needs-more"
-          aria-expanded={all}
-          onClick={() => setAll(!all)}
-        >
-          {all ? "Show fewer" : `Show all (${items.length})`}
-        </Button>
-      )}
-    </Block>
+      {feed.isLoading && <p className="state">Loading…</p>}
+      {feed.isError && <LoadError message="Couldn't load what's for today." query={feed} />}
+      {feed.data && rows.length === 0 && <p className="state">Nothing for today.</p>}
+    </Section>
   );
 }
 
-/** The front desk, as a Today page: Nexus's brief, what needs you, a box to ask anything, the
- * first-steps guide while it's unfinished, and at a glance the month's money, the portfolio and
- * the next trip. While a trip is on, its day leads. */
-export function Home({
-  me,
-  onAsk,
-  onLog,
-}: {
-  me: Me;
-  onAsk: (text: string) => void;
-  onLog: () => void;
-}) {
+/** The front desk, as a Today page: the month's headline, what is for today, the first-steps guide while it's
+ * unfinished, and at a glance the month's money, the portfolio and the next trip. While a trip is on, its day leads. */
+export function Home({ me, onLog }: { me: Me; onLog: () => void }) {
   const client = useQueryClient();
   const feed = useQuery({
     queryKey: ["home"],
@@ -347,7 +284,7 @@ export function Home({
     refetchInterval: (query) => livePolling(query.state.data?.totals.price_kind),
   });
   const portfolio = portfolioQuery.data;
-  // The latest session's movers, for the brief's one line about the market.
+  // The latest session's movers, for For today's one row about the market.
   const session = useQuery({
     queryKey: ["investments", "today"],
     queryFn: () => api<Today>("/investments/today"),
@@ -357,17 +294,19 @@ export function Home({
     queryKey: ["next-trip"],
     queryFn: () => api<TripDetail | null>("/travel/next"),
   });
+  // The bell is there only when Nexus has sent something to read (the last 30 days).
+  const history = useQuery({
+    queryKey: ["notification-history"],
+    queryFn: () => api<NotificationEntry[]>("/notifications/history"),
+  }).data;
 
   const overall = budgets?.find((b) => b.category_id === null);
   const spent = summary?.totals.find((t) => t.direction === "out")?.total;
-  // The big figure and how it stands lead the hero; the brief adds the rest.
-  const parts = brief({ trip: trip.data, needs: feed.data, needsFailed: feed.isError, overall, plan, move: notableMove(session) });
-  const held = [...(portfolio?.holdings ?? [])]
-    .sort(
-      (a, b) =>
-        Number(b.value_home?.amount ?? 0) - Number(a.value_home?.amount ?? 0),
-    )
-    .map((h) => h.symbol);
+  const timezone = me.user.timezone;
+  const detail = trip.data;
+  const tripOn = detail && detail.trip.status === "ongoing" ? detail : null;
+  const tripNext = tripOn ? nextToday(dayLines(tripOn, tripDay(tripOn.trip)), clock(timezone)) : null;
+  const rows = forToday({ trip: detail, tripNext, needs: feed.data, overall, plan, move: notableMove(session) });
 
   async function cancel(run: Run) {
     await api(`/runs/${run.id}/cancel`, { method: "POST" }).catch(
@@ -376,10 +315,10 @@ export function Home({
     void client.invalidateQueries({ queryKey: ["runs"] });
   }
 
-  // A button on a needs-you item may have logged, skipped or merged something: refresh what
+  // A button on a For today row may have logged, skipped or merged something: refresh what
   // shows it, here and on the other pages ("transactions" also holds the ledger's possible
   // duplicates; "email" is the Email page). What the API said (what a bill's payment logged) is
-  // shown for a moment, as the item it was about is gone.
+  // shown for a moment, as the row it was about is gone.
   const [notice, setNotice] = useState<string | null>(null);
   function settled(message?: string) {
     for (const key of ["home", "transactions", "email", "bills", "budgets", "summary", "spending-months"])
@@ -388,49 +327,39 @@ export function Home({
   }
 
   const going = (runs.data ?? []).slice(0, 3);
-  const detail = trip.data;
-  const tripOn = detail && detail.trip.status === "ongoing" ? detail : null;
+  // The order on a phone is the order here; from 1024px home.css puts them in two columns.
   return (
     <div className="home">
-      <Hero
-        date={today(me.user.timezone)}
-        greeting={greeting(me.user.timezone)}
-        spent={spent}
-        spentQuery={summaryQuery}
-        stands={standing({ spent, overall, lastMonthToDate: spending?.last_month_to_date })}
-        parts={parts}
+      <Headline
+        date={dateLabel(timezone)}
+        hl={headline({ spent, overall, lastMonthToDate: spending?.last_month_to_date, timezone })}
+        query={summaryQuery}
+        bell={(history?.length ?? 0) > 0}
         onLog={onLog}
       />
-
-      {tripOn && <TripMode detail={tripOn} timezone={me.user.timezone} />}
-
-      <div className="today">
-        <div className="stack">
-          <GetStarted me={me} onLog={onLog} />
-          <NeedsYou feed={feed} onSettled={settled} />
-          {going.length > 0 && (
-            <Block id="working-on" title="Working on" className="working">
-              <ul className="feed">
-                {going.map((run) => (
-                  <RunRow key={run.id} run={run} onCancel={(r) => void cancel(r)} />
-                ))}
-              </ul>
-            </Block>
-          )}
-          <AskPanel chips={suggestions({ trip: detail, holdings: held })} onAsk={onAsk} />
-        </div>
-        <div className="stack">
-          <MoneyGlance
-            spent={spent}
-            query={summaryQuery}
-            // Without the budget or last month's figure there is nothing to compare with: not "set a budget".
-            partial={budgetsQuery.isError || spendingQuery.isError}
-            overall={overall}
-            pace={pace({ overall, lastMonthToDate: spending?.last_month_to_date, timezone: me.user.timezone })}
-          />
-          <PortfolioGlance portfolio={portfolio} query={portfolioQuery} />
-          {!tripOn && <TripGlance detail={trip.isLoading ? undefined : (detail ?? null)} query={trip} />}
-        </div>
+      {tripOn && <TripMode detail={tripOn} timezone={timezone} />}
+      <ForToday rows={rows} feed={feed} onSettled={settled} />
+      {going.length > 0 && (
+        <Section id="working-on" title="Working on">
+          <RowList>
+            {going.map((run) => (
+              <RunItem key={run.id} run={run} onCancel={(r) => void cancel(r)} />
+            ))}
+          </RowList>
+        </Section>
+      )}
+      <GetStarted me={me} onLog={onLog} />
+      <div className="home-glance">
+        <MoneyGlance
+          spent={spent}
+          query={summaryQuery}
+          // Without the budget or last month's figure there is nothing to compare with: not "set a budget".
+          partial={budgetsQuery.isError || spendingQuery.isError}
+          overall={overall}
+          pace={pace({ overall, lastMonthToDate: spending?.last_month_to_date, timezone })}
+        />
+        <PortfolioGlance portfolio={portfolio} query={portfolioQuery} />
+        {!tripOn && <TripGlance detail={trip.isLoading ? undefined : (detail ?? null)} query={trip} />}
       </div>
       {notice && <Toast message={notice} onClose={() => setNotice(null)} />}
     </div>

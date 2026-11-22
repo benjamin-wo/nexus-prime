@@ -3,9 +3,9 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, type Booking, type FeedAction, type FeedItem, type Me, type Portfolio, type Setup, type Spending, type Summary, type Today, type TripDetail } from "../api";
+import { api, type Booking, type Budget, type FeedAction, type FeedItem, type Me, type Portfolio, type Setup, type Spending, type Summary, type Today, type TripDetail } from "../api";
 import { mockApi, renderWithProviders } from "../testing";
-import { Home, NEEDS_SHOWN } from "./Home";
+import { Home, TODAY_SHOWN } from "./Home";
 import { clock, dayLines, nextBooking, nextToday, tripDay } from "./HomeCards";
 
 const me: Me = {
@@ -114,6 +114,8 @@ function trip(status: "upcoming" | "ongoing", over: Partial<TripDetail> = {}): T
 
 type Answers = {
   home?: FeedItem[];
+  budgets?: Budget[];
+  history?: unknown[];
   setup?: Setup | null;
   portfolio?: Portfolio;
   today?: Today;
@@ -127,8 +129,9 @@ function serve(answers: Answers = {}) {
     "GET /runs": () => [],
     "GET /summary": () => summary,
     "GET /spending/months": () => answers.spending ?? spending,
-    "GET /budgets": () => [],
+    "GET /budgets": () => answers.budgets ?? [],
     "GET /budgets/month": () => null,
+    "GET /notifications/history": () => answers.history ?? [],
     "GET /investments": () => answers.portfolio ?? empty,
     "GET /investments/today": () => answers.today ?? session([]),
     "GET /travel/next": () => answers.next ?? null,
@@ -137,44 +140,101 @@ function serve(answers: Answers = {}) {
   });
 }
 
-const renderHome = (onAsk = vi.fn(), onLog = vi.fn()) =>
-  renderWithProviders(<Home me={me} onAsk={onAsk} onLog={onLog} />);
+const renderHome = (onLog = vi.fn()) => renderWithProviders(<Home me={me} onLog={onLog} />);
+
+const overallBudget = (limit: string): Budget => ({
+  id: "b", category_id: null, name: "Overall", limit: sgd(limit), spent: sgd("412.00"), remaining: sgd("0"), percent: 41, unconverted: [],
+});
+const headlineOf = () => screen.findByRole("region", { name: "This month" });
+/** Pretend it is 21 October, 11:00 in Singapore (10 days of the month to go), with timers left alone. */
+const onThe21st = () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-21T03:00:00Z"));
+};
 
 afterEach(() => vi.useRealTimers());
 
-describe("Home: the brief", () => {
-  it("speaks for money, the market and the trip, then points at the list below", async () => {
-    serve({
-      home: [item("Rent due tomorrow", "soon")],
-      today: session([mover("NVDA", "-5.1")]),
-      next: trip("upcoming"),
-    });
-    renderHome();
-    const hero = await screen.findByRole("region", { name: "Nexus" });
-    await waitFor(() => expect(hero).toHaveTextContent("NVDA is down 5% today."));
-    expect(hero).toHaveTextContent(/NVDA is down 5% today\. Your Tokyo trip is in 12 days\. 1 thing needs you below\./);
+describe("Home: the headline", () => {
+  it("has no greeting, round buttons or panel: the date, the figure and one sentence", async () => {
+    onThe21st();
+    serve();
+    const { container } = renderHome();
+    const head = await headlineOf();
+    expect(head).toHaveTextContent("Wednesday, 21 October");
+    await waitFor(() => expect(head).toHaveTextContent("412.00"));
+    expect(screen.queryByText(/Good (morning|afternoon|evening)/)).toBeNull();
+    expect(container.querySelector(".round-btn, .hero, .hero-brief")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Nexus" })).toBeNull();
   });
 
-  it("leaves the market out when nothing moved much", async () => {
-    serve({ today: session([mover("NVDA", "1.1")]) });
+  it("with no budget says what was spent and how that compares with last month by this date, in words", async () => {
+    onThe21st();
+    serve();
     renderHome();
-    const hero = await screen.findByRole("region", { name: "Nexus" });
-    await waitFor(() => expect(hero).toHaveTextContent("Nothing needs you right now."));
-    expect(hero).not.toHaveTextContent("NVDA");
+    const head = await headlineOf();
+    await waitFor(() => expect(head).toHaveTextContent("spent in October, 88.00 less than by this time in September."));
+    expect(head.querySelector(".home-figure")).toHaveTextContent("412.00");
+    expect(head.querySelector(".home-figure")).not.toHaveClass("is-over");
+  });
+
+  it("with an overall budget says what is left and what that comes to a day", async () => {
+    onThe21st();
+    serve({ budgets: [overallBudget("1000.00")] });
+    renderHome();
+    const head = await headlineOf();
+    await waitFor(() => expect(head).toHaveTextContent("left for October. About 59 a day for the next 10 days, and 88.00 less spent than by this time in September."));
+    expect(head.querySelector(".home-figure")).toHaveTextContent("588.00");
+  });
+
+  it("leaves the comparison out when last month's figure is not known", async () => {
+    onThe21st();
+    serve({ budgets: [overallBudget("1000.00")], spending: { ...spending, last_month_to_date: undefined as never } });
+    renderHome();
+    const head = await headlineOf();
+    await waitFor(() => expect(head).toHaveTextContent("left for October. About 59 a day for the next 10 days."));
+    expect(head).not.toHaveTextContent("September");
+  });
+
+  it("over the budget shows the figure in rose and says by how much, with no a-day clause", async () => {
+    onThe21st();
+    serve({ budgets: [overallBudget("300.00")] });
+    renderHome();
+    const head = await headlineOf();
+    await waitFor(() => expect(head).toHaveTextContent("spent, over for October by 112.00"));
+    expect(head.querySelector(".home-figure")).toHaveClass("is-over");
+    expect(head).not.toHaveTextContent("a day");
+  });
+
+  it("on the last day of the month drops the a-day clause", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-31T03:00:00Z"));
+    serve({ budgets: [overallBudget("1000.00")] });
+    renderHome();
+    const head = await headlineOf();
+    await waitFor(() => expect(head).toHaveTextContent("left for October, with 88.00 less spent"));
+    expect(head).not.toHaveTextContent("a day");
   });
 });
 
-describe("Home: the hero's buttons", () => {
-  it("has round Log expense, Notifications and Settings buttons; Log expense opens the entry sheet", async () => {
-    serve();
+describe("Home: the date line", () => {
+  it("has Log, a Settings link and, when Nexus has sent something, the bell; Log opens the entry sheet", async () => {
+    serve({ history: [{ id: "n1", kind: "bill_reminder", level: "now", text: "Rent is due", link: null, status: "sent", created_at: "2026-10-20T01:00:00Z", sent_at: null, held_until: null }] });
     const onLog = vi.fn();
-    renderHome(vi.fn(), onLog);
-    const hero = await screen.findByRole("region", { name: "Nexus" });
+    renderHome(onLog);
+    const head = await headlineOf();
     // A quick manual entry beside the chat, for when there's no time to chat.
-    await userEvent.click(within(hero).getByRole("button", { name: "Log expense" }));
+    await userEvent.click(within(head).getByRole("button", { name: "Log expense" }));
     expect(onLog).toHaveBeenCalledOnce();
-    expect(within(hero).getByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
-    expect(within(hero).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+    expect(within(head).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+    expect(await within(head).findByRole("link", { name: "Notifications" })).toHaveAttribute("href", "/settings/notifications");
+  });
+
+  it("has no bell when there is nothing to read", async () => {
+    serve();
+    renderHome();
+    const head = await headlineOf();
+    await waitFor(() => expect(head).toHaveTextContent("412.00"));
+    expect(within(head).queryByRole("link", { name: "Notifications" })).toBeNull();
   });
 });
 
@@ -191,79 +251,95 @@ function screenIs(phone: boolean) {
   );
 }
 
-describe("Home: the Just ask Nexus card", () => {
+describe("Home: no ask panel", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   for (const phone of [false, true]) {
-    it(`has suggestion chips and no typing box on a ${phone ? "phone" : "wide screen"}`, async () => {
+    it(`has no Just ask Nexus card, chips or typing box on a ${phone ? "phone" : "wide screen"}`, async () => {
       screenIs(phone);
       serve();
-      const onAsk = vi.fn();
-      const { container } = renderHome(onAsk);
-      const card = await screen.findByRole("region", { name: "Just ask Nexus" });
+      const { container } = renderHome();
+      await headlineOf();
+      expect(screen.queryByRole("region", { name: "Just ask Nexus" })).toBeNull();
+      expect(screen.queryByRole("group", { name: "Suggested questions" })).toBeNull();
       expect(screen.queryByRole("textbox")).toBeNull();
-      expect(container.querySelector(".ask-input, #ask-input, .ask-dock, .home-docked")).toBeNull();
-
-      // A suggestion still opens the chat with it.
-      const chip = within(card).getAllByRole("button")[0];
-      await userEvent.click(chip);
-      expect(onAsk).toHaveBeenCalledExactlyOnceWith(chip.textContent);
+      expect(container.querySelector(".ask-input, #ask-input, .ask-dock, .home-docked, .ask-panel")).toBeNull();
     });
   }
 });
 
-describe("Home: Needs you", () => {
+describe("Home: For today", () => {
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => item(`Thing ${i + 1}`, i < 2 ? "now" : i < 4 ? "today" : "soon", { kind: `k${i}`, department: i % 2 ? "investment" : "travel" }));
+  const region = () => screen.findByRole("region", { name: "For today" });
 
-  it("shows the top five, and Show all opens the rest in place", async () => {
+  it("shows the first five, and See all opens the rest in place", async () => {
     serve({ home: many(8) });
     renderHome();
-    const needs = await screen.findByRole("region", { name: "Needs you" });
-    await waitFor(() => expect(within(needs).getAllByRole("listitem")).toHaveLength(NEEDS_SHOWN));
-    expect(within(needs).getByText("Thing 1")).toBeInTheDocument();
-    expect(within(needs).queryByText("Thing 6")).toBeNull();
-    const more = within(needs).getByRole("button", { name: "Show all (8)" });
+    const today = await region();
+    await waitFor(() => expect(within(today).getAllByRole("listitem")).toHaveLength(TODAY_SHOWN));
+    expect(within(today).getByText("Thing 1")).toBeInTheDocument();
+    expect(within(today).queryByText("Thing 6")).toBeNull();
+    const more = within(today).getByRole("button", { name: "See all 8" });
     expect(more).toHaveAttribute("aria-expanded", "false");
     await userEvent.setup().click(more);
-    expect(within(needs).getAllByRole("listitem")).toHaveLength(8);
-    expect(within(needs).getByText("Thing 8")).toBeInTheDocument();
-    const fewer = within(needs).getByRole("button", { name: "Show fewer" });
+    expect(within(today).getAllByRole("listitem")).toHaveLength(8);
+    expect(within(today).getByText("Thing 8")).toBeInTheDocument();
+    const fewer = within(today).getByRole("button", { name: "Show fewer" });
     expect(fewer).toHaveAttribute("aria-expanded", "true");
     await userEvent.setup().click(fewer);
-    expect(within(needs).getAllByRole("listitem")).toHaveLength(NEEDS_SHOWN);
+    expect(within(today).getAllByRole("listitem")).toHaveLength(TODAY_SHOWN);
   });
 
-  it("has no Show all for five or fewer", async () => {
+  it("has no See all for five or fewer", async () => {
     serve({ home: many(5) });
     renderHome();
-    const needs = await screen.findByRole("region", { name: "Needs you" });
-    await waitFor(() => expect(within(needs).getAllByRole("listitem")).toHaveLength(5));
-    expect(within(needs).queryByRole("button", { name: /Show all/ })).toBeNull();
+    const today = await region();
+    await waitFor(() => expect(within(today).getAllByRole("listitem")).toHaveLength(5));
+    expect(within(today).queryByRole("button", { name: /See all/ })).toBeNull();
   });
 
-  it("marks what needs you now in words, says Today quietly, and names the area", async () => {
-    serve({ home: many(5) });
+  it("says Nothing for today. when there is nothing, and not before it has loaded", async () => {
+    serve();
     renderHome();
-    const needs = await screen.findByRole("region", { name: "Needs you" });
-    const rows = await within(needs).findAllByRole("listitem");
+    const today = await region();
+    expect(today).not.toHaveTextContent("Nothing for today.");
+    expect(await within(today).findByText("Nothing for today.")).toBeInTheDocument();
+    expect(within(today).queryByRole("listitem")).toBeNull();
+  });
+
+  it("has no icon tile or badge; a word at the right says how soon, and the sub-line names the area", async () => {
+    serve({ home: many(5) });
+    const { container } = renderHome();
+    const today = await region();
+    const rows = await within(today).findAllByRole("listitem");
     await waitFor(() => expect(rows).toHaveLength(5));
-    // now: the marker, the alert styling and the area
-    expect(within(rows[0]).getByText("Now")).toBeInTheDocument();
-    expect(within(rows[0]).getByRole("link")).toHaveClass("urgent");
+    expect(container.querySelector(".row-icon, .badge, .badge-now")).toBeNull();
+    // now: its word in the warning colour (is-now) and the area underneath
+    expect(within(rows[0]).getByText("Look")).toHaveClass("is-now");
     expect(rows[0]).toHaveTextContent("Travel");
     expect(rows[1]).toHaveTextContent("Investment");
-    // today: no marker, "Today" in the caption
-    expect(within(rows[2]).queryByText("Now")).toBeNull();
-    expect(rows[2]).toHaveTextContent("Travel · Today");
-    expect(within(rows[2]).getByRole("link")).not.toHaveClass("urgent");
-    // soon: neither
-    expect(within(rows[4]).queryByText("Now")).toBeNull();
-    expect(rows[4]).not.toHaveTextContent("Today");
+    // today: "Today" quietly, in place of a figure
+    expect(within(rows[2]).getByText("Today")).toHaveClass("is-today");
+    // soon: a plain Look; the row is a link to where it is settled
+    expect(within(rows[4]).getByText("Look")).toHaveClass("is-soon");
     expect(within(rows[4]).getByRole("link")).toHaveAttribute("href", "/accounting/budgets");
+    expect(within(today).queryByText("Now")).toBeNull();
   });
 
-  it("keeps an item's buttons, which settle it there", async () => {
+  it("writes the market and the trip as rows, from the user's own figures, and none says how many things there are", async () => {
+    serve({ home: [item("Rent due tomorrow", "soon")], today: session([mover("NVDA", "-5.1")]), next: trip("upcoming") });
+    renderHome();
+    const today = await region();
+    expect(await within(today).findByText("NVDA is down 5% today")).toBeInTheDocument();
+    expect(within(today).getByText("Rent due tomorrow")).toBeInTheDocument();
+    expect(today).not.toHaveTextContent(/\bthings? need/);
+    expect(within(today).getByRole("link", { name: /NVDA is down 5% today/ })).toHaveAttribute("href", "/investment/stocks/NVDA");
+    // The trip is 12 days away with nothing missing: not a row of today's.
+    expect(today).not.toHaveTextContent("Tokyo");
+  });
+
+  it("keeps an item's first action as its word at the right, a text button that settles it there", async () => {
     const actions = [{ key: "went", label: "It went through", method: "POST", path: "/bills/m1/paid" }];
     const calls = mockApi({
       "GET /home": () => [item("Your IBKR top-up hasn't shown up", "soon", { actions })],
@@ -271,9 +347,22 @@ describe("Home: Needs you", () => {
     });
     renderHome();
     const button = await screen.findByRole("button", { name: "It went through" });
-    expect(button).toHaveClass("btn-primary");
+    expect(button).toHaveClass("btn-ghost");
+    expect(button).not.toHaveClass("btn-primary");
     await userEvent.setup().click(button);
     await waitFor(() => expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/bills/m1/paid"]));
+  });
+
+  it("keeps a second action reachable as a quieter text button", async () => {
+    const paid: FeedAction = { key: "paid", label: "Mark paid", method: "POST", path: "/bills/b1/paid" };
+    const later: FeedAction = { key: "later", label: "Remind me later today", method: "POST", path: "/bills/b1/snooze" };
+    mockApi({ "GET /home": () => [item("Rent due tomorrow", "soon", { actions: [paid, later] })] });
+    renderHome();
+    const first = await screen.findByRole("button", { name: "Mark paid" });
+    const second = screen.getByRole("button", { name: "Remind me later today" });
+    expect(first).toHaveClass("today-word");
+    expect(second).toHaveClass("today-quiet");
+    expect(first.closest("li")).toHaveClass("today-multi");
   });
 });
 
@@ -354,7 +443,7 @@ describe("Home: buttons that settle an item", () => {
     }
     renderWithProviders(
       <>
-        <Home me={me} onAsk={vi.fn()} onLog={vi.fn()} />
+        <Home me={me} onLog={vi.fn()} />
         <Elsewhere />
       </>,
     );
@@ -373,8 +462,8 @@ describe("Home: buttons that settle an item", () => {
     });
     renderHome();
     await userEvent.setup().click(await screen.findByRole("button", { name: "Log it" }));
-    // The cards whose requests the test leaves unmocked say so too: this alert is the one in Needs you.
-    expect(await within(await screen.findByRole("region", { name: "Needs you" })).findByRole("alert")).toHaveTextContent("that email was already dealt with");
+    // The cards whose requests the test leaves unmocked say so too: this alert is the one in For today.
+    expect(await within(await screen.findByRole("region", { name: "For today" })).findByRole("alert")).toHaveTextContent("that email was already dealt with");
     expect(screen.getByRole("button", { name: "Log it" })).toBeEnabled();
   });
 });
@@ -382,7 +471,7 @@ describe("Home: buttons that settle an item", () => {
 describe("Home: when a load fails", () => {
   const failing = (status = 500) => new Response(JSON.stringify({ detail: "boom" }), { status });
 
-  it("never says nothing needs you when what needs you could not be loaded, and Retry fetches it again", async () => {
+  it("never says Nothing for today. when what is for today could not be loaded, and Retry fetches it again", async () => {
     let up = false;
     mockApi({
       "GET /home": () => (up ? [item("Rent due tomorrow", "soon")] : failing()),
@@ -397,16 +486,14 @@ describe("Home: when a load fails", () => {
       "GET /setup": () => setup([true, true, true, true]),
     });
     renderHome();
-    const needs = await screen.findByRole("region", { name: "Needs you" });
-    expect(await within(needs).findByRole("alert")).toHaveTextContent("Couldn't load what needs you.");
-    const hero = screen.getByRole("region", { name: "Nexus" });
-    await waitFor(() => expect(hero).toHaveTextContent("SGD 412.00"));
-    expect(hero).toHaveTextContent("Ask me anything");
-    expect(screen.queryByText(/Nothing needs you right now/)).toBeNull();
+    const needs = await screen.findByRole("region", { name: "For today" });
+    expect(await within(needs).findByRole("alert")).toHaveTextContent("Couldn't load what's for today.");
+    const hero = screen.getByRole("region", { name: "This month" });
+    await waitFor(() => expect(hero).toHaveTextContent("412.00"));
+    expect(screen.queryByText("Nothing for today.")).toBeNull();
     up = true;
     await userEvent.setup().click(within(needs).getByRole("button", { name: "Retry" }));
     expect(await within(needs).findByText("Rent due tomorrow")).toBeInTheDocument();
-    expect(hero).toHaveTextContent("1 thing needs you below.");
   });
 
   it("says so, with a Retry, where the month's money and the other cards would be", async () => {
@@ -427,7 +514,7 @@ describe("Home: when a load fails", () => {
     expect(await within(money).findByRole("alert")).toHaveTextContent("Couldn't load this month's spending.");
     expect(within(money).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(money).not.toHaveTextContent("Loading…");
-    const hero = screen.getByRole("region", { name: "Nexus" });
+    const hero = screen.getByRole("region", { name: "This month" });
     expect(within(hero).getByRole("alert")).toHaveTextContent("Couldn't load this month's spending.");
     expect(hero).not.toHaveTextContent("…");
     const portfolio = screen.getByRole("region", { name: "Portfolio today" });
@@ -440,7 +527,7 @@ describe("Home: when a load fails", () => {
 });
 
 describe("Home: Get started", () => {
-  it("is the one first-run card, above Needs you, with the steps the person has left", async () => {
+  it("is the one first-run card, under For today, with the steps the person has left", async () => {
     mockApi({
       "GET /home": () => [item("Rent due tomorrow", "soon")],
       "GET /config": () => ({ bot_username: "made_up_bot" }),
@@ -450,8 +537,8 @@ describe("Home: Get started", () => {
     renderHome();
     const card = await screen.findByRole("region", { name: "Get started" });
     expect(within(card).getAllByRole("listitem")).toHaveLength(4);
-    const needs = await screen.findByRole("region", { name: "Needs you" });
-    expect(card.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const needs = await screen.findByRole("region", { name: "For today" });
+    expect(needs.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // The old checklist is gone: no second card, no "Get set up".
     expect(screen.queryByRole("region", { name: "Get set up" })).toBeNull();
   });
@@ -474,7 +561,7 @@ describe("Home: Get started", () => {
         "GET /setup": () => (answer === null ? new Response("{}", { status: 403 }) : answer),
       });
       const { unmount } = renderHome();
-      await screen.findByRole("region", { name: "Needs you" });
+      await screen.findByRole("region", { name: "For today" });
       // Everything Home asks has answered once the glance cards have.
       await waitFor(() => expect(screen.getByRole("region", { name: "Money this month" })).toHaveTextContent("SGD"));
       expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
@@ -493,15 +580,18 @@ describe("Home: trip mode", () => {
     const card = await screen.findByRole("region", { name: "Day 3 in Tokyo" });
     expect(within(card).getByRole("link", { name: "Open trip" })).toHaveAttribute("href", "/travel/trips/t1");
     // The morning walk is behind; the afternoon one is next.
-    expect(card).toHaveTextContent("14:00 · Teahouse in Asakusa");
+    expect(card).toHaveTextContent(/Teahouse in Asakusa.*Next.*14:00/s);
     expect(card).not.toHaveTextContent("Market walk");
-    expect(card).toHaveTextContent(/Spent today.*SGD.42\.00.*SGD.300\.00 a day left in your budget/s);
-    expect(card).toHaveTextContent(/Next booking.*ZZ13 NRT → SIN.*(24 Oct|Oct 24)/s);
-    // It leads Needs you, and the Next trip card gives way to it.
-    const needs = screen.getByRole("region", { name: "Needs you" });
+    expect(card).toHaveTextContent(/Spent today.*SGD.300\.00 a day left in your budget.*SGD.42\.00/s);
+    expect(card).toHaveTextContent(/ZZ13 NRT → SIN.*Next booking.*(24 Oct|Oct 24)/s);
+    expect(card.querySelector("svg")).toBeNull(); // no leading icons
+    // It leads For today, and the Next trip card gives way to it.
+    const needs = screen.getByRole("region", { name: "For today" });
     expect(card.compareDocumentPosition(needs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Next trip" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Nexus" })).toHaveTextContent("You're on day 3 of 6 in Tokyo.");
+    // What is next today is also a row of For today, with the trip as its sub-line.
+    expect(within(needs).getByRole("link", { name: /Teahouse in Asakusa/ })).toHaveAttribute("href", "/travel/trips/t1");
+    expect(needs).toHaveTextContent("Tokyo, from 14:00");
   });
 
   it("leaves out what the trip's data does not have", async () => {
@@ -644,5 +734,63 @@ describe("Home: what moved to Money", () => {
     expect(screen.queryByRole("list", { name: "Spending by month" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Budgets this month" })).toBeNull();
     expect(screen.queryByRole("list", { name: "Biggest movers" })).toBeNull();
+  });
+});
+
+describe("Home: the order of the sections", () => {
+  const order = (names: string[]) => {
+    const tops = names.map((n) => screen.getByRole("region", { name: n }));
+    for (let i = 1; i < tops.length; i++)
+      expect(tops[i - 1].compareDocumentPosition(tops[i]) & Node.DOCUMENT_POSITION_FOLLOWING, `${names[i - 1]} before ${names[i]}`).toBeTruthy();
+  };
+  const running = [{ id: "r1", title: "Plan for NVDA", status: "running", steps_done: 1, steps_total: 3, progress: "reading the news", error: null }];
+
+  it("is the headline, the trip, For today, Working on, Get started, then Money, Portfolio and Next trip's place", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T03:00:00Z"));
+    mockApi({
+      "GET /home": () => [item("Rent due tomorrow", "soon")],
+      "GET /runs": () => running,
+      "GET /summary": () => summary,
+      "GET /spending/months": () => spending,
+      "GET /budgets": () => [],
+      "GET /budgets/month": () => null,
+      "GET /investments": () => held,
+      "GET /investments/today": () => session([]),
+      "GET /travel/next": () => trip("ongoing"),
+      "GET /config": () => ({ bot_username: "made_up_bot" }),
+      "GET /transactions": () => ({ items: [], total: 0 }),
+      "GET /setup": () => setup([false, false, true, false]),
+    });
+    renderHome();
+    await screen.findByRole("region", { name: "Get started" });
+    await screen.findByRole("region", { name: "Working on" });
+    await screen.findByRole("region", { name: "Day 3 in Tokyo" });
+    order(["This month", "Day 3 in Tokyo", "For today", "Working on", "Get started", "Money this month", "Portfolio today"]);
+    expect(screen.queryByRole("region", { name: "Next trip" })).toBeNull();
+  });
+
+  it("shows Next trip last when no trip is on, and leaves out Working on and Get started when there is none", async () => {
+    serve({ next: trip("upcoming") });
+    renderHome();
+    await screen.findByRole("region", { name: "Next trip" });
+    order(["This month", "For today", "Money this month", "Portfolio today", "Next trip"]);
+    expect(screen.queryByRole("region", { name: "Working on" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Get started" })).toBeNull();
+  });
+
+  it("gives a run a title, a progress line, a thin bar and Cancel", async () => {
+    const calls = mockApi({
+      "GET /home": () => [],
+      "GET /runs": () => running,
+      "POST /runs/r1/cancel": () => null,
+    });
+    renderHome();
+    const working = await screen.findByRole("region", { name: "Working on" });
+    await within(working).findByText("Plan for NVDA");
+    expect(working).toHaveTextContent("1/3 · reading the news");
+    expect(within(working).getByRole("progressbar", { name: "Plan for NVDA progress" })).toHaveAttribute("aria-valuenow", "33");
+    await userEvent.setup().click(within(working).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/runs/r1/cancel")).toBe(true));
   });
 });

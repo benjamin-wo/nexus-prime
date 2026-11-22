@@ -2,10 +2,9 @@ import { Link } from "react-router-dom";
 
 import type { Booking, Budget, Money, Portfolio, TripDetail } from "../api";
 import { type Pace } from "../brief";
-import { Block } from "../components/Block";
-import { Icon } from "../components/Icon";
 import { LoadError } from "../components/LoadError";
 import { PriceWhen } from "../components/PriceWhen";
+import { ButtonLink, Row, RowList, Section } from "../components/ui";
 import { formatChange, formatMoney, formatPercent, formatShortDate } from "../format";
 import { daySpot, spotsOf } from "./TripArrange";
 import { landingOn, landsOnly, leavingOn, todayIso } from "./TripBits";
@@ -33,14 +32,14 @@ export function MoneyGlance({
   pace: Pace | null;
 }) {
   return (
-    <Block
+    <Section
       id="glance-money"
       title="Money this month"
       className="glance"
       action={
-        <Link className="btn btn-small" to="/accounting">
+        <ButtonLink variant="text" size="sm" to="/accounting">
           Details
-        </Link>
+        </ButtonLink>
       }
     >
       {!spent ? (
@@ -50,22 +49,29 @@ export function MoneyGlance({
           <span className="glance-figure">{formatMoney(spent)}</span>
           {pace?.label && <p className={`glance-line${pace.ahead ? " pace-ahead" : ""}`}>{pace.label}</p>}
           {overall && (
-            <div
-              className={`meter${overall.percent >= 100 ? " meter-over" : overall.percent >= 80 ? " meter-warn" : ""}`}
-              role="meter"
-              aria-label="Budget used"
-              aria-valuenow={Math.min(overall.percent, 100)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <span style={{ width: `${Math.min(100, overall.percent)}%` }} />
+            <div className="glance-bars">
+              <div
+                className={`meter${overall.percent >= 100 ? " meter-over" : overall.percent >= 80 ? " meter-warn" : ""}`}
+                role="meter"
+                aria-label="Budget used"
+                aria-valuenow={Math.min(overall.percent, 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <span style={{ width: `${Math.min(100, overall.percent)}%` }} />
+              </div>
+              {pace?.gone !== undefined && (
+                <div className="meter meter-time" role="meter" aria-label="Month gone" aria-valuenow={pace.gone} aria-valuemin={0} aria-valuemax={100}>
+                  <span style={{ width: `${pace.gone}%` }} />
+                </div>
+              )}
             </div>
           )}
           {pace && <p className="caption">{pace.detail}</p>}
           {!pace && !partial && <p className="muted">Set a budget on the Budgets page to see how it is going.</p>}
         </>
       )}
-    </Block>
+    </Section>
   );
 }
 
@@ -73,14 +79,14 @@ export function MoneyGlance({
 export function PortfolioGlance({ portfolio, query }: { portfolio?: Portfolio; query: Query }) {
   const totals = portfolio?.totals;
   return (
-    <Block
+    <Section
       id="glance-portfolio"
       title="Portfolio today"
       className="glance"
       action={
-        <Link className="btn btn-small" to="/investment">
+        <ButtonLink variant="text" size="sm" to="/investment">
           Open
-        </Link>
+        </ButtonLink>
       }
     >
       {!portfolio ? (
@@ -103,7 +109,7 @@ export function PortfolioGlance({ portfolio, query }: { portfolio?: Portfolio; q
           )}
         </>
       )}
-    </Block>
+    </Section>
   );
 }
 
@@ -113,15 +119,15 @@ export function TripGlance({ detail, query }: { detail?: TripDetail | null; quer
   const coming = t && t.status === "upcoming" ? t : null;
   const gaps = detail?.ready.nights_without_stay.length ?? 0;
   return (
-    <Block
+    <Section
       id="glance-trip"
       title="Next trip"
       className="glance"
       action={
         coming ? (
-          <Link className="btn btn-small" to={`/travel/trips/${coming.id}`}>
+          <ButtonLink variant="text" size="sm" to={`/travel/trips/${coming.id}`}>
             Open
-          </Link>
+          </ButtonLink>
         ) : undefined
       }
     >
@@ -144,7 +150,7 @@ export function TripGlance({ detail, query }: { detail?: TripDetail | null; quer
           No trip coming up. <Link to="/travel">Plan a trip</Link>.
         </p>
       )}
-    </Block>
+    </Section>
   );
 }
 
@@ -217,55 +223,37 @@ export function TripMode({ detail, timezone, now }: { detail: TripDetail; timezo
   const today = s?.today ?? null;
   const perDay = s?.per_day_left && Number(s.per_day_left.amount) > 0 ? s.per_day_left : null;
   return (
-    <Block
+    <Section
       id="trip-mode"
       title={t.day_number ? `Day ${t.day_number} in ${t.destination}` : `On now in ${t.destination}`}
       className="trip-mode"
       action={
-        <Link className="btn btn-small" to={`/travel/trips/${t.id}`}>
+        <ButtonLink variant="text" size="sm" to={`/travel/trips/${t.id}`}>
           Open trip
-        </Link>
+        </ButtonLink>
       }
     >
-      <ul className="mode-lines">
-        <li>
-          <Icon name="clock" size={18} />
-          <span>
-            {next ? (
-              <>
-                <span className="caption">Next</span>
-                <br />
-                {next.time ? `${next.time} · ` : ""}
-                {next.text}
-              </>
-            ) : (
-              <span className="muted">{lines.length ? "Nothing more planned today." : "Nothing planned today."}</span>
-            )}
-          </span>
-        </li>
+      <RowList>
+        {next ? (
+          <Row title={next.text} sub="Next" trailing={next.time ?? undefined} />
+        ) : (
+          <Row title={lines.length ? "Nothing more planned today." : "Nothing planned today."} sub="Next" />
+        )}
         {today && (
-          <li>
-            <Icon name="receipt" size={18} />
-            <span>
-              <span className="caption">Spent today</span>
-              <br />
-              {Number(today.amount) > 0 ? formatMoney(today) : "Nothing yet"}
-              {perDay && <span className="muted"> · {formatMoney(perDay)} a day left in your budget</span>}
-            </span>
-          </li>
+          <Row
+            title="Spent today"
+            sub={perDay ? `${formatMoney(perDay)} a day left in your budget` : undefined}
+            trailing={Number(today.amount) > 0 ? formatMoney(today) : "Nothing yet"}
+          />
         )}
         {booking && (
-          <li>
-            <Icon name={booking.kind === "hotel" ? "stay" : booking.kind === "rail" ? "train" : "flight"} size={18} />
-            <span>
-              <span className="caption">Next booking</span>
-              <br />
-              {booking.kind === "hotel" ? `Check in at ${booking.hotel ?? booking.title}` : booking.title}
-              <span className="muted"> · {formatShortDate(booking.starts, "UTC")}</span>
-            </span>
-          </li>
+          <Row
+            title={booking.kind === "hotel" ? `Check in at ${booking.hotel ?? booking.title}` : booking.title}
+            sub="Next booking"
+            trailing={formatShortDate(booking.starts, "UTC")}
+          />
         )}
-      </ul>
-    </Block>
+      </RowList>
+    </Section>
   );
 }

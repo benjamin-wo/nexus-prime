@@ -15,20 +15,20 @@ async function failing(page: Page, path: string): Promise<() => Promise<void>> {
   return () => page.unroute(pattern, refuse);
 }
 
-test("Home says what it could not load, never that nothing needs you, and Retry loads it", async ({ page }) => {
+test("Home says what it could not load, never that there is nothing for today, and Retry loads it", async ({ page }) => {
   await fakeApi(page);
   const feedUp = await failing(page, "/home");
   const summaryUp = await failing(page, "/summary");
   await page.goto("/");
 
-  const needs = page.getByRole("region", { name: "Needs you", exact: true });
-  await expect(needs.getByRole("alert")).toContainText("Couldn't load what needs you.", GIVE_UP);
+  const needs = page.getByRole("region", { name: "For today", exact: true });
+  await expect(needs.getByRole("alert")).toContainText("Couldn't load what's for today.", GIVE_UP);
   const money = page.getByRole("region", { name: "Money this month", exact: true });
   await expect(money.getByRole("alert")).toContainText("Couldn't load this month's spending.", GIVE_UP);
-  const hero = page.getByRole("region", { name: "Nexus", exact: true });
+  const hero = page.getByRole("region", { name: "This month", exact: true });
   await expect(hero.getByRole("alert")).toContainText("Couldn't load this month's spending.");
   await expect(hero.getByRole("button", { name: "Retry" })).toBeVisible();
-  await expect(page.getByText("Nothing needs you right now")).toHaveCount(0);
+  await expect(page.getByText("Nothing for today.")).toHaveCount(0);
   await expect(money).not.toContainText("Loading…");
 
   await feedUp();
@@ -41,7 +41,7 @@ test("Home says what it could not load, never that nothing needs you, and Retry 
   await expect(money.getByRole("alert")).toHaveCount(0, GIVE_UP);
   await expect(money.locator(".glance-figure")).toContainText("SGD");
   await expect(hero.getByRole("alert")).toHaveCount(0);
-  await expect(hero.locator(".hero-value")).toContainText("SGD");
+  await expect(hero.locator(".home-figure")).toContainText("37.40");
 });
 
 test("Overview says the totals could not be loaded, not that no spending was recorded", async ({ page }) => {
