@@ -88,7 +88,10 @@ export default function Home() {
         sharedCookiesEnabled
         hideKeyboardAccessoryView
         allowsBackForwardNavigationGestures
-        pullToRefreshEnabled
+        // The site scrolls inside itself and has its own pull-to-refresh, so the
+        // outer page must not bounce or reload. Outer scroll stays enabled so iOS can lift focused fields above the keyboard.
+        bounces={false}
+        contentInsetAdjustmentBehavior="never"
         injectedJavaScriptBeforeContentLoaded={INJECTED_BEFORE_LOAD}
         onShouldStartLoadWithRequest={onShouldStart}
         onMessage={onMessage}

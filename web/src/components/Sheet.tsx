@@ -1,6 +1,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { useDragToClose, useMediaQuery } from "../useDragToClose";
 import { Icon } from "./Icon";
 
 /** Fields a sheet puts the cursor in as it opens. A file input is skipped: it is
@@ -46,6 +47,11 @@ export function Sheet({
   const opener = useRef<Element | null>(typeof document === "undefined" ? null : document.activeElement);
   const close = useRef(onClose);
   close.current = onClose;
+  // On a phone the sheet is a bottom sheet (the CSS's 720px breakpoint): its grab area drags it down to close.
+  const bottomSheet = useMediaQuery("(max-width: 720px)");
+  const handle = useRef<HTMLDivElement | null>(null);
+  const backdrop = useRef<HTMLDivElement | null>(null);
+  useDragToClose({ handle, panel: dialog, backdrop, onClose, enabled: bottomSheet });
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -80,7 +86,7 @@ export function Sheet({
 
   const Tag = as;
   return createPortal(
-    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={backdrop} className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <Tag
         ref={setDialog}
         className={className ? `sheet-dialog ${className}` : "sheet-dialog"}
@@ -90,8 +96,9 @@ export function Sheet({
         tabIndex={-1}
         onSubmit={as === "form" ? onSubmit : undefined}
       >
-        <span className="sheet-grab" aria-hidden="true" />
-        <div className="sheet-head">
+        <div ref={handle} className="sheet-handle">
+          <span className="sheet-grab" aria-hidden="true" />
+          <div className="sheet-head">
           {onBack && (
             <button type="button" className="sheet-icon" onClick={onBack} aria-label={backLabel ?? "Back"}>
               <Icon name="chevronLeft" size={22} />
@@ -101,6 +108,7 @@ export function Sheet({
           <button type="button" className="sheet-icon" onClick={onClose} aria-label="Close">
             <Icon name="x" size={22} />
           </button>
+          </div>
         </div>
         <div className="sheet-body">{children}</div>
         {footer && <div className="sheet-foot">{footer}</div>}

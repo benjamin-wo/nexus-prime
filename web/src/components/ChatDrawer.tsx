@@ -14,6 +14,7 @@ import {
 import { messagesLeft } from "../demo";
 import { openExternal } from "../telegram";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
+import { useDragToClose, useMediaQuery } from "../useDragToClose";
 import { Icon } from "./Icon";
 import { NexusMark } from "./NexusMark";
 
@@ -200,6 +201,11 @@ export function ChatDrawer({
   const input = useRef<HTMLInputElement>(null);
   const stopButton = useRef<HTMLButtonElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  // Full screen on a phone (the CSS's 480px breakpoint): the grab bar and header drag the chat down to close.
+  const phone = useMediaQuery("(max-width: 480px)");
+  const drawer = useRef<HTMLElement>(null);
+  const handle = useRef<HTMLDivElement>(null);
+  useDragToClose({ handle, panel: drawer, onClose, enabled: phone });
   // Whether the list is scrolled to the newest message, so it can stay there when the keyboard resizes it.
   const atEnd = useRef(true);
   // Keep to the newest message, except right after loading older ones.
@@ -415,11 +421,14 @@ export function ChatDrawer({
   // it, and a drag in the chat must neither refresh the page nor move the chat.
   return createPortal(
     <aside
+      ref={drawer}
       className="drawer"
       role="dialog"
       aria-modal="false"
       aria-labelledby="chat-title"
     >
+      <div ref={handle} className="drawer-handle">
+      <span className="drawer-grab" aria-hidden="true" />
       <header>
         <h2 id="chat-title">Chat</h2>
         {demo && (
@@ -436,6 +445,7 @@ export function ChatDrawer({
           ×
         </button>
       </header>
+      </div>
       <div
         className="messages"
         aria-live="polite"
