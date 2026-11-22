@@ -69,3 +69,16 @@ describe("ChatDrawer source links", () => {
     expect(within(screen.getByRole("group", { name: "Sources" })).getAllByRole("link")).toHaveLength(1);
   });
 });
+
+describe("ChatDrawer on a phone", () => {
+  it("shows a grab bar to swipe the chat closed", () => {
+    mockApi({});
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }) as unknown as typeof window.matchMedia;
+    renderWithProviders(<ChatDrawer onClose={() => {}} onChanged={() => {}} />);
+    const grab = document.querySelector(".drawer-grab");
+    expect(grab).not.toBeNull();
+    expect(grab?.closest(".drawer-handle")?.querySelector("header")).not.toBeNull();
+    // @ts-expect-error jsdom has none
+    delete window.matchMedia;
+  });
+});

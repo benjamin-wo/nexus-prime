@@ -20,6 +20,7 @@ import { type CardDetails, detailsBody, NO_DETAILS, payingWallets, tracksCards, 
 import { CardFields } from "./CardFields";
 import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
+import { useDragToClose, useMediaQuery } from "../useDragToClose";
 
 /** The "Paid with" option that opens the inline new-card form; never a wallet id. */
 const ADD_CARD = "__add-card__";
@@ -122,6 +123,11 @@ export function EntrySheet({
   categoryFormRef.current = categoryFormOpen;
 
   const sheet = useRef<HTMLFormElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
+  const handle = useRef<HTMLDivElement>(null);
+  // On a phone the sheet rises from the bottom: drag its grab bar or title down to close it.
+  const bottomSheet = useMediaQuery("(max-width: 720px)");
+  useDragToClose({ handle, panel: sheet, backdrop, onClose, enabled: bottomSheet });
   useEffect(() => {
     // An existing entry is opened to read it, fix one thing or delete it: on a phone, don't raise
     // the keyboard (and hide the bottom bar) for that. The dialog itself takes the focus instead.
@@ -321,7 +327,7 @@ export function EntrySheet({
   // Only a new entry can wait for a connection; an edit, a transfer or "make it a transfer" cannot.
   const needsConnection = !online && (Boolean(editing) || moving);
   return (
-    <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={backdrop} className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <form
         ref={sheet}
         tabIndex={-1}
@@ -332,7 +338,10 @@ export function EntrySheet({
         aria-describedby={error ? "entry-error" : undefined}
         onSubmit={submit}
       >
-        <h3 id="entry-title">{title}</h3>
+        <div ref={handle} className="sheet-handle">
+          <span className="entry-grab" aria-hidden="true" />
+          <h3 id="entry-title">{title}</h3>
+        </div>
         {editing && isMove ? (
           <p className="caption">{moveLabel(editing)} · not counted as spending or income</p>
         ) : (

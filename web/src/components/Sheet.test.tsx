@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -124,5 +124,33 @@ describe("the sheet", () => {
     expect(screen.getByRole("dialog", { name: "Drop a pin here" }).tagName).toBe("FORM");
     await user.click(screen.getByRole("button", { name: "Save pin" }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the sheet's swipe down", () => {
+  it("closes on a long drag of its grab area on a phone", () => {
+    vi.useFakeTimers();
+    const query = vi.fn().mockReturnValue({ matches: true, addEventListener: () => {}, removeEventListener: () => {} });
+    window.matchMedia = query as unknown as typeof window.matchMedia;
+    Element.prototype.setPointerCapture = vi.fn();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ height: 400 } as DOMRect);
+    const onClose = vi.fn();
+    render(
+      <Sheet title="Stops" onClose={onClose}>
+        <p>Where you are.</p>
+      </Sheet>,
+    );
+    const grab = document.querySelector(".sheet-grab") as HTMLElement;
+    expect(grab.closest(".sheet-handle")).not.toBeNull();
+    fireEvent.pointerDown(grab, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(grab, { pointerId: 1, clientX: 0, clientY: 20 });
+    fireEvent.pointerMove(grab, { pointerId: 1, clientX: 0, clientY: 250 });
+    fireEvent.pointerUp(grab, { pointerId: 1 });
+    act(() => void vi.advanceTimersByTime(300));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    // @ts-expect-error jsdom has none
+    delete window.matchMedia;
   });
 });
