@@ -6,19 +6,18 @@ import { mark, markViewBox, wordmark, wordmarkTagline, wordmarkTaglineViewBox, w
  * Decorative by default (`aria-hidden`); give it a name with `alt="Nexus"` where it stands for
  * something on its own. Where it sits inside a button or link, the control keeps its own label.
  *
- * `variant` picks the colouring:
- * - `auto` (default) the full-colour mark; its Midnight pixels turn Blue/Teal on a dark theme, see the
- *   "Nexus mark" block at the end of styles.css. Use it on the page, cards and the chat.
- * - `mono` one colour, the text colour around it: on an accent-coloured button the button's own
- *   `--on-accent`, so it reads in both themes.
+ * One colour: the N is `--text-strong` (ink in light, paper in dark) and the spark at its top right is
+ * `--accent`. `variant` only changes that for a fill the mark sits on:
+ * - `auto` (default) ink N, `--accent` spark. Use it on the page, cards and the chat.
+ * - `mono` the whole mark in the text colour around it (`currentColor`), e.g. on a filled accent button.
  * - `cloud` all Cloud, for a dark or saturated fill that stays that way in both themes.
- * - `ink` all Midnight, for a light or Lime fill. */
+ * - `ink` all Midnight, for a light fill. */
 export type NexusMarkVariant = "auto" | "mono" | "cloud" | "ink";
 
 const CLOUD = "#F8FAFC";
 const INK = "#0B1020";
-// Fixed colours of the full-colour mark; K, k and b are the pixels that change with the theme.
-const FILL: Record<string, string> = { B: "#2563EB", b: "#2563EB", T: "#22D3EE", L: "#A3FF12", K: INK, k: INK };
+/** The N fills x 0 to 52 of the grid; everything from x 48 on is the spark. */
+const SPARK_X = 48;
 
 const [VX, VY, VW, VH] = markViewBox;
 
@@ -52,15 +51,24 @@ export function NexusMark({
       aria-hidden={alt ? undefined : true}
       focusable="false"
     >
-      {mark.map(([x, y, w, h, key], i) => (
+      {mark.map(([x, y, w, h], i) => (
         <rect
           key={i}
           x={x}
           y={y}
           width={w}
           height={h}
-          fill={variant === "mono" ? "currentColor" : variant === "cloud" ? CLOUD : variant === "ink" ? INK : FILL[key]}
-          className={variant === "auto" && (key === "K" || key === "k" || key === "b") ? `nm-${key}` : undefined}
+          fill={
+            variant === "mono"
+              ? "currentColor"
+              : variant === "cloud"
+                ? CLOUD
+                : variant === "ink"
+                  ? INK
+                  : x >= SPARK_X
+                    ? "var(--accent)"
+                    : "var(--text-strong)"
+          }
         />
       ))}
     </svg>

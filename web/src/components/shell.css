@@ -1,0 +1,52 @@
+/* The navigation (DESIGN.md §5 "The bottom bar" and the rail): text only, no icons.
+   Phone: a bar on the ground (no border, radius, blur or shadow) of equal-width labels, the current one ink,
+   weight 600, with a 4px dot under it; the others keep the dot's space, transparent, so nothing shifts.
+   Wide screen: the rail lists the same names, the current one ink 600 with the 4px dot at its left. */
+.nav-link {
+  position: relative; display: flex; align-items: center; min-height: 46px; padding: 0 var(--space-4);
+  border-radius: 14px; color: var(--text-secondary); text-decoration: none; font-weight: 500;
+}
+.nav-link:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+.nav-link.active { color: var(--text-strong); font-weight: 600; }
+/* The rail's dot sits at the left of the current item. */
+.rail .nav-link::before {
+  content: ""; position: absolute; left: 4px; top: 50%; width: 4px; height: 4px; margin-top: -2px;
+  border-radius: 50%; background: transparent;
+}
+.rail .nav-link.active::before { background: var(--bar-indicator); }
+.rail .nav-link:focus-visible, .bottom-nav .nav-link:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* The way into chat. In the rail: a small mark and "Ask Nexus", a text-style item like the others. */
+button.nav-ask { gap: var(--space-2); border: 0; background: none; font: inherit; font-weight: 500; text-align: left; cursor: pointer; width: 100%; color: var(--text-secondary); }
+button.nav-ask:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+button.nav-ask .nexus-mark { color: var(--text-strong); }
+/* In the bar: the one-colour mark (ink, spark in --accent), no fill, glow or shadow; the hit area is 56 x 48. */
+.bar-nexus {
+  display: none; flex: 0 0 56px; height: 48px; padding: 0; border: 0; border-radius: 14px; background: transparent;
+  box-shadow: none; place-items: center; cursor: pointer;
+}
+.bar-nexus:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.bottom-nav { display: none; }
+@media (max-width: 900px) {
+  .bottom-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; align-items: center; gap: var(--space-1);
+    padding: var(--space-1) var(--space-2) calc(var(--space-1) + env(safe-area-inset-bottom));
+    background: var(--bar-bg); border: 0; border-radius: 0; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .bottom-nav .nav-link {
+    /* The extra top padding lowers each label so it lines up with the middle of the N, not above it. */
+    flex: 1 1 0; min-width: 44px; min-height: 44px; padding: 10px 0 0; flex-direction: column; justify-content: center;
+    gap: 2px; border-radius: 14px; color: var(--bar-text); font-size: 0.8125rem; font-weight: 500; line-height: 1.2;
+    white-space: nowrap;
+  }
+  .bar-nexus { display: grid; }
+  @media (max-width: 359px) { .bar-nexus { flex-basis: 44px; } }
+  .bottom-nav .nav-link:hover { background: transparent; color: var(--bar-text); }
+  .bottom-nav .nav-link.active { color: var(--bar-text-active); font-weight: 600; }
+  .bottom-nav .nav-label { display: block; max-width: 100%; overflow: hidden; text-overflow: clip; }
+  /* The dot under the label: always there, so the labels do not shift; only the current one shows it. */
+  .bottom-nav .nav-link::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+  .bottom-nav .nav-link.active::after { background: var(--bar-indicator); }
+}

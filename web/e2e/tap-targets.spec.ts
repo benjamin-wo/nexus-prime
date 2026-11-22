@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { fakeApi } from "./fake-api";
+import { fakeApi, openChat } from "./fake-api";
 
 // On a touch screen every control needs a hit area of at least 44 x 44 px (a finger is about that big).
 // A control may be smaller to look at if its hit area is bigger: padding, or an ::after box. So this does
@@ -131,7 +131,7 @@ test.describe("every control has a hit area of 44 px on a touch screen", () => {
   // Sheets and drawers that open over a page.
   const OPENED: [string, string, (page: Page) => Promise<void>][] = [
     ["the entry sheet", "/", (page) => page.getByRole("button", { name: "Log expense" }).click()],
-    ["the chat drawer", "/", (page) => page.getByRole("button", { name: "Ask Nexus" }).first().click()],
+    ["the chat drawer", "/", (page) => openChat(page)],
     ["the ledger's Select mode", "/accounting/ledger", (page) => page.getByRole("button", { name: "Select", exact: true }).click()],
     ["the ledger's filters", "/accounting/ledger", (page) => page.getByRole("button", { name: /^Filter/ }).click()],
     ["the trip's share sheet", "/travel/trips/tripnow", (page) => page.getByRole("button", { name: "Share the plan" }).click()],

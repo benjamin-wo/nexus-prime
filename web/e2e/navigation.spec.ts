@@ -238,7 +238,7 @@ test("a Ledger row names its category under the merchant on a phone, and in its 
   }
 });
 
-test("the bottom bar on a phone has a short label under each icon, and nothing spills", async ({ page }, info) => {
+test("the bottom bar on a phone is text labels with the Nexus mark in the middle and no icons, and nothing spills", async ({ page }, info) => {
   test.skip(info.project.name !== "mobile", "the bottom bar is a phone's");
   await fakeApi(page);
   for (const width of [390, 320, 280]) {
@@ -246,13 +246,14 @@ test("the bottom bar on a phone has a short label under each icon, and nothing s
     await page.goto("/");
     const bar = page.getByRole("navigation", { name: "Main (mobile)" });
     await expect(bar).toBeVisible();
-    for (const label of ["Home", "Money", "Invest", "Travel"]) {
+    for (const label of ["Today", "Money", "Invest", "Trips"]) {
       await expect(bar.getByText(label, { exact: true }), `${label} at ${width}px`).toBeVisible();
     }
     // The names a screen reader hears still say what each is.
     const names = await bar.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent));
-    expect(names).toEqual(["Home", "Money", "Invest (Investment)", "Travel"]);
-    await expect(bar.getByRole("button", { name: "Ask Nexus", exact: true })).toBeVisible();
+    expect(names).toEqual(["Today (Home)", "Money", "Invest (Investment)", "Trips (Travel)"]);
+    await expect(bar.getByRole("button")).toHaveCount(1); // the Nexus mark
+    await expect(bar.getByRole("link").locator("svg")).toHaveCount(0);
 
     const problems = await bar.evaluate((el, w) => {
       const out: string[] = [];
@@ -283,7 +284,7 @@ test("the bottom bar marks where you are, by weight as well as colour", async ({
   await expect(money).toHaveAttribute("aria-current", "page");
   const weight = (name: string) =>
     bar.getByRole("link", { name }).locator(".nav-label").evaluate((e) => Number(getComputedStyle(e).fontWeight));
-  expect(await weight("Money")).toBeGreaterThan(await weight("Home"));
+  expect(await weight("Money")).toBeGreaterThan(await weight("Today (Home)"));
 });
 
 test("the rail on a wide screen keeps the full names", async ({ page }, info) => {

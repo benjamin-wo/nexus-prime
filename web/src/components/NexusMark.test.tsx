@@ -25,10 +25,10 @@ describe("NexusMark", () => {
     expect(container.querySelector("svg")).toHaveAttribute("height", "112");
   });
 
-  it("draws in the brand palette, or in one colour for a coloured button", () => {
+  it("is one colour, ink with an accent spark, or a single colour for a coloured button", () => {
     const { container, rerender } = render(<NexusMark />);
     const fills = new Set([...container.querySelectorAll("rect")].map((r) => r.getAttribute("fill")));
-    expect([...fills].sort()).toEqual(["#0B1020", "#22D3EE", "#2563EB", "#A3FF12"]);
+    expect([...fills].sort()).toEqual(["var(--accent)", "var(--text-strong)"]);
     rerender(<NexusMark variant="cloud" />);
     const cloud = new Set([...container.querySelectorAll("rect")].map((r) => r.getAttribute("fill")));
     expect([...cloud]).toEqual(["#F8FAFC"]);

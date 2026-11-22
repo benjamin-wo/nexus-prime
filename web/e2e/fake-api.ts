@@ -130,6 +130,11 @@ const CLOSED_MONTHS: Record<string, { out: number; in: number; put: number; food
 /** Months before those, for the chart. */
 const EARLIER_SPENDING: Record<string, number> = { "2026-06": 2210, "2026-07": 1190.25, "2026-08": 1655 };
 
+/** Opens the chat from its entry: "Ask" in the phone's bottom bar, "Ask Nexus" in the wide screen's rail. */
+export async function openChat(page: Page) {
+  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+}
+
 export async function fakeApi(
   page: Page,
   {

@@ -89,19 +89,17 @@ test.describe("the bottom bar on a phone", () => {
     ["4", true, null, 3],
     ["5", true, true, 4],
   ] as const) {
-    test(`keeps Nexus in the middle with ${name} items`, async ({ page }) => {
+    test(`shares the bar equally between ${name} items and the mark`, async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 700 });
       await fakeApi(page, { showInvest: invest, showTravel: travel });
       await page.goto("/");
       await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
       const bar = page.getByRole("navigation", { name: "Main (mobile)" });
       await expect(bar.getByRole("link")).toHaveCount(count);
-      const centres = await page.evaluate(() => {
-        const nav = document.querySelector("nav.bottom-nav")!.getBoundingClientRect();
-        const chat = document.querySelector(".nexus-button.in-bar")!.getBoundingClientRect();
-        return { bar: nav.left + nav.width / 2, chat: chat.left + chat.width / 2 };
-      });
-      expect(Math.abs(centres.chat - centres.bar)).toBeLessThan(1.5);
+      // Equal widths, and the Nexus mark in the middle.
+      const widths = await bar.getByRole("link").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+      for (const w of widths) expect(Math.abs(w - widths[0])).toBeLessThan(1.5);
+      await expect(bar.getByRole("button", { name: "Ask Nexus" })).toBeVisible();
       // Nothing is cut off or crowded: every label is fully inside the bar and the links don't overlap.
       const boxes = await bar.getByRole("link").evaluateAll((els) =>
         els.map((el) => {

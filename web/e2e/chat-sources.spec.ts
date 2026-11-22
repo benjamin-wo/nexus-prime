@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { fakeApi } from "./fake-api";
+import { fakeApi, openChat } from "./fake-api";
 
 // A web answer in the chat: its sources are small link chips under the reply, which open the
 // page outside the app. Made-up data only.
@@ -15,7 +15,7 @@ test("a web answer's sources show as link chips that open the page", async ({ pa
     }) as typeof window.open;
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Ask Nexus", exact: true }).filter({ visible: true }).click();
+  await openChat(page);
   const chat = page.getByRole("dialog", { name: "Chat" });
   await chat.getByLabel("Message").fill("How much is a PS6 in Singapore?");
   await chat.getByRole("button", { name: "Send" }).click();

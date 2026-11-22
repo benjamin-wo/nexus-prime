@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Me } from "../api";
 import { Shell } from "./Shell";
@@ -37,26 +38,28 @@ describe("the shell", () => {
     expect(screen.getAllByRole("button", { name: "Ask Nexus" }).length).toBeGreaterThan(0);
   });
 
-  it("puts a short label under each icon in the bottom bar, and the full names in the rail", () => {
+  it("has text labels in the bottom bar with the Nexus mark in the middle, and the full names in the rail", () => {
     shell(user("member", undefined, everything));
     const bar = screen.getByRole("navigation", { name: "Main (mobile)" });
     const links = within(bar).getAllByRole("link");
-    expect(links.map((l) => l.textContent)).toEqual(["Home", "Money", "Invest", "Travel"]);
+    expect(links.map((l) => l.textContent)).toEqual(["Today", "Money", "Invest", "Trips"]);
     // The accessible names still say what each one is.
     expect(links.map((l) => l.getAttribute("aria-label") ?? l.textContent)).toEqual([
-      "Home",
+      "Today (Home)",
       "Money",
       "Invest (Investment)",
-      "Travel",
+      "Trips (Travel)",
     ]);
     expect(within(bar).getByRole("link", { name: "Money" })).toHaveAttribute("href", "/accounting");
-    // Nexus stays in the middle, as a button with its own name, with two places either side.
-    const kids = [...bar.children];
-    expect(kids[1]).toBe(within(bar).getByRole("button", { name: "Ask Nexus" }));
-    expect(kids[1]).toHaveTextContent("");
-    expect([...kids[0].children].map((l) => l.textContent)).toEqual(["Home", "Money"]);
-    expect([...kids[2].children].map((l) => l.textContent)).toEqual(["Invest", "Travel"]);
+    // The one-colour Nexus mark is the way into chat, in the middle: Today, Money, [N], Invest, Trips.
+    const ask = within(bar).getByRole("button", { name: "Ask Nexus" });
+    expect(ask.querySelector("svg.nexus-mark")).not.toBeNull();
+    expect(ask).toHaveTextContent("");
+    expect([...bar.children]).toEqual([links[0], links[1], ask, links[2], links[3]]);
+    expect(within(bar).getAllByRole("link").every((l) => l.querySelector("svg") === null)).toBe(true);
     const rail = screen.getByRole("navigation", { name: "Main" });
+    expect(within(rail).getAllByRole("link").every((l) => l.querySelector("svg") === null)).toBe(true);
+    expect(within(rail).getByRole("button", { name: "Ask Nexus" })).toHaveTextContent("Ask Nexus");
     expect(within(rail).getAllByRole("link").map((l) => l.textContent)).toEqual([
       "Home",
       "Money",
@@ -70,7 +73,7 @@ describe("the shell", () => {
     shell(user("member", undefined, everything), "/accounting/ledger");
     const bar = screen.getByRole("navigation", { name: "Main (mobile)" });
     expect(within(bar).getByRole("link", { name: "Money" })).toHaveAttribute("aria-current", "page");
-    expect(within(bar).getByRole("link", { name: "Home" })).not.toHaveAttribute("aria-current");
+    expect(within(bar).getByRole("link", { name: "Today (Home)" })).not.toHaveAttribute("aria-current");
   });
 
   it("keeps Settings current on the pages inside it, with no department tabs", () => {
@@ -122,41 +125,31 @@ describe("Invest and Travel in the menu", () => {
   const bar = () => screen.getByRole("navigation", { name: "Main (mobile)" });
   const rail = () => screen.getByRole("navigation", { name: "Main" });
   const labels = (nav: HTMLElement) => within(nav).getAllByRole("link").map((l) => l.textContent);
-  /** The two halves of the bottom bar either side of Nexus, as the labels in each. */
-  const halves = () => {
-    const kids = [...bar().children];
-    expect(kids[1]).toBe(within(bar()).getByRole("button", { name: "Ask Nexus" }));
-    return [kids[0], kids[2]].map((side) => [...side.children].map((l) => l.textContent));
-  };
 
   it("hides both until they are on: not decided, absent and switched off all read as hidden", () => {
     for (const me of [member(null, null), member(), member(false, false), user("member")]) {
       const { unmount } = shell(me, "/accounting");
-      expect(labels(bar())).toEqual(["Home", "Money"]);
+      expect(labels(bar())).toEqual(["Today", "Money"]);
       expect(labels(rail())).toEqual(["Home", "Money", "Settings"]);
-      // Home and Money either side of Nexus: it stays in the middle.
-      expect(halves()).toEqual([["Home"], ["Money"]]);
       unmount();
     }
   });
 
-  it("shows just Invest when only it is on, the bar still two and one around Nexus", () => {
+  it("shows just Invest when only it is on", () => {
     shell(member(true, null), "/accounting");
-    expect(labels(bar())).toEqual(["Home", "Money", "Invest"]);
+    expect(labels(bar())).toEqual(["Today", "Money", "Invest"]);
     expect(labels(rail())).toEqual(["Home", "Money", "Investment", "Settings"]);
-    expect(halves()).toEqual([["Home", "Money"], ["Invest"]]);
   });
 
-  it("shows just Travel when only it is on", () => {
+  it("shows just Travel, as Trips on the bar, when only it is on", () => {
     shell(member(false, true), "/accounting");
-    expect(labels(bar())).toEqual(["Home", "Money", "Travel"]);
+    expect(labels(bar())).toEqual(["Today", "Money", "Trips"]);
     expect(labels(rail())).toEqual(["Home", "Money", "Travel", "Settings"]);
-    expect(halves()).toEqual([["Home", "Money"], ["Travel"]]);
   });
 
-  it("shows both, two either side of Nexus", () => {
+  it("shows both", () => {
     shell(member(true, true), "/accounting");
-    expect(halves()).toEqual([["Home", "Money"], ["Invest", "Travel"]]);
+    expect(labels(bar())).toEqual(["Today", "Money", "Invest", "Trips"]);
   });
 
   it("keeps a hidden section's pages open, with its own tabs and no tab current in the menu", () => {
@@ -206,5 +199,23 @@ describe("the offline notice", () => {
   it.each([undefined, 0])("is not there with %s waiting", (waiting) => {
     notice(waiting);
     expect(screen.queryByText(/You're offline/)).toBeNull();
+  });
+});
+
+describe("the way into chat", () => {
+  it("opens the chat from the bar and from the rail", async () => {
+    const onOpenChat = vi.fn();
+    render(
+      <MemoryRouter initialEntries={["/accounting"]}>
+        <Shell me={user("member")} onOpenChat={onOpenChat} onLogout={() => {}}>
+          <p>The page</p>
+        </Shell>
+      </MemoryRouter>,
+    );
+    const user_ = userEvent.setup();
+    for (const nav of ["Main (mobile)", "Main"]) {
+      await user_.click(within(screen.getByRole("navigation", { name: nav })).getByRole("button", { name: "Ask Nexus" }));
+    }
+    expect(onOpenChat).toHaveBeenCalledTimes(2);
   });
 });

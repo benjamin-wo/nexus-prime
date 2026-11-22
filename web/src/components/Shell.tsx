@@ -5,13 +5,13 @@ import type { Me } from "../api";
 import { DEPARTMENTS, departmentFor, inMenu } from "../departments";
 import { useReveal } from "../motion";
 import { DemoBanner } from "./DemoBanner";
-import { Icon, departmentIcon } from "./Icon";
 import { pullIsSafe, withMiniApp } from "../telegram";
 import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { NexusMark } from "./NexusMark";
 import { Button, Tabs } from "./ui";
+import "./shell.css";
 
 /** True while the page is being scrolled down (past its top, short of its end):
  * the floating buttons step aside then, so they never sit on what's being read,
@@ -132,8 +132,7 @@ function BrandMark() {
 }
 
 /** The front desk (Home), a switcher for the departments behind it, Settings and
- * Nexus: a rail on wide screens; on phones a dark bottom bar with Nexus in the
- * middle. A department's own pages are tabs along the top of its section.
+ * Nexus: a rail on wide screens; on phones a bottom bar of text labels with the Nexus mark in the middle. A department's own pages are tabs along the top of its section.
  *
  * A guest (someone a trip's owner brought in) gets none of that: a slim header with
  * the app's name and Sign out above their trips, and no chat. */
@@ -146,6 +145,7 @@ export function Shell({
   children,
 }: {
   me: Me;
+  /** Opens the chat: the "Ask" tab in the bottom bar and "Ask Nexus" in the rail. */
   onOpenChat: () => void;
   onLogout: () => void;
   /** Refetches what the page shows; given, Home, Money overview, Ledger and Budgets can be pulled down to refresh. */
@@ -167,14 +167,17 @@ export function Shell({
   useReveal(content);
   const pullable = onRefresh && PULLABLE.has(pathname) ? onRefresh : undefined;
   const pull = usePullToRefresh(viewport, pullable, pullIsSafe);
-  // The rail names each place in full; the bottom bar on a phone uses a short word under the icon,
-  // and its accessible name keeps the full one ("Invest (Investment)").
+  // The rail names each place in full; the bottom bar on a phone uses a short word (Home reads "Today"),
+  // and its accessible name keeps the full one ("Invest (Investment)"). Text only, no icons.
   const links = (bar: boolean) => [
-    <NavLink key="home" to="/app" end className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-      <span className="nav-glyph" aria-hidden="true">
-        <Icon name="home" />
-      </span>
-      <span className="nav-label">Home</span>
+    <NavLink
+      key="home"
+      to="/app"
+      end
+      className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+      aria-label={bar ? "Today (Home)" : undefined}
+    >
+      <span className="nav-label">{bar ? "Today" : "Home"}</span>
     </NavLink>,
     ...DEPARTMENTS.filter((d) => inMenu(d, me.preferences)).map((d) => (
       <NavLink
@@ -183,9 +186,6 @@ export function Shell({
         className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
         aria-label={bar && d.short !== d.label ? `${d.short} (${d.label})` : undefined}
       >
-        <span className="nav-glyph" aria-hidden="true">
-          <Icon name={departmentIcon(d.name)} />
-        </span>
         <span className="nav-label">{bar ? d.short : d.label}</span>
       </NavLink>
     )),
@@ -193,9 +193,6 @@ export function Shell({
   const barLinks = links(true);
   const settings = (
     <NavLink to="/settings" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-      <span className="nav-glyph" aria-hidden="true">
-        <Icon name="settings" />
-      </span>
       <span className="nav-label">Settings</span>
     </NavLink>
   );
@@ -222,10 +219,12 @@ export function Shell({
       </div>
     );
   }
-  const nexus = (where: string) => (
-    <button type="button" className={`nexus-button ${where}`} aria-label="Ask Nexus" title="Ask Nexus" onClick={onOpenChat}>
-      <NexusMark size={where === "in-rail" ? 28 : 32} variant={where === "in-rail" ? "mono" : "auto"} />
-      {where === "in-rail" && <span>Ask Nexus</span>}
+  // The way into chat: the one-colour Nexus mark. In the bar it sits in the middle (no fill, glow or shadow);
+  // in the rail it is a small mark before the text "Ask Nexus".
+  const ask = (inBar: boolean) => (
+    <button type="button" className={inBar ? "bar-nexus" : "nav-link nav-ask"} aria-label="Ask Nexus" onClick={onOpenChat}>
+      <NexusMark size={inBar ? 30 : 20} />
+      {!inBar && <span className="nav-label">Ask Nexus</span>}
     </button>
   );
   return (
@@ -246,7 +245,7 @@ export function Shell({
         </div>
         {links(false)}
         {settings}
-        {nexus("in-rail")}
+        {ask(false)}
         <div className="spacer" />
         {me.user.role === "owner" && !me.demo && <InviteButton />}
         <Button variant="text" onClick={onLogout}>
@@ -263,14 +262,12 @@ export function Shell({
           {children}
         </div>
       </main>
-      {/* Home and Money, Nexus in the middle, then Invest and Travel when they are in the menu,
-          each with a short label under its icon. The places are split over two equal halves, so
-          Nexus stays in the middle with three, four or five items. Settings is on Home (top
-          right). */}
+      {/* Today, Money, the Nexus mark, then Invest and Trips when they are in the menu: equal-width text
+          labels, the current one in ink with a dot under it. Settings is on Home (top right). */}
       <nav className="bottom-nav" aria-label="Main (mobile)" ref={bar}>
-        <div className="bar-side">{barLinks.slice(0, Math.ceil(barLinks.length / 2))}</div>
-        {nexus("in-bar")}
-        <div className="bar-side">{barLinks.slice(Math.ceil(barLinks.length / 2))}</div>
+        {barLinks.slice(0, Math.ceil(barLinks.length / 2))}
+        {ask(true)}
+        {barLinks.slice(Math.ceil(barLinks.length / 2))}
       </nav>
     </div>
   );
