@@ -115,7 +115,7 @@ function hapticsOnTap(app: WebApp): void {
 }
 
 /** Show the page in Telegram's own theme (not the phone's), at the start and when the user changes it.
- * Once a page is showing, Shell sets the header and bar colours again (the Home hero has its own). */
+ * Once a page is showing, Shell sets the header and bar colours again. */
 function followTelegramTheme(app: WebApp): void {
   const paint = () => {
     const { shell, bar } = CHROME[currentScheme()];

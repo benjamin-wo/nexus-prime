@@ -85,19 +85,18 @@ function useTelegramBack(pathname: string, first: boolean) {
   }, [parent, first, navigate]);
 }
 
-/** Telegram's header (and the bar under the app) in the page's own colour: the
- * hero's indigo on Home, the page colour elsewhere. */
-function useTelegramColours(home: boolean) {
+/** Telegram's header (and the bar under the app) in the page's own colour (Paper has no hero). */
+function useTelegramColours() {
   const scheme = useScheme();
   useEffect(
     () =>
       withMiniApp((app) => {
         const colours = CHROME[scheme];
-        app.setHeaderColor?.(home ? colours.hero : colours.shell);
+        app.setHeaderColor?.(colours.shell);
         app.setBackgroundColor?.(colours.shell);
         app.setBottomBarColor?.(colours.bar);
       }),
-    [home, scheme],
+    [scheme],
   );
 }
 
@@ -156,7 +155,7 @@ export function Shell({
 }) {
   const { pathname, key } = useLocation();
   useTelegramBack(pathname, key === "default");
-  useTelegramColours(pathname === "/app");
+  useTelegramColours();
   const here = departmentFor(pathname);
   const content = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLElement>(null);
