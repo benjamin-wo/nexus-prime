@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-import { Link } from "react-router-dom";
 
 import { api, type Me, type Page, type Setup } from "../api";
 import { Block } from "./Block";
 import { Icon } from "./Icon";
 import { NexusMark } from "./NexusMark";
+import { Button, ButtonLink } from "./ui";
 
 /** Done: a tick. To do: an empty ring. The state is also said in words for a screen reader. */
 function Tick({ done }: { done: boolean }) {
@@ -99,35 +99,35 @@ export function GetStarted({ me, onLog }: { me: Me; onLog: () => void }) {
           <span className="caption">
             {steps.filter(Boolean).length} of {steps.length}
           </span>
-          <button type="button" className="btn btn-ghost btn-small start-hide" disabled={busy} onClick={() => void hide()}>
+          <Button variant="text" size="sm" className="start-hide" disabled={busy} onClick={() => void hide()}>
             <Icon name="x" size={16} />
             <span className="sr-only">Hide</span>
-          </button>
+          </Button>
         </span>
       }
     >
       <ul className="rows" aria-label="First steps">
         <Step done={hasTelegram} label="Connect Telegram">
           {config && (
-            <a className="btn btn-soft btn-small" href={`https://t.me/${config.bot_username}`} target="_blank" rel="noopener noreferrer">
+            <ButtonLink variant="secondary" size="sm" href={`https://t.me/${config.bot_username}`} target="_blank" rel="noopener noreferrer">
               Open the bot<span className="sr-only"> in Telegram</span>
-            </a>
+            </ButtonLink>
           )}
         </Step>
         <Step done={hasEntry} label="Log your first expense">
-          <button type="button" className="btn btn-soft btn-small" onClick={onLog}>
+          <Button variant="secondary" size="sm" onClick={onLog}>
             Log one<span className="sr-only"> expense</span>
-          </button>
+          </Button>
         </Step>
         <Step done={hasBudget} label="Set a monthly budget">
-          <Link className="btn btn-soft btn-small" to="/accounting/budgets">
+          <ButtonLink variant="secondary" size="sm" to="/accounting/budgets">
             Set one<span className="sr-only"> budget</span>
-          </Link>
+          </ButtonLink>
         </Step>
         <Step done={hasReceipts} label="Get receipts in automatically">
-          <Link className="btn btn-soft btn-small" to="/settings/email">
+          <ButtonLink variant="secondary" size="sm" to="/settings/email">
             Connect<span className="sr-only"> email</span>
-          </Link>
+          </ButtonLink>
         </Step>
       </ul>
       <p className="caption start-note">Log in Telegram or the chat button; review here.</p>

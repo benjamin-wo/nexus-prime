@@ -22,6 +22,7 @@ import { MerchantField } from "./MerchantField";
 import { MoneyTrail } from "./MoneyTrail";
 import { useEscapeStack } from "./overlay/useEscapeStack";
 import { Sheet } from "./Sheet";
+import { Button, ButtonLink, Chip, ChipGroup } from "./ui";
 
 /** The "Paid with" option that opens the inline new-card form; never a wallet id. */
 const ADD_CARD = "__add-card__";
@@ -321,29 +322,29 @@ export function EntrySheet({
         <div className="actions">
           {/* Only an entry that exists and isn't already deleted; the toast the page shows has Undo. */}
           {editing && !editing.deleted && onDeleted && (
-            <button type="button" className="btn btn-danger" disabled={saving || !online} onClick={() => void remove()}>
+            <Button variant="danger" disabled={saving || !online} onClick={() => void remove()}>
               Delete
-            </button>
+            </Button>
           )}
-          <button type="button" className="btn" onClick={onClose}>
+          <Button onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || needsWallet || needsConnection || cardFormOpen || categoryFormOpen}>
+          </Button>
+          <Button variant="primary" type="submit" disabled={saving || needsWallet || needsConnection || cardFormOpen || categoryFormOpen}>
             {saving ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       }
     >
         {editing && isMove ? (
           <p className="caption">{moveLabel(editing)} · not counted as spending or income</p>
         ) : (
-          <div className="tabs" role="group" aria-label="Direction">
+          <ChipGroup aria-label="Direction">
             {(["out", "in", "move"] as const).filter((d) => !editing || d !== "move").map((d) => (
-              <button key={d} type="button" className="tab" aria-pressed={direction === d} onClick={() => setDirection(d)}>
+              <Chip key={d} pressed={direction === d} onClick={() => setDirection(d)}>
                 {d === "out" ? "Money out" : d === "in" ? "Money in" : "Transfer"}
-              </button>
+              </Chip>
             ))}
-          </div>
+          </ChipGroup>
         )}
         <div className="row">
           <label className="field">
@@ -472,23 +473,20 @@ export function EntrySheet({
               </p>
             )}
             <div className="quick">
-              <button
-                type="button"
-                className="btn btn-primary"
+              <Button
+                variant="primary"
                 disabled={categorySaving || !categoryName.trim()}
                 onClick={() => void addCategory()}
               >
                 {categorySaving ? "Adding…" : "Add category"}
-              </button>
-              <button
-                type="button"
-                className="btn"
+              </Button>
+              <Button
                 disabled={categorySaving}
                 aria-label="Cancel new category"
                 onClick={() => setAddingCategory(false)}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -536,12 +534,12 @@ export function EntrySheet({
               </p>
             )}
             <div className="quick">
-              <button type="button" className="btn btn-primary" disabled={cardSaving} onClick={() => void addCard()}>
+              <Button variant="primary" disabled={cardSaving} onClick={() => void addCard()}>
                 {cardSaving ? "Adding…" : "Add card"}
-              </button>
-              <button type="button" className="btn" disabled={cardSaving} aria-label="Cancel new card" onClick={() => setAdding(false)}>
+              </Button>
+              <Button disabled={cardSaving} aria-label="Cancel new card" onClick={() => setAdding(false)}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -551,9 +549,9 @@ export function EntrySheet({
         </label>
         {editing && onOpen && <MoneyTrail tx={editing} timezone={tz} onOpen={onOpen} />}
         {editing?.has_receipt && (
-          <a className="btn" href={receiptUrl(editing.id)} target="_blank" rel="noopener noreferrer">
+          <ButtonLink href={receiptUrl(editing.id)} target="_blank" rel="noopener noreferrer">
             View receipt
-          </a>
+          </ButtonLink>
         )}
         <label className="field">
           Notes
@@ -578,18 +576,18 @@ export function EntrySheet({
                   : `Turn this into a transfer from ${markWallet?.name} to ${spending?.name ?? "your main account"}? It will stop counting as income.`}
               </p>
               <div className="quick">
-                <button type="button" className="btn btn-primary" disabled={saving || !online} onClick={markAsMove}>
+                <Button variant="primary" disabled={saving || !online} onClick={markAsMove}>
                   Turn into a transfer
-                </button>
-                <button type="button" className="btn" onClick={() => setMarking(false)}>
+                </Button>
+                <Button onClick={() => setMarking(false)}>
                   Keep as is
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
-            <button type="button" className="btn btn-ghost move-ask-open" onClick={() => setMarking(true)}>
+            <Button variant="text" className="move-ask-open" onClick={() => setMarking(true)}>
               This was a transfer to…
-            </button>
+            </Button>
           )
         )}
         {needsConnection && (

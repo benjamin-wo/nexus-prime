@@ -110,7 +110,7 @@ function hapticsOnTap(app: WebApp): void {
     const target = event.target instanceof Element ? event.target : null;
     if (!target || !app.HapticFeedback) return;
     if (target.closest(".btn-primary, .fab")) app.HapticFeedback.impactOccurred("light");
-    else if (target.closest(".nav-link, .dept-tab, .day-pill, .tab, .seg-btn, .voice-preset")) app.HapticFeedback.selectionChanged();
+    else if (target.closest(".nav-link, .dept-tab, .day-pill, .chip-btn, .seg-btn, .voice-preset")) app.HapticFeedback.selectionChanged();
   });
 }
 

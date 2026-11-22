@@ -11,6 +11,7 @@ import { CHROME, useScheme } from "../theme";
 import { type PullStatus, usePullToRefresh } from "../usePullToRefresh";
 import { InviteButton } from "./InviteButton";
 import { NexusMark } from "./NexusMark";
+import { Button } from "./ui";
 
 /** True while the page is being scrolled down (past its top, short of its end):
  * the floating buttons step aside then, so they never sit on what's being read,
@@ -113,9 +114,9 @@ function PullIndicator({ status, onRefresh }: { status: PullStatus; onRefresh?: 
         {status === "refreshing" ? "Refreshing…" : status === "done" ? "Updated" : ""}
       </p>
       {onRefresh && (
-        <button type="button" className="btn btn-soft ptr-button" onClick={onRefresh}>
+        <Button variant="secondary" className="ptr-button" onClick={onRefresh}>
           Refresh
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -208,9 +209,9 @@ export function Shell({
           </Link>
           <div className="guest-user">
             {me.user.display_name && <span className="guest-name">{me.user.display_name}</span>}
-            <button type="button" className="btn btn-ghost" onClick={onLogout}>
+            <Button variant="text" onClick={onLogout}>
               Sign out
-            </button>
+            </Button>
           </div>
         </header>
         <main className="main-viewport" ref={viewport}>
@@ -248,9 +249,9 @@ export function Shell({
         {nexus("in-rail")}
         <div className="spacer" />
         {me.user.role === "owner" && !me.demo && <InviteButton />}
-        <button type="button" className="btn btn-ghost" onClick={onLogout}>
+        <Button variant="text" onClick={onLogout}>
           Sign out
-        </button>
+        </Button>
       </nav>
       <main className="main-viewport" ref={viewport}>
         {pullable && <PullIndicator status={pull.status} onRefresh={pull.refresh} />}

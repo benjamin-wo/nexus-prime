@@ -5,6 +5,7 @@ import { api, ApiError, type Me } from "../api";
 import { BackLink } from "../components/BackLink";
 import { Block } from "../components/Block";
 import { StatTile } from "../components/StatTile";
+import { Chip, ChipGroup } from "../components/ui";
 import {
   costDayLabel,
   type CostDay,
@@ -87,13 +88,13 @@ export function CostsPage({ me }: { me: Me }) {
         </div>
         {!hidden && (
           <div className="filters">
-            <div className="tabs" role="group" aria-label="Days shown">
+            <ChipGroup aria-label="Days shown">
               {RANGES.map((r) => (
-                <button key={r} type="button" className="tab" aria-pressed={days === r} onClick={() => setDays(r)}>
+                <Chip key={r} pressed={days === r} onClick={() => setDays(r)}>
                   {r} days
-                </button>
+                </Chip>
               ))}
-            </div>
+            </ChipGroup>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Icon } from "./Icon";
+import { Button } from "./ui";
 
 /** One line in a menu: a page (`to`), a file or address (`href`), or an action (`onSelect`). */
 export type MenuItem = {
@@ -57,10 +58,8 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
 
   return (
     <div className="menu" ref={box} onKeyDown={key}>
-      <button
+      <Button
         ref={button}
-        type="button"
-        className="btn"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
@@ -68,7 +67,7 @@ export function Menu({ label, items }: { label: string; items: MenuItem[] }) {
       >
         {label}
         <Icon name="chevronDown" size={16} />
-      </button>
+      </Button>
       {open && (
         <div id={listId} className="menu-list" role="menu" aria-label={label}>
           {items.map((item) =>

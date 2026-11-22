@@ -1,6 +1,6 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -25,7 +25,11 @@ type Kind = "colour" | "gradient" | "shadow" | "font";
 const SRC = dirname(fileURLToPath(import.meta.url));
 const CSS_PATH = join(SRC, "styles.css");
 /** Split-out stylesheets are held to the same rules (styles.css is being split up, overlay.css first). */
-const OTHER_CSS = [join(SRC, "components/overlay/overlay.css")];
+const UI_DIR = join(SRC, "components/ui");
+const OTHER_CSS = [
+  join(SRC, "components/overlay/overlay.css"),
+  ...readdirSync(UI_DIR).filter((f) => f.endsWith(".css")).sort().map((f) => join(UI_DIR, f)),
+];
 
 const FONT_STACKS = [
   // Paper: Bricolage Grotesque (headings, figures, UI) and Newsreader (body), plus mono.
@@ -180,4 +184,35 @@ describe("styles.css follows DESIGN.md", () => {
       expect(stale).toEqual([]);
     });
   }
+});
+
+/**
+ * Buttons and chips are written with the building blocks in components/ui (Button, ButtonLink, Chip, ChipGroup),
+ * not as raw markup. Pages not yet redone still write the classes by hand; this counts them (in .tsx outside
+ * components/ui, tests left out): a string that starts with a btn class (`className="btn …"`, `{`btn …`}`, a
+ * ternary's `"btn-primary"`) and a "day-pill" or "ask-chip" class anywhere in a class string.
+ * RAW_CONTROLS MUST ONLY SHRINK: a new control uses the component; when a page moves to them, lower the number.
+ */
+const RAW_CONTROLS = 283;
+const RAW_CONTROL = /["'`]btn\b|["'`\s]day-pill\b|["'`\s]ask-chip\b/g;
+
+function tsxFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const path = join(dir, e.name);
+    if (e.isDirectory()) return path === UI_DIR ? [] : tsxFiles(path);
+    return e.name.endsWith(".tsx") && !/\.test\.tsx$/.test(e.name) ? [path] : [];
+  });
+}
+
+describe("buttons and chips use components/ui", () => {
+  const counts = tsxFiles(SRC)
+    .map((f) => [relative(SRC, f), (readFileSync(f, "utf8").match(RAW_CONTROL) ?? []).length] as const)
+    .filter(([, n]) => n > 0);
+  const total = counts.reduce((sum, [, n]) => sum + n, 0);
+
+  it(`has no more than ${RAW_CONTROLS} raw .btn / .day-pill / .ask-chip controls`, () => {
+    expect(total, `use Button or Chip from components/ui; by file: ${JSON.stringify(counts)}`).toBeLessThanOrEqual(
+      RAW_CONTROLS,
+    );
+  });
 });

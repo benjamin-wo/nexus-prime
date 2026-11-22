@@ -7,6 +7,7 @@ import { formatChange, formatPercent } from "../format";
 import { livePolling } from "../prices";
 import { Icon } from "./Icon";
 import { PriceWhen } from "./PriceWhen";
+import { Button } from "./ui";
 
 const TITLES: Record<Session, string> = {
   live: "Today",
@@ -72,9 +73,9 @@ function MoverRow({ mover }: { mover: Mover }) {
         </div>
       ) : (
         <div className="mover-ask">
-          <button
-            type="button"
-            className="btn btn-ghost btn-small"
+          <Button
+            variant="text"
+            size="sm"
             disabled={state.status === "asking"}
             onClick={() => void ask()}
           >
@@ -86,7 +87,7 @@ function MoverRow({ mover }: { mover: Mover }) {
                 Why did it move?<span className="sr-only"> {mover.symbol}</span>
               </>
             )}
-          </button>
+          </Button>
           {state.status === "failed" && (
             <span className="caption error-text" role="alert">
               {state.message}

@@ -24,6 +24,7 @@ import { Sheet } from "../components/Sheet";
 import { DirectionBadge } from "../components/Badge";
 import { Toast } from "../components/Toast";
 import { Amount } from "../components/Amount";
+import { Chip, ChipGroup } from "../components/ui";
 import { dayHeading, formatDate, formatMoney, isoDay, moveLabel, relativeDay, txName } from "../format";
 import { outboxUser, useOutbox } from "../outbox";
 import { hapticImpact, hapticSelection } from "../telegram";
@@ -619,13 +620,13 @@ export function Ledger({ me, onAdd, onEdit }: { me: Me; onAdd: () => void; onEdi
             <span className="filter-label" id="filter-type-label">
               Show
             </span>
-            <div className="tabs" role="group" aria-labelledby="filter-type-label">
+            <ChipGroup aria-labelledby="filter-type-label">
               {VIEWS.map((v) => (
-                <button key={v.key} type="button" className="tab" aria-pressed={view === v.key} onClick={() => setView(v.key)}>
+                <Chip key={v.key} pressed={view === v.key} onClick={() => setView(v.key)}>
                   {v.label}
-                </button>
+                </Chip>
               ))}
-            </div>
+            </ChipGroup>
           </div>
           <div className="filter-group">
             <label className="field">

@@ -1,5 +1,7 @@
 import { useId } from "react";
 
+import { Button } from "./ui";
+
 /** What of a TanStack query a Retry needs: to fetch again, and whether that is under way. */
 type Retryable = { refetch: () => unknown; isFetching?: boolean };
 
@@ -22,9 +24,9 @@ export function LoadError({
       <p id={id} className="error-text load-error-text">
         {message}
       </p>
-      <button type="button" className="btn btn-small" aria-describedby={id} disabled={query.isFetching} onClick={() => void query.refetch()}>
+      <Button size="sm" aria-describedby={id} disabled={query.isFetching} onClick={() => void query.refetch()}>
         Retry
-      </button>
+      </Button>
     </div>
   );
 }

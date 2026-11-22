@@ -1,0 +1,47 @@
+/* Buttons (DESIGN.md §5): every .btn rule the app shares lives here, once. Button.tsx picks the classes.
+   Pills, 44px tall (52px full width at a form's foot, 34px small); no outline, no shadow, no gradient.
+   Page-specific placements (".rail .btn", ".toast .btn" ...) stay in styles.css, which loads after this file. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-height: 44px; padding: 0 var(--space-4); border-radius: 999px; border: 0;
+  background: var(--bg-raised); color: var(--text-primary); font: inherit; font-weight: 600; line-height: 1.2;
+  text-decoration: none; cursor: pointer;
+  transition: transform var(--t-micro), background var(--t-micro), color var(--t-micro), opacity var(--t-micro);
+}
+.btn:hover:not(:disabled) { background: var(--btn-hover-bg); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Primary: the filled accent pill. */
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+/* Secondary: a --bg-raised pill with ink text, like the plain .btn (which is also cancel and back). */
+.btn-soft { background: var(--bg-raised); color: var(--text-primary); }
+.btn-soft:hover:not(:disabled) { background: var(--btn-hover-bg); }
+
+/* Text button: --accent-text, no fill (a section's action, "Show all", the icon buttons). */
+.btn-ghost { background: transparent; color: var(--accent-text); }
+.btn-ghost:hover:not(:disabled) { background: var(--bg-card-hover); }
+
+/* Destructive: a rose text button, never filled. */
+.btn-danger { background: transparent; color: var(--rose-accent); }
+.btn-danger:hover:not(:disabled) { background: var(--bg-card-hover); }
+
+/* Touch screens keep :hover after a tap: a text button shouldn't stay filled. */
+@media (hover: none) {
+  .btn-ghost:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: transparent; }
+}
+
+.btn-small { min-height: 34px; padding: 0 var(--space-3); font-size: 0.875rem; }
+.btn-full { width: 100%; min-height: 52px; }
+
+/* Fingers, not pointers: a hit area of at least 44 x 44 px (e2e/tap-targets.spec.ts measures it). */
+@media (pointer: coarse) {
+  .btn, .btn-small { min-height: 44px; min-width: 44px; }
+  .btn-full { min-height: 52px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled) { transform: none; }
+}
