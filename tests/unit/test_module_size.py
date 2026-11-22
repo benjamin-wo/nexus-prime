@@ -9,7 +9,6 @@ LIMIT = 800
 LARGE_FILES: dict[str, int] = {
     "src/nexus/agent/graph.py": 1229,
     "src/nexus/agent/service.py": 1481,
-    "src/nexus/agent/tools.py": 5170,
     "src/nexus/application/email.py": 1439,
     "src/nexus/application/ops_report.py": 884,
     "src/nexus/application/plans.py": 1257,
