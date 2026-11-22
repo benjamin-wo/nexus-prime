@@ -4,9 +4,11 @@ import { Fragment, type FormEvent, useState } from "react";
 import { api, type Budget, type BudgetMonth, type Category, type Me } from "../api";
 import { CategoryTransactions } from "../components/CategoryTransactions";
 import { LoadError } from "../components/LoadError";
-import { NexusMark } from "../components/NexusMark";
 import { level } from "../components/PastBudgets";
+import { Button, Figure, Section } from "../components/ui";
 import { formatMoney, isoDay } from "../format";
+
+import "./money.css";
 
 /** This month so far, as budgets count it, in the user's timezone. */
 function thisMonth(timezone: string): { start: string; end: string } {
@@ -69,32 +71,29 @@ function BudgetRow({ budget, timezone, onChanged }: { budget: Budget; timezone: 
         </span>
         {!editing && !confirming && (
           <span className="quick">
-            <button
-              type="button"
-              className="btn btn-ghost"
+            <Button
+              variant="text"
               aria-expanded={showing}
               aria-controls={`budget-tx-${budget.id}`}
               onClick={() => setShowing(!showing)}
             >
               {showing ? "Hide transactions" : "Transactions"}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setEditing(true)}>
+            </Button>
+            <Button variant="text" onClick={() => setEditing(true)}>
               Change
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setConfirming(true)}>
+            </Button>
+            <Button variant="text" onClick={() => setConfirming(true)}>
               Remove
-            </button>
+            </Button>
           </span>
         )}
         {confirming && (
           <span className="quick">
             <span>Remove this budget?</span>
-            <button type="button" className="btn btn-danger" onClick={remove}>
+            <Button variant="danger" onClick={remove}>
               Remove
-            </button>
-            <button type="button" className="btn" onClick={() => setConfirming(false)}>
-              Keep
-            </button>
+            </Button>
+            <Button onClick={() => setConfirming(false)}>Keep</Button>
           </span>
         )}
       </div>
@@ -122,12 +121,10 @@ function BudgetRow({ budget, timezone, onChanged }: { budget: Budget; timezone: 
             />
           </label>
           <span className="quick">
-            <button type="submit" className="btn btn-primary">
+            <Button type="submit" variant="primary">
               Save
-            </button>
-            <button type="button" className="btn" onClick={() => setEditing(false)}>
-              Cancel
-            </button>
+            </Button>
+            <Button onClick={() => setEditing(false)}>Cancel</Button>
           </span>
           {error && (
             <p className="error-text" role="alert">
@@ -150,34 +147,38 @@ function MonthPlan({ plan }: { plan: BudgetMonth }) {
   return (
     <div className="month-plan">
       <div className="month-figures" role="group" aria-label="This month">
-        <div className="month-figure" role="group" aria-label="Total spent">
-          <span className="caption">Total spent</span>
-          <span className="num month-value">{formatMoney(plan.total_out)}</span>
-          <span className="caption">spending plus transfers to your wallets</span>
-        </div>
-        <div
-          className={`month-figure${tighter === "left_to_spend" ? " month-watch" : ""}`}
+        <Figure
+          size="sm"
+          role="group"
+          aria-label="Total spent"
+          className="month-figure"
+          label="Total spent"
+          value={formatMoney(plan.total_out)}
+          extra="spending plus transfers to your wallets"
+        />
+        <Figure
+          size="sm"
           role="group"
           aria-label="Left to spend"
-        >
-          <span className="caption">Left to spend {watch("left_to_spend")}</span>
-          <span className="num month-value">{formatMoney(plan.left_to_spend)}</span>
-          <span className="caption">after what's still due this month ({formatMoney(plan.still_due_out)})</span>
-        </div>
+          className={`month-figure${tighter === "left_to_spend" ? " month-watch" : ""}`}
+          label={<>Left to spend {watch("left_to_spend")}</>}
+          value={formatMoney(plan.left_to_spend)}
+          extra={`after what's still due this month (${formatMoney(plan.still_due_out)})`}
+        />
         {plan.budget_left && (
-          <div
-            className={`month-figure${tighter === "budget" ? " month-watch" : ""}`}
+          <Figure
+            size="sm"
             role="group"
             aria-label="Budget left"
-          >
-            <span className="caption">Budget left {watch("budget")}</span>
-            <span className="num month-value">{formatMoney(plan.budget_left)}</span>
-            <span className="caption">
-              {plan.budget_left_after_due && Number(plan.spending_due.amount) > 0
+            className={`month-figure${tighter === "budget" ? " month-watch" : ""}`}
+            label={<>Budget left {watch("budget")}</>}
+            value={formatMoney(plan.budget_left)}
+            extra={
+              plan.budget_left_after_due && Number(plan.spending_due.amount) > 0
                 ? `of your overall budget · ${formatMoney(plan.budget_left_after_due)} after bills due`
-                : "of your overall budget"}
-            </span>
-          </div>
+                : "of your overall budget"
+            }
+          />
         )}
       </div>
       {plan.plan_warning && (
@@ -234,20 +235,17 @@ export function BudgetsSection({ me }: { me: Me }) {
   }
 
   return (
-    <section className="card" aria-labelledby="budgets">
-      <div className={`card-head${none ? " budget-head-first" : ""}`}>
-        <h2 id="budgets">Budgets</h2>
-        {!none && <span className="caption">Monthly in {home} · alerts at 50/80/100%</span>}
-      </div>
+    <Section
+      id="budgets"
+      title="Budgets"
+      action={!none ? <span className="caption">Monthly in {home} · alerts at 50/80/100%</span> : undefined}
+    >
       {budgets.isLoading && <p className="state">Loading…</p>}
       {budgets.isError && <LoadError message="Couldn't load budgets." query={budgets} />}
       {none && (
-        <div className="budget-first">
+        <div className="empty-state">
           <h3>Set a monthly limit</h3>
-          <p className="muted budget-first-text">
-            <NexusMark size={44} />
-            <span>Just ask Nexus to set one, or set a limit here and Nexus will tell you when it's getting close.</span>
-          </p>
+          <p className="empty-line">Nexus will tell you when you are getting close.</p>
         </div>
       )}
       {!none && !hasOverall && month.data && budgets.data && <MonthPlan plan={month.data} />}
@@ -289,9 +287,9 @@ export function BudgetsSection({ me }: { me: Me }) {
               required
             />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={!amount.trim()}>
+          <Button type="submit" variant="primary" disabled={!amount.trim()}>
             {none ? "Set limit" : "Add budget"}
-          </button>
+          </Button>
         </form>
       )}
       {error && (
@@ -299,6 +297,6 @@ export function BudgetsSection({ me }: { me: Me }) {
           {error}
         </p>
       )}
-    </section>
+    </Section>
   );
 }

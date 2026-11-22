@@ -346,18 +346,8 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
   font-size: 1.0625rem; font-weight: 600; color: var(--text-strong); margin-bottom: var(--space-6);
 }
 .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; }
-.state-mark, .budget-first-text { display: flex; align-items: center; gap: var(--space-3); }
-.state-mark > span, .budget-first-text > span { min-width: 0; }
 .brand-accent { color: var(--accent-text); }
 /* Home: the front desk. */
-.feed { display: grid; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
-.feed-item {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
-  padding: var(--space-3); border-radius: 10px; background: var(--bg-card-hover); color: var(--text-primary);
-  text-decoration: none;
-}
-.feed-item.urgent { border-left: 3px solid var(--status-warning); }
-.feed-item .caption { white-space: nowrap; }
 .dept-cards { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .dept-card { display: grid; gap: var(--space-2); align-content: start; text-decoration: none; color: inherit; }
 .dept-card h2 { margin: 0; }
@@ -443,9 +433,6 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 }
 .bar-row:hover .bar-tip, .bar-row:focus .bar-tip { opacity: 1; }
 
-.iou { display: flex; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border-subtle); }
-.iou:last-child { border-bottom: 0; }
-.iou-end { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
 
 /* --- budgets --- */
 .budgets { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
@@ -464,14 +451,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .budget-month:last-child { border-bottom: 0; padding-bottom: 0; }
 .month-plan { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
 .budget-month .month-plan { margin-bottom: 0; }
-.month-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
-.month-figure { display: grid; gap: var(--space-1); align-content: start; min-width: 0; padding: var(--space-3); border: 1px solid var(--border-subtle); border-radius: var(--radius); }
-.month-figure:first-child, .month-figure:last-child:nth-child(even) { grid-column: 1 / -1; }
-.month-figure > .caption:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.month-value { font-size: 1.25rem; font-weight: 500; font-variant-numeric: tabular-nums lining-nums; overflow-wrap: anywhere; }
-.month-watch { border-color: var(--status-warning-border); }
-.month-watch .month-value { font-weight: 700; color: var(--text-strong); }
-.badge-watch { padding: 1px 8px; color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
+.badge-watch { color: var(--status-warning); }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--space-6); align-items: start; }
 .plan-add { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .budget-foot .btn-ghost { min-height: 32px; padding: 0 var(--space-2); }
@@ -479,24 +459,13 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .budget-edit .field, .budget-add .field { flex: 1 1 180px; }
 
 /* --- badges --- */
-.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 0.8125rem; font-weight: 500; border: 1px solid; }
-.badge-out { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-border); }
-.badge-in { color: var(--emerald-accent); background: var(--emerald-soft); border-color: var(--emerald-border); }
-.badge-move { color: var(--text-secondary); border-color: var(--border-card); }
-/* Expenses saved on the phone and not sent yet (the Ledger's "Will sync" rows). */
-.outbox { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: grid; gap: var(--space-2); }
-.outbox-row {
-  display: grid; gap: 4px; padding: var(--space-2) var(--space-3); border-radius: 10px;
-  background: var(--status-warning-soft); border: 1px dashed var(--status-warning-border);
-}
-.outbox-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
-.outbox-name { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
-.outbox-amount { font-variant-numeric: tabular-nums lining-nums; font-weight: 600; }
-.outbox-row .caption { margin: 0; }
-.outbox-failed { color: var(--status-warning); font-size: 0.875rem; margin: 0; }
-.outbox-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
-.badge-pending { color: var(--status-warning); background: var(--status-warning-soft); border-color: var(--status-warning-border); }
-.badge-deleted { color: var(--text-muted); border-color: var(--border-card); }
+/* A status is a word in its colour (DESIGN.md §5 Status badge): no pill, fill or border. */
+.badge { display: inline-flex; align-items: center; font-size: 0.8125rem; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+.badge-out { color: var(--text-secondary); }
+.badge-in { color: var(--emerald-accent); }
+.badge-move { color: var(--text-muted); }
+.badge-pending { color: var(--status-warning); }
+.badge-deleted { color: var(--text-muted); }
 
 /* --- ledger --- */
 .filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin-bottom: var(--space-4); }
@@ -561,6 +530,11 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .bulkbar-count { margin-right: auto; font-weight: 600; color: var(--text-primary); }
 .pager { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-4); }
 .state { margin: 0; padding: var(--space-2) 0 var(--space-4); color: var(--text-secondary); }
+/* An empty section (DESIGN.md §5): one short plain line in Newsreader and at most one action. */
+.empty-state { display: grid; justify-items: start; gap: var(--space-1); padding: var(--space-2) 0; }
+.empty-state h3 { margin: 0; font-size: 1.125rem; }
+.empty-line { margin: 0; font-family: var(--font-body); font-size: 1rem; line-height: 1.5; color: var(--text-secondary); }
+.empty-state .btn { margin-left: calc(-1 * var(--space-3)); }
 .foldaway { justify-self: start; }
 
 /* --- sheets, drawer, toast --- */
@@ -753,8 +727,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .cal-key { flex: none; width: 14px; height: 10px; }
 .cal-item-amount { font-variant-numeric: tabular-nums lining-nums; font-size: 0.9rem; }
 .cal-item-amount.in { color: var(--emerald-accent); }
-.flow-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
-.month-nav { display: flex; align-items: center; gap: var(--space-2); }
 /* The month picker: ‹ October 2026 › on the input surface, like the tabs. */
 .month-picker { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-1); border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border-card); }
 .month-picker-label { min-width: 9.5rem; text-align: center; font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; }
@@ -823,11 +795,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .add-holding { flex-wrap: wrap; margin-top: var(--space-3); }
 .up { color: var(--emerald-accent); }
 .down { color: var(--rose-accent); }
-.ladder { list-style: none; margin: 0 0 var(--space-2); padding: 0; }
-.ladder li { display: flex; justify-content: space-between; padding: var(--space-1) var(--space-2); border-left: 3px solid var(--border-card); }
-.ladder li.down { border-left-color: var(--rose-accent); }
-.ladder li.up { border-left-color: var(--emerald-accent); }
-.ladder li.close { border-left-color: var(--accent); font-weight: 600; background: var(--accent-soft); }
 .range { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
 .odds-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--border-card); margin-bottom: var(--space-2); }
 .odds-bar span { display: block; height: 100%; }
@@ -839,7 +806,6 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .odds-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .range-bar { position: relative; flex: 1; height: 6px; border-radius: 3px; background: var(--border-card); }
 .range-bar span { position: absolute; top: -3px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--accent); }
-.news a { color: var(--text-primary); }
 .plan-chart { margin: var(--space-3) 0 0; }
 .plan-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
 .plan-chart .price { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
@@ -852,49 +818,26 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .plan-chart .crosshair circle { fill: var(--accent); stroke: var(--bg-card); stroke-width: 2; }
 .plan-chart .hit { fill: transparent; cursor: crosshair; }
 .plan-chart .level.cost line { stroke: var(--text-muted); stroke-dasharray: 2 3; }
-.verdict { border-left: 4px solid var(--border-card); }
-.verdict.good { border-left-color: var(--emerald-accent); }
-.verdict.wait { border-left-color: var(--status-warning); }
-.verdict.bad { border-left-color: var(--rose-accent); }
 .verdict h2 { font-size: 1.6rem; margin: var(--space-1) 0; }
 .verdict-reason { font-weight: 600; }
-.plan-brief { border-left: 3px solid var(--border-card); padding-left: var(--space-3); margin-bottom: var(--space-3); }
-.plan-brief.good { border-left-color: var(--emerald-accent); }
-.plan-brief.wait { border-left-color: var(--status-warning); }
-.plan-brief.bad { border-left-color: var(--rose-accent); }
-.plan-brief p { margin: var(--space-1) 0; }
-.game-plan { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
-.game-plan .step { display: flex; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius); background: var(--bg-input); border: 1px solid var(--border-subtle); }
-.game-plan .step.take_profit { border-color: var(--emerald-border); }
-.game-plan .step.cut_loss { border-color: rgba(var(--danger-rgb), 0.35); }
-.game-plan .step.buy { border-color: var(--accent-border); }
-.step-icon { font-size: 1.3rem; line-height: 1.4; }
-.step-body { min-width: 0; flex: 1; }
-.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
-.step-title { font-weight: 700; }
-.step-price { font-size: 1.1rem; font-weight: 600; }
-.step-detail { margin: var(--space-1) 0 0; color: var(--text-secondary); }
 .chip { font-size: 0.8125rem; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--bg-card); }
 .kind-chip { margin-left: var(--space-2); vertical-align: 2px; color: var(--sky-text); background: var(--sky-soft); font-weight: 600; }
-.chip.up { color: var(--emerald-accent); background: var(--emerald-soft); }
-.chip.down { color: var(--rose-accent); background: rgba(var(--danger-rgb), 0.12); }
 .callout { margin: var(--space-3) 0 0; padding: var(--space-3); border-radius: var(--radius); background: var(--status-warning-soft); border: 1px solid var(--status-warning-border); }
 .why-list h3 { margin-bottom: var(--space-1); }
 .why-list.up h3 { color: var(--emerald-accent); }
 .why-list.down h3 { color: var(--rose-accent); }
 .more { margin: var(--space-3) 0; }
 .more summary { cursor: pointer; font-weight: 600; }
-.badge.status-target { color: var(--emerald-accent); border-color: var(--emerald-border); }
-.badge.status-stopped { color: var(--rose-accent); border-color: rgba(var(--danger-rgb), 0.35); }
-.badge.status-open { color: var(--status-warning); border-color: var(--status-warning-border); }
-.badge.status-refreshed { color: var(--text-muted); border-color: var(--border-card); }
+.badge.status-target { color: var(--emerald-accent); }
+.badge.status-stopped { color: var(--rose-accent); }
+.badge.status-open { color: var(--status-warning); }
+.badge.status-refreshed { color: var(--text-muted); }
 .toggle { display: inline-flex; align-items: center; gap: var(--space-2); cursor: pointer; }
 /* Plans that keep themselves fresh: the price line, the switch, the Fresh tag and the links between a plan and the one that replaced it */
 .plan-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: var(--space-1) 0 0; }
 .plan-price strong { font-size: 1rem; color: var(--text-strong); }
 .plan-trail { margin: var(--space-1) 0 0; }
-.plan-tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
-.badge.badge-fresh { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-border); }
+.badge.badge-fresh { color: var(--accent-text); }
 .keep-fresh .toggle { min-height: 44px; font-weight: 600; }
 .keep-fresh .caption { margin: 0; }
 .keep-fresh .error-text { margin: var(--space-2) 0 0; }
@@ -1085,10 +1028,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
   display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 0.8125rem;
   font-weight: 500; color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--accent-border); white-space: nowrap;
 }
-.assistant-mark {
-  width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center;
-  background: var(--accent); color: var(--on-accent);
-}
 .pair { display: flex; flex-wrap: wrap; gap: var(--space-6); align-items: stretch; }
 .pair > :first-child { flex: 3 1 520px; min-width: 0; }
 .pair > :last-child { flex: 2 1 340px; min-width: 0; }
@@ -1096,8 +1035,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .figure { display: grid; gap: var(--space-1); }
 .figure-label { font-size: 1rem; font-weight: 500; color: var(--text-secondary); }
 .figure-value { font-size: 2.125rem; font-weight: 600; letter-spacing: -0.02em; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; }
-.spend-card { display: flex; flex-direction: column; gap: var(--space-5); }
-.spend-card .card-head { margin-bottom: 0; align-items: flex-start; }
 .month-chart { display: grid; gap: var(--space-3); flex: 1; }
 .month-plot { position: relative; height: 200px; border-bottom: 1px dashed var(--border-card); }
 .month-bars {
@@ -1134,34 +1071,17 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .key.over { background: repeating-linear-gradient(135deg, var(--rose-accent) 0 2px, rgba(var(--rose-rgb), 0.25) 2px 4px); }
 .key.now { background: var(--accent); }
 .key.line { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed var(--text-secondary); }
-.mini-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
-.rows { display: grid; margin: 0; padding: 0; list-style: none; }
-.rows > li + li, .rows > .row + .row { border-top: 1px solid var(--border-card); }
 .row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) 0; min-width: 0; }
-.row-icon {
-  width: 42px; height: 42px; flex: none; border-radius: 13px; display: grid; place-items: center;
-  background: var(--bg-raised); color: var(--accent-text); font-size: 0.8125rem; font-weight: 600;
-}
 .row-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .row-main a { color: var(--text-strong); text-decoration: none; font-weight: 500; }
 @media (max-width: 720px) {
   .pair, .stack { gap: var(--space-4); }
   .figure-value { font-size: 1.75rem; }
   .month-plot { height: 160px; }
-  .mini-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2); }
   .row { padding: var(--space-3) 0; }
-  .row-icon { width: 38px; height: 38px; border-radius: 12px; }
 }
 
 /* --- accounting overview (theme v2) --- */
-.nudge {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4);
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5); border-radius: var(--radius);
-  background: var(--bg-card); border: 1px solid var(--border-card);
-}
-.nudge .assistant-mark { width: 38px; height: 38px; border-radius: 12px; flex: none; }
-.nudge p { flex: 1 1 280px; margin: 0; color: var(--text-primary); }
-.nudge .ask-chip { background: var(--bg-frame); }
 .split { display: grid; gap: var(--space-4); }
 .split-bar { display: flex; gap: 3px; height: 14px; border-radius: 999px; overflow: hidden; }
 .split-bar span { flex-basis: 0; min-width: 4px; }
@@ -1212,7 +1132,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .budget .peek { padding-left: 0; }
 @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
 .swatch { width: 10px; height: 10px; border-radius: 3px; }
-.row-icon.in { color: var(--emerald-accent); }
 .day-body .timeline { border-left: 0; padding-left: 0; }
 
 /* Trip extras: stop thumbnails, weather, packing, cover photo menu */
@@ -1492,9 +1411,6 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .main-viewport { background: var(--bg-shell); }
 
 
-/* --- Money overview: the spend card's small tiles (Home's own rules are in pages/home.css) --- */
-.spend-card .mini-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.spend-card .mini-tiles.single { grid-template-columns: minmax(0, 1fr); }
 
 
 /* Trip page: tabs and plan */
@@ -2464,7 +2380,6 @@ a.set-row:focus-visible { outline-offset: -2px; }
 
 /* --- Notifications: what was sent on Telegram, a day at a time --- */
 .note { align-items: flex-start; }
-.note.urgent .row-icon { color: var(--status-warning); background: var(--status-warning-soft); }
 .note-text {
   font-family: var(--font-body); margin: 0; white-space: pre-line; overflow-wrap: anywhere; font-weight: 500; color: var(--text-strong);
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
@@ -2545,29 +2460,6 @@ a.set-row:focus-visible { outline-offset: -2px; }
 .cost-line .num { white-space: nowrap; }
 /* A section page already titles itself with its h1; the card's own heading stays for screen readers only. */
 .set-page > .card > .card-head h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-/* --- one headline on the overview; the tiles under it are secondary --- */
-.overview-headline {
-  margin: 0;
-  font-size: clamp(1rem, 4.1vw, 1.5rem); line-height: 1.35; color: var(--text-secondary);
-}
-.overview-figure { font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.01em; }
-.overview-tail { white-space: nowrap; }
-.overview-set { margin-left: var(--space-2); white-space: nowrap; font-size: 0.9375rem; color: var(--accent-text); font-weight: 600; }
-.tiles.tiles-quiet { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2); }
-.tiles.tiles-quiet .tile { padding: var(--space-3) var(--space-4); gap: 2px; box-shadow: none; }
-.tiles.tiles-quiet .tile .caption { font-size: 0.8125rem; }
-.tiles.tiles-quiet .tile .value { font-size: clamp(1rem, 4.2vw, 1.25rem); font-weight: 600; }
-.tiles.tiles-quiet .tile .extra { font-size: 0.8125rem; }
-@media (max-width: 720px) {
-  .tiles.tiles-quiet { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
-  .tiles.tiles-quiet .tile { padding: var(--space-3); }
-}
-.budget-first h3 { margin: 0 0 var(--space-1); font-size: 1.125rem; }
-.budget-first p { margin: 0; }
-.budget-first + .plan-add { border-top: 0; padding-top: 0; margin-top: var(--space-3); }
-.card-head.budget-head-first { margin: 0; }
-.card-head.budget-head-first h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* A page that failed to render, and an address that matches no page. */
 .page-error, .not-found { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; }
@@ -2691,7 +2583,6 @@ button.set-row:disabled { cursor: default; opacity: 0.6; }
   }
   /* A news headline links on from the first line of its item: the hit box runs 6 px above and under it into
      the item's caption, and the items sit a little further apart so that two boxes never overlap. */
-  .feed.news { gap: var(--space-4); }
   .news a { position: relative; }
   .news a::after { content: ""; position: absolute; left: 0; right: 0; top: -6px; height: 44px; }
   /* A tick box in a table has no label to tap, so the box itself is 44 px with its drawn square, 20 px, in

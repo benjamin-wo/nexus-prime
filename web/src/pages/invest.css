@@ -1,0 +1,36 @@
+/* Investments pages (DESIGN.md §5 Investment): Portfolio, a stock, Trade plans and the Watchlist. Colours are tokens
+   only (design.test.ts). Sections, rows and buttons come from components/ui. */
+
+/* Levels and odds: rows of a label and a figure; resistance and a stop read in rose, support and a target in green. */
+.ladder { margin: 0 0 var(--space-2); }
+.ladder .row-item.down .row-title { color: var(--rose-accent); }
+.ladder .row-item.up .row-title { color: var(--emerald-accent); }
+.ladder .row-item.close .row-title, .ladder .row-item.close .row-trailing { font-weight: 600; color: var(--text-strong); }
+
+/* A plan's tags and the date, at the right of its row. */
+.plan-tags { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.row-when { font-size: 0.8125rem; font-weight: 400; color: var(--text-muted); }
+
+/* The verdict is the page's headline: its word is coloured by the verdict, with no bar or tint. */
+.verdict h2 { font-size: 1.6rem; margin: var(--space-1) 0; }
+.verdict.good h2 { color: var(--emerald-accent); }
+.verdict.wait h2 { color: var(--status-warning); }
+.verdict.bad h2 { color: var(--rose-accent); }
+.verdict-reason { font-weight: 600; }
+/* A stock's plan in brief, the same way. */
+.plan-brief { margin-bottom: var(--space-3); }
+.plan-brief.good > strong { color: var(--emerald-accent); }
+.plan-brief.wait > strong { color: var(--status-warning); }
+.plan-brief.bad > strong { color: var(--rose-accent); }
+.plan-brief p { margin: var(--space-1) 0; }
+
+/* The game plan: a numbered list of steps as rows, the price at the right of the title, the detail under it. */
+.game-plan .step { padding: var(--space-3) 0; min-height: 56px; box-sizing: border-box; }
+.step-body { min-width: 0; }
+.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.step-title { font-weight: 600; }
+.step-price { font-size: 1.0625rem; font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
+.step-change { font-size: 0.8125rem; font-weight: 600; color: var(--text-muted); }
+.step-change.up { color: var(--emerald-accent); }
+.step-change.down { color: var(--rose-accent); }
+.step-detail { margin: var(--space-1) 0 0; color: var(--text-secondary); }

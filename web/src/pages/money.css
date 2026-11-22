@@ -1,0 +1,44 @@
+/* Money pages (DESIGN.md §5): the overview, Budgets, Cash flow and the Ledger's saved-on-this-phone rows. Colours
+   are tokens only (design.test.ts). Sections, rows, figures and buttons come from components/ui. */
+
+/* The nudge on the overview: one plain line and two chips, on the ground, no panel. */
+.nudge { display: grid; gap: var(--space-2); padding: 0 var(--space-1); }
+.nudge p { margin: 0; font-family: var(--font-body); font-size: 1rem; line-height: 1.5; color: var(--text-secondary); }
+
+/* The overview's headline and the quiet row of figures under it. */
+.overview-headline {
+  margin: 0;
+  font-size: clamp(1rem, 4.1vw, 1.5rem); line-height: 1.35; color: var(--text-secondary);
+}
+.overview-figure { font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.01em; }
+.overview-tail { white-space: nowrap; }
+.overview-set { margin-left: var(--space-2); white-space: nowrap; font-size: 0.9375rem; color: var(--accent-text); font-weight: 600; }
+.tiles.tiles-quiet { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2); }
+.tiles.tiles-quiet .tile { padding: var(--space-3) var(--space-4); gap: 2px; }
+.tiles.tiles-quiet .tile .caption { font-size: 0.8125rem; }
+.tiles.tiles-quiet .tile .value { font-size: clamp(1rem, 4.2vw, 1.25rem); font-weight: 600; }
+.tiles.tiles-quiet .tile .extra { font-size: 0.8125rem; }
+@media (max-width: 720px) {
+  .tiles.tiles-quiet { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .tiles.tiles-quiet .tile { padding: var(--space-3); }
+}
+
+/* Spending by month: the chart, then two small figures with no tile of their own (a section is never nested). */
+.spend-card { display: flex; flex-direction: column; gap: var(--space-5); }
+.mini-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.mini-tiles.single { grid-template-columns: minmax(0, 1fr); }
+.mini-tiles .mini-tile, .month-figures .mini-tile, .flow-totals .mini-tile { padding: 0; border-radius: 0; background: transparent; }
+
+/* Budgets: this month's plan, three figures and a note. */
+.month-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.month-figure:first-child, .month-figure:last-child:nth-child(even) { grid-column: 1 / -1; }
+.month-figure > .caption:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.month-watch .mini-value { font-weight: 700; }
+
+/* Cash flow: what was logged and what is expected, and the month's arrows. */
+.flow-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+.month-nav { display: flex; align-items: center; gap: var(--space-1); }
+
+/* Saved on this phone: rows like the others, with the reason a sync failed under the line. */
+.outbox { margin-bottom: var(--space-2); }
+.outbox-failed { display: block; color: var(--status-warning); }

@@ -1566,8 +1566,8 @@ test("a research plan is started from a stock and read with its chart and source
   await expect(record).toContainText("Average result+4.6%");
   await expect(record.getByLabel("Plan results")).toContainText("Odds gave target 141%");
   await expect(record.getByLabel("Plan results")).toContainText("Reached it100%");
-  await expect(page.getByRole("link", { name: /MSFT: Keep holding/ })).toContainText("🎯 Hit target +4.6%");
-  await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).toContainText("⏳ Open, waiting to buy");
+  await expect(page.getByRole("link", { name: /MSFT: Keep holding/ })).toContainText("Hit target +4.6%");
+  await expect(page.getByRole("link", { name: /AMD: Wait for a dip to buy/ })).toContainText("Open, waiting to buy");
   await page.getByRole("link", { name: /AMD: Wait for a dip to buy/ }).click();
   await expect(page).toHaveURL(/\/investment\/plans\/p1$/);
   await expect(page.getByRole("heading", { name: "AMD plan", level: 1 })).toBeVisible();

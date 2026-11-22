@@ -13,7 +13,10 @@ import {
   setPlanKeepFresh,
 } from "../api";
 import { PriceWhen } from "../components/PriceWhen";
+import { Row, RowList, Section } from "../components/ui";
 import { formatDate, formatShortDate } from "../format";
+
+import "./invest.css";
 
 const usd = (amount: string | number) =>
   Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,21 +25,21 @@ const usd = (amount: string | number) =>
 /** Where a plan stands: open, or how it ended. */
 export function PlanStatus({ plan }: { plan: PlanBrief }) {
   // Replaced by its own refresh: closed, never scored, and shown whether or not it was followed.
-  if (plan.status === "refreshed") return <span className="badge status-refreshed">🔄 Refreshed</span>;
+  if (plan.status === "refreshed") return <span className="badge status-refreshed">Refreshed</span>;
   if (!plan.followed) return null;
   const result = plan.result_percent !== null ? ` ${Number(plan.result_percent) > 0 ? "+" : ""}${plan.result_percent}%` : "";
   const label =
     plan.status === "target"
-      ? `🎯 Hit target${result}`
+      ? `Hit target${result}`
       : plan.status === "stopped"
-        ? `🛑 Stopped out${result}`
+        ? `Stopped out${result}`
         : plan.status === "expired"
           ? plan.entered_on
-            ? `📅 Ran out${result}`
-            : "📅 Ran out, never bought"
+            ? `Ran out${result}`
+            : "Ran out, never bought"
           : plan.entered_on
-            ? "⏳ Open, bought"
-            : "⏳ Open, waiting to buy";
+            ? "Open, bought"
+            : "Open, waiting to buy";
   return <span className={`badge status-${plan.status}`}>{label}</span>;
 }
 
@@ -51,11 +54,11 @@ function TrackRecord() {
   const r = record.data;
   if (!r) return null;
   return (
-    <section className="card" aria-labelledby="record">
-      <div className="card-head">
-        <h2 id="record">Track record</h2>
-        <span className="caption">Scored after each US close, misses included</span>
-      </div>
+    <Section
+      id="record"
+      title="Track record"
+      action={<span className="caption">Scored after each US close, misses included</span>}
+    >
       {r.finished > 0 && (
         <dl className="totals" aria-label="Plan results">
           <div>
@@ -94,7 +97,7 @@ function TrackRecord() {
         </dl>
       )}
       <p className="muted">{r.text}</p>
-    </section>
+    </Section>
   );
 }
 
@@ -109,41 +112,33 @@ export function PlansPage() {
         </div>
       </div>
       <TrackRecord />
-      <section className="card" aria-labelledby="all-plans">
-        <div className="card-head">
-          <h2 id="all-plans">Research plans</h2>
-        </div>
+      <Section id="all-plans" title="Research plans">
         {plans.isLoading && <p className="state">Loading…</p>}
         {plans.data?.length === 0 && (
-          <p className="state">
-            No plans yet. Open a stock from your portfolio or watchlist and ask for one, or say "plan for NVDA" in the
-            chat.
-          </p>
+          <p className="empty-line">No plans yet. Open a stock and ask for one, or say "plan for NVDA" in the chat.</p>
         )}
         {plans.data && plans.data.length > 0 && (
-          <ul className="feed" aria-label="Trade plans">
+          <RowList aria-label="Trade plans">
             {plans.data.map((p) => (
-              <li key={p.id}>
-                <Link className="feed-item" to={`/investment/plans/${p.id}`}>
-                  <span className="wrap">
-                    <strong>{p.headline}</strong>
-                    <br />
-                    <span className="muted">{p.reason}</span>
-                  </span>
-                  <span className="caption">
+              <Row
+                key={p.id}
+                to={`/investment/plans/${p.id}`}
+                title={<strong>{p.headline}</strong>}
+                sub={p.reason}
+                trailing={
+                  <>
                     <span className="plan-tags">
                       <PlanStatus plan={p} />
                       <FreshTag plan={p} />
                     </span>
-                    <br />
-                    {formatShortDate(p.created_at)}
-                  </span>
-                </Link>
-              </li>
+                    <span className="row-when">{formatShortDate(p.created_at)}</span>
+                  </>
+                }
+              />
             ))}
-          </ul>
+          </RowList>
         )}
-      </section>
+      </Section>
     </>
   );
 }
@@ -246,14 +241,6 @@ function PlanChart({ closes, plan }: { closes: PlanDetail["closes"]; plan: PlanB
   );
 }
 
-const ICONS: Record<PlanStep["kind"], string> = {
-  buy: "🟢",
-  take_profit: "🎯",
-  cut_loss: "🛑",
-  trail: "↗️",
-  review: "📅",
-};
-
 /** How the headline is coloured: go, wait or stop. */
 export function verdictTone(verdict: string): "good" | "wait" | "bad" {
   if (verdict === "in_zone" || verdict === "hold" || verdict === "trim") return "good";
@@ -281,18 +268,15 @@ export function planSteps(plan: PlanBody): PlanStep[] {
 /** The game plan: what to do, at what price, and how far that is from today. */
 export function GamePlan({ steps, compact = false }: { steps: PlanStep[]; compact?: boolean }) {
   return (
-    <ol className={`game-plan${compact ? " compact" : ""}`} aria-label="Game plan">
+    <ol className={`row-list game-plan${compact ? " compact" : ""}`} aria-label="Game plan">
       {steps.map((step) => (
         <li key={step.kind} className={`step ${step.kind}`}>
-          <span className="step-icon" aria-hidden="true">
-            {ICONS[step.kind]}
-          </span>
           <div className="step-body">
             <div className="step-head">
               <span className="step-title">{step.title}</span>
               {step.price && <span className="step-price num">{step.price}</span>}
               {step.change.map((c) => (
-                <span key={c} className={`chip ${step.kind === "take_profit" ? "up" : step.kind === "cut_loss" ? "down" : ""}`}>
+                <span key={c} className={`step-change ${step.kind === "take_profit" ? "up" : step.kind === "cut_loss" ? "down" : ""}`}>
                   {c}
                 </span>
               ))}
@@ -344,18 +328,14 @@ function Following({ brief }: { brief: PlanBrief }) {
         ? "Nexus made a newer plan to replace it, so this one isn't scored."
         : `It finished on ${formatShortDate(brief.outcome_day!, "UTC")}${brief.outcome_price ? ` at ${usd(brief.outcome_price)}` : ""}.`;
   return (
-    <section className="card following" aria-labelledby="following">
-      <div className="card-head">
-        <h2 id="following">How it's going</h2>
-        <PlanStatus plan={brief} />
-      </div>
+    <Section id="following" title="How it's going" className="following" action={<PlanStatus plan={brief} />}>
       <p className="muted">{outcome}</p>
       {brief.status === "open" && (
         <label className="toggle">
           <input type="checkbox" checked={alerts} onChange={() => void toggle()} /> Telegram alerts for this plan
         </label>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -425,13 +405,15 @@ function OddsCard({ odds }: { odds: PlanOdds }) {
     { key: "neither", label: "Neither in time", value: odds.neither },
   ];
   return (
-    <section className="card" aria-labelledby="odds">
-      <div className="card-head">
-        <h2 id="odds">Odds</h2>
+    <Section
+      id="odds"
+      title="Odds"
+      action={
         <span className="caption">
           {odds.paths.toLocaleString("en-US")} replays of the last year&apos;s moves · not a forecast
         </span>
-      </div>
+      }
+    >
       <div className="odds-bar" role="img" aria-label={parts.map((p) => `${p.label} ${p.value}%`).join(", ")}>
         {parts.map((p) =>
           p.value > 0 ? <span key={p.key} className={`odds-${p.key}`} style={{ width: `${p.value}%` }} /> : null,
@@ -445,27 +427,28 @@ function OddsCard({ odds }: { odds: PlanOdds }) {
           </li>
         ))}
       </ul>
-      <ul className="ladder" aria-label="Chance of each target">
+      <RowList className="ladder" aria-label="Chance of each target">
         {odds.targets.map((t, i) => (
-          <li key={t.price} className="up">
-            <span>
-              Target {i + 1} at {usd(t.price)}
-              {t.typical_days !== null && <span className="caption"> · typically {t.typical_days} trading days</span>}
-            </span>
-            <span className="num">{t.chance}%</span>
-          </li>
+          <Row
+            key={t.price}
+            className="up"
+            title={
+              <>
+                Target {i + 1} at {usd(t.price)}
+                {t.typical_days !== null && <span className="caption"> · typically {t.typical_days} trading days</span>}
+              </>
+            }
+            trailing={`${t.chance}%`}
+          />
         ))}
-        <li className="down">
-          <span>Stop at {usd(odds.stop)} before target 1</span>
-          <span className="num">{odds.stop_first}%</span>
-        </li>
-      </ul>
+        <Row className="down" title={`Stop at ${usd(odds.stop)} before target 1`} trailing={`${odds.stop_first}%`} />
+      </RowList>
       <p className="caption">
         Starting from {usd(odds.reference)}, the stock&apos;s own daily moves were shuffled week by week over the plan&apos;s{" "}
         {odds.days} trading days, with no lean up or down. It shows how reachable the prices are, not where the stock
         will go.
       </p>
-    </section>
+    </Section>
   );
 }
 
@@ -557,30 +540,24 @@ export function PlanPage() {
 
           <Following brief={data.brief} />
 
-          <section className="card" aria-labelledby="game-plan">
-            <div className="card-head">
-              <h2 id="game-plan">Your game plan</h2>
-              <span className="caption">Prices worked out from daily closes</span>
-            </div>
+          <Section
+            id="game-plan"
+            title="Your game plan"
+            action={<span className="caption">Prices worked out from daily closes</span>}
+          >
             <GamePlan steps={planSteps(plan)} />
             <p className="callout">
               <strong>What would prove it wrong:</strong> {plan.invalidation}
             </p>
-          </section>
+          </Section>
 
           {plan.odds && <OddsCard odds={plan.odds} />}
 
-          <section className="card" aria-labelledby="chart">
-            <div className="card-head">
-              <h2 id="chart">Where those prices sit</h2>
-            </div>
+          <Section id="chart" title="Where those prices sit">
             <PlanChart closes={data.closes} plan={plan} />
-          </section>
+          </Section>
 
-          <section className="card" aria-labelledby="why">
-            <div className="card-head">
-              <h2 id="why">Why</h2>
-            </div>
+          <Section id="why" title="Why">
             <div className="debate">
               <List title="What's going for it" items={plan.bull} tone="up" />
               <List title="What could go wrong" items={risks} tone="down" />
@@ -628,7 +605,7 @@ export function PlanPage() {
               Every price here was worked out in code from daily closes; the analysts only wrote the words. Research, not
               advice.
             </p>
-          </section>
+          </Section>
         </>
       )}
     </>

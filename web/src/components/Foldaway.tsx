@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
+import { Button } from "./ui";
+
 /** A secondary way in, kept out of the way until asked for: a small button that
  * opens into its form (focused on its first field), so an empty section shows one
  * line and one action, not a form. */
@@ -11,9 +13,9 @@ export function Foldaway({ label, children }: { label: string; children: ReactNo
   }, [open]);
   if (!open) {
     return (
-      <button type="button" className="btn btn-small foldaway" onClick={() => setOpen(true)}>
+      <Button size="sm" className="foldaway" onClick={() => setOpen(true)}>
         {label}
-      </button>
+      </Button>
     );
   }
   return <div ref={box}>{children}</div>;

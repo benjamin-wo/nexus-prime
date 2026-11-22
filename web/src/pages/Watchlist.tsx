@@ -4,8 +4,11 @@ import { Link } from "react-router-dom";
 
 import { api, type Watchlist } from "../api";
 import { PriceWhen } from "../components/PriceWhen";
+import { Button, Row, RowList, Section } from "../components/ui";
 import { formatPercent, formatShortDate } from "../format";
 import { livePolling } from "../prices";
+
+import "./invest.css";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -50,66 +53,70 @@ export function WatchlistPage() {
           <p className="muted">Stocks you follow. Open one for its levels, earnings date and news.</p>
         </div>
       </div>
-      <section className="card" aria-labelledby="watching">
-        <div className="card-head">
-          <h2 id="watching">Watching</h2>
-          {list.data && !list.data.prices && <span className="caption">Prices aren't set up</span>}
-        </div>
+      <Section
+        id="watching"
+        title="Watching"
+        action={list.data && !list.data.prices ? <span className="caption">Prices aren't set up</span> : undefined}
+      >
         {list.isLoading && <p className="state">Loading…</p>}
-        {list.data && stocks.length === 0 && <p className="state">Nothing on your watchlist yet. Add a ticker below.</p>}
+        {list.data && stocks.length === 0 && <p className="empty-line">Nothing on your watchlist yet. Add a ticker below.</p>}
         {stocks.length > 0 && (
-          <ul className="feed" aria-label="Watched stocks">
+          <RowList aria-label="Watched stocks">
             {stocks.map((s) => (
-              <li key={s.symbol} className="run-row">
-                <span className="wrap">
-                  <Link to={`/investment/stocks/${s.symbol}`}>
-                    <strong>{s.symbol}</strong>
-                  </Link>
-                  {s.price && (
-                    <>
-                      {" "}
-                      · USD {usd(s.price)}
-                      {s.day_percent !== null && (
-                        <span className={Number(s.day_percent) > 0 ? "up" : Number(s.day_percent) < 0 ? "down" : undefined}>
-                          {" "}
-                          {formatPercent(s.day_percent)}
-                        </span>
-                      )}
-                    </>
-                  )}
-                  <br />
-                  {s.price_day ? (
+              <Row
+                key={s.symbol}
+                title={
+                  <>
+                    <Link to={`/investment/stocks/${s.symbol}`}>
+                      <strong>{s.symbol}</strong>
+                    </Link>
+                    {s.price && (
+                      <>
+                        {" "}
+                        · USD {usd(s.price)}
+                        {s.day_percent !== null && (
+                          <span className={Number(s.day_percent) > 0 ? "up" : Number(s.day_percent) < 0 ? "down" : undefined}>
+                            {" "}
+                            {formatPercent(s.day_percent)}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </>
+                }
+                sub={
+                  s.price_day ? (
                     <PriceWhen kind={s.price_kind} at={s.price_at} day={s.price_day}>
                       {s.earnings && `earnings ${formatShortDate(s.earnings.day, "UTC")}`}
                     </PriceWhen>
                   ) : (
-                    <span className="caption">
-                      Price coming{s.earnings && ` · earnings ${formatShortDate(s.earnings.day, "UTC")}`}
-                    </span>
-                  )}
-                </span>
-                <button type="button" className="btn btn-small" onClick={() => void remove(s.symbol)} aria-label={`Stop watching ${s.symbol}`}>
-                  Remove
-                </button>
-              </li>
+                    <>Price coming{s.earnings && ` · earnings ${formatShortDate(s.earnings.day, "UTC")}`}</>
+                  )
+                }
+                actions={
+                  <Button variant="danger" size="sm" onClick={() => void remove(s.symbol)} aria-label={`Stop watching ${s.symbol}`}>
+                    Remove
+                  </Button>
+                }
+              />
             ))}
-          </ul>
+          </RowList>
         )}
         <form className="quick add-holding" onSubmit={add} aria-label="Watch a stock">
           <label className="field">
             Ticker
             <input className="input" value={symbol} maxLength={12} onChange={(e) => setSymbol(e.target.value)} required />
           </label>
-          <button type="submit" className="btn">
+          <Button type="submit" variant="secondary">
             Watch
-          </button>
+          </Button>
         </form>
         {error && (
           <p className="error-text" role="alert">
             {error}
           </p>
         )}
-      </section>
+      </Section>
     </>
   );
 }

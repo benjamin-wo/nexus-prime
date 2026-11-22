@@ -4,9 +4,12 @@ import { Link, useParams } from "react-router-dom";
 
 import { api, type Levels, type PriceRange, type Stock } from "../api";
 import { PriceWhen } from "../components/PriceWhen";
+import { Button, Row, RowList, Section } from "../components/ui";
 import { formatShortDate, priceWhen } from "../format";
 import { livePolling } from "../prices";
 import { verdictTone } from "./Plans";
+
+import "./invest.css";
 
 const usd = (amount: string) => Number(amount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -30,14 +33,11 @@ function Ladder({ levels }: { levels: Levels }) {
     ...levels.support.map((v) => ({ label: "Support", value: v, kind: "up" })),
   ];
   return (
-    <ul className="ladder" aria-label="Support and resistance">
+    <RowList className="ladder" aria-label="Support and resistance">
       {rows.map((r) => (
-        <li key={`${r.label}:${r.value}`} className={r.kind}>
-          <span>{r.label}</span>
-          <span className="num">{usd(r.value)}</span>
-        </li>
+        <Row key={`${r.label}:${r.value}`} className={r.kind} title={r.label} trailing={usd(r.value)} />
       ))}
-    </ul>
+    </RowList>
   );
 }
 
@@ -45,11 +45,11 @@ function Ladder({ levels }: { levels: Levels }) {
  * how it stands against the levels. */
 function PriceCard({ stock }: { stock: Stock }) {
   return (
-    <section className="card" aria-labelledby="price">
-      <div className="card-head">
-        <h2 id="price">Price</h2>
-        <PriceWhen kind={stock.price_kind} at={stock.price_at} day={stock.price_day} />
-      </div>
+    <Section
+      id="price"
+      title="Price"
+      action={<PriceWhen kind={stock.price_kind} at={stock.price_at} day={stock.price_day} />}
+    >
       {stock.price && (
         <p>
           <strong className="price-now">USD {usd(stock.price)}</strong>
@@ -62,7 +62,7 @@ function PriceCard({ stock }: { stock: Stock }) {
           ))}
         </ul>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -71,11 +71,11 @@ function LevelsCard({ levels }: { levels: Levels }) {
   const high = Number(levels.year_high);
   const where = high > low ? Math.round(((Number(levels.close) - low) / (high - low)) * 100) : 50;
   return (
-    <section className="card" aria-labelledby="levels">
-      <div className="card-head">
-        <h2 id="levels">Levels</h2>
-        <span className="caption">{priceWhen("close", null, levels.as_of)} · worked out from daily prices</span>
-      </div>
+    <Section
+      id="levels"
+      title="Levels"
+      action={<span className="caption">{priceWhen("close", null, levels.as_of)} · worked out from daily prices</span>}
+    >
       <Ladder levels={levels} />
       <p className="caption">Support and resistance are recent swing lows and highs (the last 6 months).</p>
       <dl className="totals" aria-label="Indicators">
@@ -109,24 +109,24 @@ function LevelsCard({ levels }: { levels: Levels }) {
         </span>
         <span className="caption">{usd(levels.year_high)}</span>
       </div>
-    </section>
+    </Section>
   );
 }
 
 /** The stock's last year in numbers, worked out in code from its daily closes. */
 function HistoryCard({ lines }: { lines: string[] }) {
   return (
-    <section className="card" aria-labelledby="history">
-      <div className="card-head">
-        <h2 id="history">Its last year</h2>
-        <span className="caption">From daily closes · the past, not a forecast</span>
-      </div>
-      <ul>
+    <Section
+      id="history"
+      title="Its last year"
+      action={<span className="caption">From daily closes · the past, not a forecast</span>}
+    >
+      <RowList>
         {lines.map((line) => (
-          <li key={line}>{line}</li>
+          <Row key={line} title={line} />
         ))}
-      </ul>
-    </section>
+      </RowList>
+    </Section>
   );
 }
 
@@ -134,11 +134,11 @@ function HistoryCard({ lines }: { lines: string[] }) {
  * own day-to-day swings. Worked out in code with no view on direction. */
 function RangesCard({ ranges }: { ranges: PriceRange[] }) {
   return (
-    <section className="card" aria-labelledby="ranges">
-      <div className="card-head">
-        <h2 id="ranges">Likely range</h2>
-        <span className="caption">From its own past volatility · not a forecast</span>
-      </div>
+    <Section
+      id="ranges"
+      title="Likely range"
+      action={<span className="caption">From its own past volatility · not a forecast</span>}
+    >
       <table className="holdings" aria-label="Likely closing prices">
         <thead>
           <tr>
@@ -168,7 +168,7 @@ function RangesCard({ ranges }: { ranges: PriceRange[] }) {
       <p className="caption">
         How far the price typically swings in a year: the width, not the direction.
       </p>
-    </section>
+    </Section>
   );
 }
 
@@ -223,9 +223,7 @@ export function StockPage() {
           )}
         </div>
         {data && !data.held && (
-          <button type="button" className="btn" onClick={() => void toggleWatch()}>
-            {data.watching ? "Stop watching" : "Watch"}
-          </button>
+          <Button onClick={() => void toggleWatch()}>{data.watching ? "Stop watching" : "Watch"}</Button>
         )}
       </div>
       {stock.isLoading && <p className="state">Loading…</p>}
@@ -238,23 +236,20 @@ export function StockPage() {
       {data && (data.levels ? (
         <LevelsCard levels={data.levels} />
       ) : (
-        <section className="card">
-          <p className="state">
+        <div className="card">
+          <p className="empty-line">
             {!data.prices
               ? "Prices aren't set up."
               : data.held || data.watching
                 ? "Prices are on their way; levels need about a month of them."
                 : "Watch this stock to keep its prices, levels and news."}
           </p>
-        </section>
+        </div>
       ))}
       {data && data.ranges.length > 0 && <RangesCard ranges={data.ranges} />}
       {data && data.history && data.history.length > 0 && <HistoryCard lines={data.history} />}
       {data && data.plans_enabled && data.levels && (
-        <section className="card" aria-labelledby="plan">
-          <div className="card-head">
-            <h2 id="plan">Research plan</h2>
-          </div>
+        <Section id="plan" title="Research plan">
           {data.plan ? (
             <div className={`plan-brief ${verdictTone(data.plan.verdict)}`}>
               <strong>{data.plan.verdict_text}</strong>
@@ -272,9 +267,9 @@ export function StockPage() {
               both sides.
             </p>
           )}
-          <button type="button" className="btn btn-primary" onClick={() => void startPlan()} disabled={started !== null}>
+          <Button variant="primary" onClick={() => void startPlan()} disabled={started !== null}>
             {data.plan ? "Make a fresh plan" : "Make a plan"}
-          </button>
+          </Button>
           {started && (
             <p className="muted" role="status">
               {started}
@@ -285,44 +280,37 @@ export function StockPage() {
               {planError}
             </p>
           )}
-        </section>
+        </Section>
       )}
       {data?.earnings && (
-        <section className="card" aria-labelledby="earnings">
-          <div className="card-head">
-            <h2 id="earnings">Next earnings</h2>
-          </div>
+        <Section id="earnings" title="Next earnings">
           <p>
             {formatShortDate(data.earnings.day, "UTC")}
             {data.earnings.timing && `, ${data.earnings.timing}`}
           </p>
           <p className="caption">Prices often move sharply around earnings.</p>
-        </section>
+        </Section>
       )}
       {data && (
-        <section className="card" aria-labelledby="news">
-          <div className="card-head">
-            <h2 id="news">News</h2>
-            <span className="caption">From news sources, not Nexus</span>
-          </div>
+        <Section id="news" title="News" action={<span className="caption">From news sources, not Nexus</span>}>
           {data.news.length === 0 ? (
-            <p className="state">{data.news_enabled ? "No recent news yet." : "News isn't set up."}</p>
+            <p className="empty-line">{data.news_enabled ? "No recent news yet." : "News isn't set up."}</p>
           ) : (
-            <ul className="feed news" aria-label="Recent news">
+            <RowList className="news" aria-label="Recent news">
               {data.news.map((n) => (
-                <li key={n.url}>
-                  <a href={n.url} target="_blank" rel="noopener noreferrer nofollow">
-                    {n.headline}
-                  </a>
-                  <br />
-                  <span className="caption">
-                    {n.source} · {formatShortDate(n.published_at)}
-                  </span>
-                </li>
+                <Row
+                  key={n.url}
+                  title={
+                    <a href={n.url} target="_blank" rel="noopener noreferrer nofollow">
+                      {n.headline}
+                    </a>
+                  }
+                  sub={`${n.source} · ${formatShortDate(n.published_at)}`}
+                />
               ))}
-            </ul>
+            </RowList>
           )}
-        </section>
+        </Section>
       )}
     </>
   );

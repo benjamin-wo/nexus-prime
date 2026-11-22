@@ -192,7 +192,7 @@ describe("a plan and the one it replaced", () => {
       "GET /investments/plans/p1": () => detail({ id: "p1", status: "refreshed" }, [], { id: "p2", created_at: "2026-10-14T09:00:00Z" }),
     });
     renderPlan("p1");
-    expect(await screen.findByText("🔄 Refreshed")).toBeInTheDocument();
+    expect(await screen.findByText("Refreshed")).toBeInTheDocument();
     const link = await screen.findByRole("link", { name: "A newer plan replaced this one" });
     expect(link).toHaveAttribute("href", "/investment/plans/p2");
     // It doesn't go looking through the plans list for it.
@@ -202,7 +202,7 @@ describe("a plan and the one it replaced", () => {
   it("is just the label when nothing replaced it", async () => {
     mockApi({ "GET /investments/plans/p1": () => detail({ id: "p1", status: "refreshed" }) });
     renderPlan("p1");
-    expect(await screen.findByText("🔄 Refreshed")).toBeInTheDocument();
+    expect(await screen.findByText("Refreshed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "A newer plan replaced this one" })).not.toBeInTheDocument();
   });
 
@@ -256,7 +256,7 @@ describe("the plans list", () => {
     expect(fresh).toHaveTextContent("Fresh");
     expect(screen.getByRole("link", { name: /BOLT: plain/ })).not.toHaveTextContent("Fresh");
     const replaced = screen.getByRole("link", { name: /ACME: replaced/ });
-    expect(replaced).toHaveTextContent("🔄 Refreshed");
+    expect(replaced).toHaveTextContent("Refreshed");
     expect(replaced).not.toHaveTextContent("Fresh");
   });
 
