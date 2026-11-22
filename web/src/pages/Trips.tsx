@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type CSSProperties, type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type FormEvent, Fragment, type ReactNode, type RefObject, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type Booking, type Hop, type ScreenshotRead, type Trip, type TripDetail } from "../api";
@@ -1044,7 +1044,6 @@ function NextUpStrip({ detail, onGo }: { detail: TripDetail; onGo: (go: Go) => v
 }
 
 /** The trip's photo for the cover and the slim bar's thumbnail: the photo itself, with no fade over it. */
-const heroStyle = (trip: Trip): CSSProperties => (trip.photo ? { backgroundImage: `url("${trip.photo.url}")` } : coverStyle(trip));
 
 /** The header's actions, on the cover and in the slim bar: Share (People for a member), the
  * one Add on a wide screen, and the owner's ⋯ menu. */
@@ -1275,7 +1274,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
           <Link className="trip-icon-button" to="/travel" aria-label="Back to trips">
             <Icon name="chevron" size={20} className="icon-back" />
           </Link>
-          <span className="trip-slim-thumb" style={data ? heroStyle(data.trip) : undefined} aria-hidden="true" />
+          <span className="trip-slim-thumb" style={data ? coverStyle(data.trip) : undefined} aria-hidden="true" />
           <div className="trip-slim-title">
             <SlimName className="trip-slim-name">{data?.trip.destination ?? "Trip"}</SlimName>
             {data && <span className="trip-slim-dates">{dates}</span>}
@@ -1285,7 +1284,7 @@ export function TripPage({ onAsk }: { onAsk?: (text: string) => void } = {}) {
       )}
       {cover && (
         <header className="trip-hero">
-          <div ref={photo} className={`trip-hero-photo${data?.trip.photo ? "" : " no-photo"}`} style={data ? heroStyle(data.trip) : undefined}>
+          <div ref={photo} className={`trip-hero-photo${data?.trip.photo ? "" : " no-photo"}`} style={data ? coverStyle(data.trip) : undefined}>
             <div className="trip-hero-bar" aria-hidden={away || undefined} inert={away}>
               <ButtonLink className="trip-bar-button" to="/travel" aria-label="Back to trips">
                 <Icon name="chevron" size={16} className="icon-back" />

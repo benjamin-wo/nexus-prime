@@ -14,18 +14,9 @@ export const day = (iso: string) => formatShortDate(iso, "UTC");
 /** Today in the browser's own time zone, as YYYY-MM-DD. */
 export const todayIso = () => new Date().toLocaleDateString("en-CA");
 
-/** A gradient for trips without a photo yet, the same for the same place. */
-export function coverGradient(destination: string): string {
-  let hash = 0;
-  for (const ch of destination.toLowerCase()) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  const hue = hash % 360;
-  return `linear-gradient(160deg, hsl(${hue} 32% 22%) 0%, hsl(${(hue + 40) % 360} 24% 13%) 60%, #0f0f12 100%)`;
-}
-
-/** The cover behind a trip's header or card: its photo, or a gradient. */
-export function coverStyle(trip: Pick<Trip, "photo" | "destination">): CSSProperties {
-  const fade = "linear-gradient(180deg, rgba(9,9,11,0.15) 0%, rgba(9,9,11,0.35) 55%, rgba(9,9,11,0.92) 100%)";
-  return trip.photo ? { backgroundImage: `${fade}, url("${trip.photo.url}")` } : { backgroundImage: `${fade}, ${coverGradient(trip.destination)}` };
+/** The cover behind a trip's header: its photo. With none, the block keeps its plain raised colour. */
+export function coverStyle(trip: Pick<Trip, "photo">): CSSProperties | undefined {
+  return trip.photo ? { backgroundImage: `url("${trip.photo.url}")` } : undefined;
 }
 
 /** The photo's credit, as its licence asks: the author, the licence, a link to the photo.
@@ -86,8 +77,6 @@ export function tripWhen(trip: Pick<Trip, "status" | "day_number" | "days" | "en
   return `In ${trip.days_until} days`;
 }
 
-/** A trip's photo as a background, or the gradient it gets without one. */
-const photoBackground = (trip: Pick<Trip, "photo" | "destination">): string => (trip.photo ? `url("${trip.photo.url}")` : coverGradient(trip.destination));
 
 /** "2 Jan to 5 Jan". */
 export const tripDates = (trip: Pick<Trip, "start" | "end">): string => `${day(trip.start)} to ${day(trip.end)}`;
@@ -98,7 +87,7 @@ export function TripCard({ trip }: { trip: Trip }) {
   const nights = trip.days - 1;
   return (
     <li className="trip-card">
-      <span className="trip-card-photo" style={{ backgroundImage: photoBackground(trip) }} aria-hidden="true" />
+      <span className="trip-card-photo" style={coverStyle(trip)} aria-hidden="true" />
       <span className="trip-card-body">
         <span className="trip-card-top">
           <Link className="trip-card-link" to={`/travel/trips/${trip.id}`}>
@@ -123,7 +112,7 @@ export function TripCard({ trip }: { trip: Trip }) {
 export function TripRow({ trip }: { trip: Trip }) {
   return (
     <li className="trip-row">
-      <span className="trip-row-thumb" style={{ backgroundImage: photoBackground(trip) }} aria-hidden="true" />
+      <span className="trip-row-thumb" style={coverStyle(trip)} aria-hidden="true" />
       <span className="trip-row-text">
         <Link className="trip-row-link" to={`/travel/trips/${trip.id}`}>
           {trip.destination}

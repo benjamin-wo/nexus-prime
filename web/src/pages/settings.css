@@ -76,7 +76,7 @@
 .voice-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--space-2); }
 .voice-preset { display: grid; gap: 2px; align-content: start; min-width: 0; min-height: 44px; padding: var(--space-3); border-radius: 12px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: background var(--t-micro), border-color var(--t-micro); }
 .voice-preset:hover, .voice-preset:focus-visible { background: var(--bg-card-hover); }
-.voice-preset[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
+.voice-preset[aria-pressed="true"] { background: var(--bg-raised); border-color: var(--accent-border); box-shadow: 0 0 0 1px var(--accent-border); }
 .voice-preset-label { font-weight: 600; }
 .voice-preset[aria-pressed="true"] .voice-preset-label { color: var(--accent-text); }
 .voice-preset-blurb { font-size: 0.8125rem; line-height: 1.35; color: var(--text-muted); overflow-wrap: anywhere; }
@@ -113,8 +113,8 @@
   display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 100%; margin: 0; padding: 0;
   border: 0; background: none; cursor: pointer;
 }
-.cost-hit:focus-visible { outline: 2px solid var(--sky-text); outline-offset: 1px; border-radius: 4px; }
-.cost-bar { display: block; width: 100%; max-width: 18px; border-radius: 3px 3px 0 0; background: var(--pal-teal); transition: background var(--t-micro); }
+.cost-hit:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-radius: 4px; }
+.cost-bar { display: block; width: 100%; max-width: 18px; border-radius: 3px 3px 0 0; background: var(--pal-slate); transition: background var(--t-micro); }
 .cost-hit.on .cost-bar { background: var(--accent); }
 .cost-axis { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 0.8125rem; color: var(--text-muted); }
 .cost-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
@@ -156,5 +156,9 @@
 .invite-row .row-line { width: 100%; }
 .invite-row .error-text { margin: 0; padding: 0 0 var(--space-3); }
 
-.memory-row { flex-wrap: wrap; }
+.memory-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-bottom: 1px solid var(--border-subtle);
+}
+.memory-row:last-child { border-bottom: none; }
 .memory-row > .confirm-box, .memory-row > .error-text { flex: 1 1 100%; margin-top: 0; }

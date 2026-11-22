@@ -26,10 +26,8 @@ The app is light by default and dark when the phone (or Telegram) is. It is also
 WebView shell is coming, so every colour and size comes from a token and the dark scheme is a full second set of
 the same roles.
 
-Status: this file is the target. `web/src/styles.css` still holds the previous look (Midnight and Nexus Blue,
-a gradient hero, Lime, glows, and Statement's values where they landed) until the token and component PRs land;
-where a token's role goes away it is marked "to remove in the token PR", and `web/src/design.test.ts` lists what
-still breaks the rules (see Rules).
+Status: this file describes the app as built. `web/src/design.test.ts` lists what still breaks the rules (see Rules)
+and guards the tokens Paper removed from coming back.
 
 ## 2. Color
 
@@ -37,12 +35,11 @@ still breaks the rules (see Rules).
 
 The roles: **Ground** `#F3F1EC` (the page), **Section** `#FBFAF7` (a soft tinted block on the ground, also a sheet,
 dialog or menu), **Ink** `#1D1C19` (text), **Hairline** `#EBE8E1` (row dividers inside a section), **Edge**
-`#D8D4CA` (a stronger outline: a chip, the ask bar), **Ink green** `#1D5A44` (the one accent, and money in),
+`#D8D4CA` (a stronger outline: a chip), **Ink green** `#1D5A44` (the one accent, and money in),
 **Attention** `#9A4A12`, **Error** `#B42318`. Green fills carry white text (8.1:1). Nothing else is green or
 tinted green.
 
-The token names are the ones in `styles.css`, kept where the role survives so the token PR changes values without
-renaming. `--bg-card` keeps its name but now means the soft section surface. Contrast is against the ground
+The token names are the ones in `styles.css`, kept where the role survives. `--bg-card` keeps its name but now means the soft section surface. Contrast is against the ground
 `#F3F1EC` and the section surface `#FBFAF7` unless a column says otherwise.
 
 | Role | Token | Value | Usage |
@@ -51,7 +48,7 @@ renaming. `--bg-card` keeps its name but now means the soft section surface. Con
 | Surface/secondary | --bg-frame | #F3F1EC | The rail and the chat panel: the ground itself, told apart by a hairline |
 | Surface/section | --bg-card | #FBFAF7 | A soft section (radius 14 to 22px), a sheet, a dialog, a menu |
 | Surface/interactive | --bg-card-hover | #F1EEE7 | A hovered or pressed row or control (text 4.9:1 muted, 14.7:1 ink) |
-| Input surface | --bg-input | #FBFAF7 | Form controls and the ask bar, with a `--border-input` edge |
+| Input surface | --bg-input | #FBFAF7 | Form controls, with a `--border-input` edge |
 | Surface/raised | --bg-raised | #E9E6DE | The secondary button and a selected quiet chip (ink 13.7:1, secondary 9.4:1, muted 4.6:1) |
 | Text/primary | --text-primary | #1D1C19 | Main content and figures (15.1:1 on the ground, 16.3:1 on a section) |
 | Text/strong | --text-strong | #1D1C19 | Headings and the headline figure (Ink, the same as primary) |
@@ -60,7 +57,7 @@ renaming. `--bg-card` keeps its name but now means the soft section surface. Con
 | Border/default | --border-card | #EBE8E1 | Hairline row dividers inside a section (decorative: 1.2:1) |
 | Border/subtle | --border-subtle | #E4E1D8 | A quieter divider on the ground |
 | Border/edge | --border-edge (new) | #D8D4CA | A stronger outline that is decoration, not a control's only mark: a chip's edge, a sheet's edge (1.3:1) |
-| Border/input | --border-input (new) | #8C867A | The edge of a field, a checkbox and an off switch's track (3.2:1 on the ground, 3.5:1 on a section). Paper's mock uses the Edge for the ask bar; the real field needs this 3:1 edge |
+| Border/input | --border-input (new) | #8C867A | The edge of a field, a checkbox and an off switch's track (3.2:1 on the ground, 3.5:1 on a section). the real field needs this 3:1 edge |
 | Accent | --accent | #1D5A44 | A primary button's fill (white text 8.1:1), the user's chat bubble, a link, the current tab's dot; nothing that cannot be pressed or that is not money in |
 | Accent/hover | --accent-hover | #154634 | Primary hover and pressed (white text 10.7:1) |
 | Accent/text | --accent-text | #1D5A44 | A link or a text button (7.2:1 on the ground, 7.7:1 on a section, 7.0:1 on a hovered row) |
@@ -86,28 +83,10 @@ change to either does not move the other, and so a figure's colour says what it 
 sign.
 
 The chart palette, for charts and category swatches (every mark is 3:1 or more on the ground and on a section):
-`--pal-blue` is renamed in the token PR to `--pal-accent` #1D5A44 (7.2:1, the selected or pressable bar only),
+`--pal-accent` (was `--pal-blue`) #1D5A44 (7.2:1, the selected or pressable bar only),
 `--pal-slate` #3B3832 (10.4:1), `--pal-track` #8C867A (3.2:1: past months, the rest bucket), `--pal-track-hover`
 #6B665C (5.1:1), `--pal-wash` #E4E1D8 (the pale half of the planned-spend hatching). Category swatches go ink, slate,
 then the track for the rest; this month's bar is `--text-strong`. Any chart value is also in text.
-
-#### Going away (remove in the token PR)
-
-These roles do not exist in Paper. Their tokens stay in `styles.css` until the component PRs stop using them, then
-the token PR deletes them.
-
-| Token | Was | Why it goes |
-|-------|-----|-------------|
-| --hero-top, --hero-mid, --hero-fade | The blue hero gradient | No gradient and no hero panel; Home's headline sits on the ground |
-| --nexus-from, --nexus-to | The assistant button's gradient | The send button is a plain `--accent` pill |
-| --accent-glow, --accent-soft, --emerald-soft, --status-warning-soft, --emerald-border, --status-warning-border, --sky-soft | Tinted pill and tile fills | No tinted pills or tiles; status is a word in its colour |
-| --title-accent | The accent word in a page title | No coloured accent word |
-| --cyan-accent, --cyan-text, --sky-accent, --sky-text, --pal-teal | Digital Teal and sky | One accent; they were decoration |
-| --pal-lime, --bar-active-bg, and Lime in --bar-text-active, --bar-indicator, --nav-active-glyph | Lime "you are here" | No neon; the current place is ink with a 4px green dot |
-| --tabs-bg, --tab-active-bg | The tab tray and open tab | Tabs are text, the current one with a dot |
-| --accent-rgb, --danger-rgb | The accent and rose as r, g, b for tints and glows | Nothing is tinted or glows (`--rose-rgb` stays for the over-budget hatching until the chart PR) |
-| --shadow-frame, -card, -tab, -bar, -slim | Soft shadows under cards, tabs and bars | Soft sections and space, not shadows, separate things |
-| `.fab`'s blue glow shadow and the scrims named in `.photo-credit*` | Literals in rules | Become tokens in `:root` (see Rules) |
 
 ### Dark
 
@@ -146,7 +125,7 @@ Every text pair is at least 4.5:1 and every mark (a progress bar or chart mark, 
 ### Rules
 
 - Two schemes of the same palette, light and dark; do not introduce a third visual theme.
-- Every colour outside `:root` is a token: no hex, `rgb()`, `rgba()` or `hsl()` literals in rules (`rgba(var(--token-rgb), 0.16)` is fine). The only places a literal colour may appear are the `:root` token blocks: the light set, the dark set under `prefers-color-scheme`, and the dark set under `data-theme`. A colour that is the same in both schemes because what it sits on is (white text and scrims on a trip's cover photo, the photo credit) is a token in `:root` too (`--on-photo`, `--scrim-*`, to add in the token PR), not a literal in the rule.
+- Every colour outside `:root` is a token: no hex, `rgb()`, `rgba()` or `hsl()` literals in rules (`rgba(var(--token-rgb), 0.16)` is fine). The only places a literal colour may appear are the `:root` token blocks: the light set, the dark set under `prefers-color-scheme`, and the dark set under `data-theme`. A colour that is the same in both schemes because what it sits on is (white text and scrims on a trip's cover photo, the photo credit) is a token in `:root` too (`--on-photo`, `--scrim-*`), not a literal in the rule.
 - No gradients and no coloured or glowing shadow. A `box-shadow` is `none` or `var(--shadow-*)`.
 - `font-family` is `inherit`, a `var(--font-*)` token, or one of the stacks in Typography.
 - `web/src/design.test.ts` checks the three rules above against `styles.css`. It carries `KNOWN_OFFENDERS`, an explicit list of the rules that still break them (selector and kind). The test fails on a new violation, and also when a listed offender no longer exists, so the list only shrinks: when a PR fixes a rule it deletes that line; nobody adds one.
@@ -186,7 +165,7 @@ Weights for Bricolage are 400 to 700 (600 for figures and headings, 500 for row 
 - Display and UI (`--font-ui`, new): "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif. Set `font-optical-sizing: auto` so `opsz` follows the size; force `font-variation-settings: "opsz" 96` only on the headline.
 - Body (`--font-body`, new): "Newsreader", Georgia, "Times New Roman", serif.
 - Mono (`--font-mono`, new): ui-monospace, SFMono-Regular, Menlo, monospace, only for an error's technical detail and identifiers a person may copy. Money is never mono.
-- No coloured accent word and no italic accent word in a title: a title is one weight, one colour. `.accent-serif` and `--title-accent` are removed in the component and token PRs. Newsreader italic is allowed for one thing only: quoting what someone said or wrote ("how much leeway do i have this month?" echoed back, a note a person wrote, a merchant's own message). It is never emphasis, never a title and never coloured.
+- No coloured accent word and no italic accent word in a title: a title is one weight, one colour. Newsreader italic is allowed for one thing only: quoting what someone said or wrote ("how much leeway do i have this month?" echoed back, a note a person wrote, a merchant's own message). It is never emphasis, never a title and never coloured.
 
 ### Loading the fonts
 
@@ -240,7 +219,7 @@ All spacing derives from a 4px base unit.
 - **A section is a soft block, not a card.** It is `--bg-card` on the ground with a 14px radius on a phone (up to 22px for a large view on a wide screen), 4px 16px padding, 12px side margin from the screen edge, 8 to 12px between sections. Inside it: an optional heading row (H2 in Bricolage at the left, its action, such as See all, Open or Edit, as a text button at the right) and rows divided by `--border-card` hairlines, the last row without one. No border and no shadow around a section. Sections are never nested; a row is never a card. Sheets, dialogs and menus are the same surface with a `--border-edge` edge and `--shadow-modal` (radius 22px on a sheet's top corners, 14px on a menu; `--radius` 14px and `--radius-inner` 10px replace today's 20px and 12px). A control's radius is 12px; a text field on its own is a pill.
 - **Shapes**: buttons are pills (radius half the height); the chat's field is a pill; chips are pills; the chat bubble has the 18px radius with a 4px corner at the tail. Status is never a pill, only a word in its colour. No glows, no gradients.
 - Home has no hero panel: it opens on a date label, the month's headline figure and one sentence, all on the ground (see Home headline).
-- **Buttons**: pills, 44px tall (52px for a full-width primary at the foot of a form or a sheet; 38px only inside the ask bar, where it sits in a 50px field). The primary is a filled `--accent` pill with white text (UI, 600). The secondary is `--bg-raised` with ink text. A text button (the section actions, "Show all") is `--accent-text` with no fill. No outlines on buttons (chips have a `--border-edge` outline, see below), no gradients, no glow or shadow. Destructive is a text button in `--rose-accent`, never filled. In Travel the secondary is `.btn-soft`, a `--bg-raised` pill with ink text (no pale fill); grey `--bg-raised` is also cancel and back.
+- **Buttons**: pills, 44px tall (52px for a full-width primary at the foot of a form or a sheet). The primary is a filled `--accent` pill with white text (UI, 600). The secondary is `--bg-raised` with ink text. A text button (the section actions, "Show all") is `--accent-text` with no fill. No outlines on buttons (chips have a `--border-edge` outline, see below), no gradients, no glow or shadow. Destructive is a text button in `--rose-accent`, never filled. In Travel the secondary is `.btn-soft`, a `--bg-raised` pill with ink text (no pale fill); grey `--bg-raised` is also cancel and back.
 - **Chips and filters** (All, Spent, Received, Pending; the Travel day pills): 34px tall (40px on touch) pills, UI at 0.875rem. Off: transparent with a `--border-edge` outline and ink text. On: `--text-strong` fill with `--bg-shell` text (15.1:1); a colour is never what says "on". A chip is the only filter control; Travel's `.day-pill` follows it.
 - **Department tabs are the bottom bar** on a phone and the rail on a wide screen (below); inside a department, sub-tabs (Money has Overview, Ledger, Budgets, Cash flow; Investment three: Portfolio, Watchlist, Trade plans; Travel's one tab means no bar) are text in Bricolage on the ground, the current one ink and 600 with a 4px green dot under it, the rest `--text-muted`; keep a department to five tabs or fewer. Setup that is done once (Receipts by email, Import a statement) is not a tab: it lives in Settings under Connections, and the Ledger's More menu links to the import.
 - Ink green is for what can be pressed or is the person's own (the primary button, links, text buttons, the focus ring, the selected pressable chart bar, the current tab's dot, the user's bubble) and for money in. Figures are ink; links in text keep the text's colour with a green underline (`--link-underline` at rest, `--accent-text` on hover).
@@ -287,10 +266,10 @@ A **view** is what Prime puts on the spoken canvas (ADR 0002): a hand-built comp
 
 ### Today (Home)
 
-- **Order on a phone**: the headline block, the trip view while a trip is on, For today, Working on (only while research runs), Get set up (only while unfinished), then Money this month, Portfolio today and Next trip; the ask bar is pinned above the bottom bar throughout. From 1024px two columns (3 to 2): the headline block and For today on the left, the three views at a glance on the right, and the trip view across the top of both
+- **Order on a phone**: the headline block, the trip view while a trip is on, For today, Working on (only while research runs), Get set up (only while unfinished), then Money this month, Portfolio today and Next trip; the chat opens from the centre Nexus mark. From 1024px two columns (3 to 2): the headline block and For today on the left, the three views at a glance on the right, and the trip view across the top of both
 - **For today**: a soft section ("For today", with "See all 8" as a text button at the right when there are more than five; the page keeps its first five) of rows: the title in Newsreader, one muted sub-line naming the thing, and at the right a figure (Bricolage, ink) or a plain word ("Look", "Today", "File", "Pay"; "Look" and the like are text buttons in `--accent-text`, or `--status-warning` when it needs the person now). No icon tile. The API sorts by `when`; "See all (n)" (`aria-expanded`; "Show fewer" once open) opens the rest in place. An item that needs the person now (`when: "now"`) has its word in `--status-warning` at the right; an item about today says "Today" in `--text-muted` in place of a figure; the rest say neither. A row links to where it is settled, and a row that needs a decision has its word as the text button that settles it in place. With nothing: "Nothing for today." (not a sentence about the app)
 - **Working on**: a soft section under For today, up to three runs, each a title, its progress line and a thin bar (ink on `--pal-wash`), with a Cancel text button while it runs
-- **Way into chat**: the centre Nexus mark in the bottom bar (the rail's "Ask Nexus" on a wide screen); there is no pinned ask bar. The suggested questions appear in an empty chat. A mic sits beside Send for voice (see Voice notes in the chat).
+- **Way into chat**: the centre Nexus mark in the bottom bar (the rail's "Ask Nexus" on a wide screen); the chat is a sheet on a phone. The suggested questions appear in an empty chat. A mic sits beside Send for voice (see Voice notes in the chat).
 - **Get set up**: shown while the server's checklist is not dismissed and has a step left; it goes by itself when every step is done. A line says how many steps are left; each step is a row, ticked with "Done" when done, else an empty ring and a "Set up" text button to the page where it is done. "Get receipts in automatically" also has a quiet "Ask Nexus" button, since its sentence is a request for help; the other sentences (`ask`) carry example values (a payday, a stock, a budget) and are never sent as if they were the person's. "Hide" in the heading calls `POST /api/setup/dismiss` and the section goes; if that fails it says so under the list and stays
 - **At a glance**: three views (each with one text button at the right). Money this month: spent (the figure the headline sentence also implies, as the view needs it), then with an overall budget the share used against the share of the month gone as two thin bars with the word "Ahead of pace" (in `--status-warning`), "On pace" or "Under pace" (more than 5 points apart), without one "Last month by now: SGD 1,200.00"; Details opens Money. Portfolio today: the value in the home currency, the day's change in `--emerald-accent` or `--rose-accent` and the `PriceWhen` caption (live dot, close); with no holdings "No holdings yet."; Open opens Investments. Next trip: "Tokyo in 12 days" (or "tomorrow") with its dates and any nights with no place to stay; with none "No trip coming up."
 - **Trip mode**: while the next trip is on, a view ("Day 3 in Tokyo", Open trip at the right) leads above For today and Next trip gives way to it. It has up to three rows, each only when the trip's data has it: Next (the first plan today still to come, with its time; else one with no time; else "Nothing more planned today."), Spent today with what is left per day of the trip's budget, and Next booking (the next flight, train or stay after today). Nothing here asks the server for more than the trip page does
@@ -317,6 +296,7 @@ A **view** is what Prime puts on the spoken canvas (ADR 0002): a hand-built comp
 
 ### Investment
 
+- **Holdings**: a holding row opens a sheet with Edit and Remove.
 - **Prices**: every price says when it is from, in one muted caption (13px, `.caption`) built by `priceWhen` in `format.ts` and shown with `PriceWhen`: "Live · 10:42pm" while the US market is open (with a 6px emerald dot, the only mark of live), "Close (provisional) · 4:00am" after the close until the official close arrives, and "Close of Fri 16 Oct" otherwise. Times are in the browser's timezone. The label sits in the Holdings card's heading row, under the price on the watchlist and stock page, and under the total on Home's Portfolio today card; a holding whose price is of another kind than the card's says so under its price. While a price is live and the page is in view, Portfolio, Watchlist, a stock and Home's Portfolio today card ask again every 60 seconds (`livePolling`) and on window focus; a close is not polled.
 - **Today card**: how the portfolio did in the latest US session, at the top of Portfolio (a card under the heading); Home has no such card, only the day's change on Portfolio today. The title follows the session: "Today" while the market is open (with the `PriceWhen` label and its live dot), "Today's session" after the close, "Last session" before the next open. The change in the home currency and its percentage are the one big figure, green or rose as gains are everywhere else; under it up to three movers, each with the stock as a link, its move, its price and the day's newest headline as a quiet 13px line (a link out when it has a url), and a ghost "Why did it move?" button that reads the day's headlines and answers in place in 2 to 3 sentences with "From today's headlines" beneath ("Try again in a minute" after a 429, the server's short reason for a 404 or 422, else "Couldn't read that move just now"). It asks again every 60 seconds while live and in view, and is hidden when nothing is held or watched. It adds no primary action.
 - **Stock page**: the Price card holds the price, then under it a quiet list of up to three facts against the levels ("1.2% below resistance at 131.00", "10.4% above its 50-day average (117.25)") in caption text, with no heading of their own. The page's one primary is Make a plan.
@@ -443,7 +423,7 @@ One overlay (`web/src/components/overlay/`) is the base of every sheet, dialog a
 - **Forms**: a sheet can be the form itself (`as="form"`), with its primary button in the footer. It has at most one primary button in view, and fields are 16px on a phone.
 
 ### Travel parts
-These are the rules the Travel pages follow. New Travel screens keep to them. Colour and shape follow sections 2 and 8: the soft button is a `--bg-raised` pill and the day pill's on state an ink-filled chip (the building blocks below set them); where a line below still names pale blue, a blue primary, an icon tile or a sparkle (the `.way` icon tile, the Next up and suggestion sparkles), the component PR replaces it with the Paper equivalent (ink green for the primary, no tile, no sparkle). Cards named below (a day, a Money summary, Getting ready) become soft sections.
+These are the rules the Travel pages follow. New Travel screens keep to them. Colour and shape follow sections 2 and 8: the soft button is a `--bg-raised` pill and the day pill's on state an ink-filled chip (the building blocks below set them): where a line below still names pale blue, a blue primary, an icon tile or a sparkle, read it as the Paper equivalent (ink green for the primary, no tile, no sparkle). Cards named below (a day, a Money summary, Getting ready) become soft sections.
 
 - **Buttons**: one filled green primary pill per view. A secondary button for a row or a card (Add to day, Find ideas, Open day) is `.btn-soft`: a `--bg-raised` pill with ink text (no pale fill). Quiet ghost buttons (`.btn-ghost`) carry a 16px icon and text, at least 40px tall. Plain grey `.btn` is only for cancel and back. Destructive is a quiet rose button (`btn btn-ghost btn-danger`: transparent, rose text), never filled. A ghost button's hover is the faint `--bg-card-hover`, never a grey fill. A ghost button that starts a line (See costs, Details, Take off, Make a new link) is pulled 12px left so its words line up with the text above it. Icon-only buttons (a packing item's remove) are at least 40px, 44px on touch.
 - **One chip**: `.day-pill` is the only chip, for days, stops, lists, scopes and themes. It is a pill with a `--border-edge` outline; on is the ink-filled chip of the Chips rule (it is pale blue, `--accent-soft`, today). A stop's or list's colour shows only as a dot. 40px tall on touch. A choice with many options is one chip with a ▾ that opens the options, not a row of chips.
@@ -458,7 +438,7 @@ These are the rules the Travel pages follow. New Travel screens keep to them. Co
 - **To do**: the card on Money that holds what needs doing with the people going, and only appears when there is something: "N costs to split" (the total and the names, a soft Split button and See costs to list them with Split and Keep as just mine on each) and one row per person to settle with ("You owe Ann SGD 45.00" or "Ann owes you SGD 135.00", a soft Settle up button and Details for what makes it up). Splitting and settling confirm in place, in a confirm view under the row (a soft section, no tint), never a dialog: a sentence saying what will be recorded (and that Nexus doesn't move money), the choice where there is one ("Also record my share as spent"), one primary (Split evenly, Mark settled) and a ghost Not now. A line under the card's title says Nexus records what you say happened. The card is hidden when nobody else is going.
 - **Details accordion**: Money's sections are rows in one card, each a button with its title at the left, a one-line summary at the right ("2 categories", "None yet", "You and Ann") and a chevron, 56px tall, divided by hairlines. One is open at a time (opening one closes the other, with `aria-expanded` on the button and the content a labelled region), and all start closed. Sections with nothing to show (Setting money aside once the trip has started, Bookings paid with no costs, Paid by others with no payments) are left out. A section's form (a planned cost, someone else paid) opens inside its section; the Add button opens the section it belongs to.
 - **Money**: always the ISO code, through `formatMoney`, never a symbol. A range is "SGD 4,602–6,760". A foreign amount is followed by its home amount when known: "JPY 2,000 · SGD 18.00". A sentence that would show zero is left out.
-- **Type**: 13px (0.8125rem) is the floor everywhere in Travel. Headings and labels are sentence case, with no all-caps. A trip's title is ink, one weight, like any title; the accent-coloured title (`.accent-serif`) is removed in the component PR.
+- **Type**: 13px (0.8125rem) is the floor everywhere in Travel. Headings and labels are sentence case, with no all-caps. A trip's title is ink, one weight, like any title.
 - **Warmth**: it comes from the trip's own photos. Travel adds no colours and no accent word.
 - **The Add button**: white on `--accent` (ink green), a pill with a plus and the word "Add", 52px tall, named for what it adds. Below 1024px it floats at the right; on phones it sits 20px above the bottom bar. From 1024px it moves to the trip's header, beside Share, and is the only Add on the page. Every tab has one except after the trip.
 - **Trip invite page**: `/trip-invite/<token>` is a small centred card on the sign-in page's background. Signed out: "You've been invited to a trip" with "Sign in with Telegram to join." and the Telegram button (inside Telegram it signs in at once and the page only shows if that was refused, with a line saying the invite couldn't be used). Signed in: "Joining the trip…", then the trip opens with a short notice ("You've joined the trip to Kyoto."; their own link says "That's your own invite link. Send it to the person you want on the trip." and joins nothing; a trip they are already on opens with nothing said). A link that is used, cancelled, expired or unknown shows "This invite doesn't work any more" with "Ask the trip's owner for a new link." and one primary, Go to Home, or Go to Trips for a guest; any other failure shows "Couldn't join the trip", the reason and Try again
@@ -499,7 +479,7 @@ Flat and soft. Structure comes from tinted sections and space, not elevation. Do
 - Sheets, dialogs and menus: `--bg-card` with a `--border-edge` edge and `--shadow-modal` (warm black at low opacity), over the `--overlay` dim.
 - A dragged item uses `--shadow-drag`; a button on a photo uses `--shadow-thumb`. Nothing else has a shadow.
 - Status colour (money green, attention rust, error red) is text or a thin mark, never a tinted background, and no shadow is coloured.
-- The app frame, card, tab, bar and slim-bar shadows (`--shadow-frame`, `-card`, `-tab`, `-bar`, `-slim`) go in the token PR.
+- There are no frame, card, tab, bar or slim-bar shadows.
 
 ## 8. Patterns we don't use
 

@@ -39,7 +39,6 @@
   --switch-thumb: #ffffff;
   /* A switch that is off: a track that is 3:1 against the card. */
   --switch-off: #8c867a;
-  --nav-active-glyph: #1d1c19;
   --btn-hover-bg: #e2dfd6;
   /* The palette, for charts and category swatches: every mark is 3:1 on the ground and on a section. */
   --pal-accent: #1d5a44;
@@ -67,31 +66,7 @@
 
   /* Going away: these roles do not exist in Paper. They keep neutral Paper values until the component PRs
      stop using them; the component PRs delete them (DESIGN.md, "Going away"). */
-  --accent-rgb: 29, 90, 68;
   --rose-rgb: 180, 35, 24;
-  --danger-rgb: 180, 35, 24;
-  --accent-soft: #E9E6DE; /* = --bg-raised: a selected state is a raised fill, not a tint */
-  --accent-glow: #fbfaf7;
-  --emerald-soft: transparent;
-  --emerald-border: #d8d4ca;
-  --status-warning-soft: transparent;
-  --status-warning-border: #d8d4ca;
-  --sky-soft: transparent;
-  --cyan-accent: #6b665c;
-  --cyan-text: #3b3832;
-  --sky-accent: #6b665c;
-  --sky-text: #3b3832;
-  --title-accent: #1d1c19;
-  --pal-teal: #3b3832;
-  --pal-lime: #8c867a;
-  --hero-top: #f3f1ec;
-  --hero-mid: #f3f1ec;
-  --hero-fade: #f3f1ec;
-  --nexus-from: #1d5a44;
-  --nexus-to: #1d5a44;
-  --bar-active-bg: transparent;
-  --tabs-bg: #f3f1ec;
-  --tab-active-bg: #fbfaf7;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -104,11 +79,6 @@
   --radius: 20px;
   --radius-inner: 12px;
   --radius-section: 14px;
-  --shadow-frame: none;
-  --shadow-card: none;
-  --shadow-tab: none;
-  --shadow-bar: none;
-  --shadow-slim: none;
   --shadow-modal: 0 24px 60px rgba(29, 28, 25, 0.22);
   --shadow-drag: 0 8px 24px rgba(29, 28, 25, 0.18);
   --shadow-thumb: 0 1px 3px rgba(29, 28, 25, 0.3);
@@ -158,7 +128,6 @@
     --overlay: rgba(0, 0, 0, 0.6);
     --switch-thumb: #ede9e0;
     --switch-off: #8a8477;
-    --nav-active-glyph: #ede9e0;
     --btn-hover-bg: #34312b;
     --pal-accent: #6fc29b;
     --pal-slate: #c9c4b8;
@@ -169,36 +138,7 @@
     --bar-text: #a39d90;
     --bar-text-active: #ede9e0;
     --bar-indicator: #6fc29b;
-    --accent-rgb: 47, 122, 92;
     --rose-rgb: 242, 139, 130;
-    --danger-rgb: 242, 139, 130;
-    --accent-soft: #2A2722;
-    --accent-glow: #1f1d19;
-    --emerald-soft: transparent;
-    --emerald-border: #34312b;
-    --status-warning-soft: transparent;
-    --status-warning-border: #34312b;
-    --sky-soft: transparent;
-    --cyan-accent: #a39d90;
-    --cyan-text: #c9c4b8;
-    --sky-accent: #a39d90;
-    --sky-text: #c9c4b8;
-    --title-accent: #ede9e0;
-    --pal-teal: #c9c4b8;
-    --pal-lime: #8a8477;
-    --hero-top: #161512;
-    --hero-mid: #161512;
-    --hero-fade: #161512;
-    --nexus-from: #2f7a5c;
-    --nexus-to: #2f7a5c;
-    --bar-active-bg: transparent;
-    --tabs-bg: #161512;
-    --tab-active-bg: #1f1d19;
-    --shadow-frame: none;
-    --shadow-card: none;
-    --shadow-tab: none;
-    --shadow-bar: none;
-    --shadow-slim: none;
     --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.55);
     --shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
     --shadow-thumb: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -235,7 +175,6 @@
   --overlay: rgba(0, 0, 0, 0.6);
   --switch-thumb: #ede9e0;
   --switch-off: #8a8477;
-  --nav-active-glyph: #ede9e0;
   --btn-hover-bg: #34312b;
   --pal-accent: #6fc29b;
   --pal-slate: #c9c4b8;
@@ -246,36 +185,7 @@
   --bar-text: #a39d90;
   --bar-text-active: #ede9e0;
   --bar-indicator: #6fc29b;
-  --accent-rgb: 47, 122, 92;
   --rose-rgb: 242, 139, 130;
-  --danger-rgb: 242, 139, 130;
-  --accent-soft: #2A2722;
-  --accent-glow: #1f1d19;
-  --emerald-soft: transparent;
-  --emerald-border: #34312b;
-  --status-warning-soft: transparent;
-  --status-warning-border: #34312b;
-  --sky-soft: transparent;
-  --cyan-accent: #a39d90;
-  --cyan-text: #c9c4b8;
-  --sky-accent: #a39d90;
-  --sky-text: #c9c4b8;
-  --title-accent: #ede9e0;
-  --pal-teal: #c9c4b8;
-  --pal-lime: #8a8477;
-  --hero-top: #161512;
-  --hero-mid: #161512;
-  --hero-fade: #161512;
-  --nexus-from: #2f7a5c;
-  --nexus-to: #2f7a5c;
-  --bar-active-bg: transparent;
-  --tabs-bg: #161512;
-  --tab-active-bg: #1f1d19;
-  --shadow-frame: none;
-  --shadow-card: none;
-  --shadow-tab: none;
-  --shadow-bar: none;
-  --shadow-slim: none;
   --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.55);
   --shadow-drag: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-thumb: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -309,7 +219,7 @@ a:hover { text-decoration-color: currentColor; }
   border: 1px solid var(--border-card); background: var(--bg-input); color: var(--text-primary); font: inherit;
   font-weight: 400;
 }
-.input:focus { border-color: var(--accent-border); outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.input:focus { border-color: var(--accent-border); outline: 2px solid var(--ring); outline-offset: 1px; }
 /* iOS (and Telegram's webview) zoom into a field whose text is under 16px when it's
    tapped, which jumps the page: on any touch screen or narrow window, every field is
    16px. Later rules don't shrink it (see .share-link). */
@@ -351,7 +261,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .shell:has(> .demo-banner) { grid-template-rows: auto minmax(0, 1fr); }
 .demo-banner {
   grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: var(--space-2);
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4); background: var(--accent-soft);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4); background: var(--bg-raised);
   border-bottom: 1px solid var(--accent-border); color: var(--text-primary); font-size: 0.8125rem; line-height: 1.4;
 }
 .demo-banner p { margin: 0; text-align: center; }
@@ -360,8 +270,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
 .shell:has(> .demo-banner):has(> .offline-notice) { grid-template-rows: auto auto minmax(0, 1fr); }
 .offline-notice {
   grid-column: 1 / -1; display: flex; align-items: center; justify-content: center;
-  padding: var(--space-1) var(--space-4); background: var(--status-warning-soft);
-  border-bottom: 1px solid var(--status-warning-border); color: var(--text-primary); font-size: 0.875rem; line-height: 1.4;
+  padding: var(--space-1) var(--space-4); border-bottom: 1px solid var(--border-card); color: var(--text-primary); font-size: 0.875rem; line-height: 1.4;
 }
 .offline-notice p { margin: 0; text-align: center; }
 .demo-banner-link {
@@ -372,7 +281,7 @@ input[type="date"].input, input[type="time"].input, input[type="datetime-local"]
   flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: transparent;
   color: var(--text-secondary); font-size: 1.25rem; line-height: 1; cursor: pointer;
 }
-.demo-banner-close:hover { background: var(--accent-soft); color: var(--text-primary); }
+.demo-banner-close:hover { background: var(--bg-raised); color: var(--text-primary); }
 .main-viewport { overflow-y: auto; overflow-x: hidden; padding: 40px 48px 96px; overscroll-behavior-y: contain; }
 /* Pull to refresh (usePullToRefresh): the page follows the finger down by --pull, with a spinner in the gap.
    The transform is only on while pulling or refreshing, so it never changes how fixed buttons sit. */
@@ -490,7 +399,7 @@ table.ledger { width: 100%; border-collapse: collapse; }
 .ledger td { padding: var(--space-3) var(--space-2); border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
 .ledger tbody tr { cursor: pointer; transition: background var(--t-micro); }
 .ledger tbody tr:hover, .ledger tbody tr:focus-within { background: var(--bg-card-hover); }
-.ledger tr[aria-selected="true"] { background: var(--accent-soft); }
+.ledger tr[aria-selected="true"] { background: var(--bg-raised); }
 .ledger .amount { text-align: right; white-space: nowrap; }
 .ledger .amount .fx { display: block; font-weight: 500; white-space: normal; }
 .ledger .wrap { overflow-wrap: anywhere; }
@@ -656,7 +565,7 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .rail .btn:hover { color: var(--text-primary); }
 .ledger .btn-ghost { min-height: 0; padding: 0; justify-content: flex-start; text-align: left; font-weight: 600; }
 .ledger td.num { white-space: nowrap; }
-.receipt-link { display: inline-block; color: var(--cyan-text); text-decoration: underline; }
+.receipt-link { display: inline-block; color: var(--text-secondary); text-decoration: underline; }
 .connect { max-width: 560px; margin: 0 auto; padding: var(--space-6) var(--space-4); }
 .connect-card { display: grid; gap: var(--space-4); }
 .connect-steps { margin: 0; padding-left: 1.25rem; display: grid; gap: var(--space-2); }
@@ -672,7 +581,7 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
   display: flex; flex-direction: column; gap: 2px; min-width: 0;
 }
 .cal-day:hover { background: var(--bg-card-hover); }
-.cal-day[aria-pressed="true"] { border-color: var(--accent-border); background: var(--accent-soft); }
+.cal-day[aria-pressed="true"] { border-color: var(--accent-border); background: var(--bg-raised); }
 .cal-day.is-today { border-color: var(--accent); }
 .cal-day.is-empty { visibility: hidden; }
 .cal-date { font-size: 0.8125rem; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums lining-nums; color: var(--text-secondary); }
@@ -709,22 +618,13 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .memory-group + .memory-group { margin-top: 12px; }
 .memory-group h3 { margin: 0 0 4px; }
 .memory-list { list-style: none; margin: 0; padding: 0; }
-.memory-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.memory-row:last-child { border-bottom: none; }
 .memory-foot { margin-top: 12px; }
 /* Statement import */
 .import-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
 .import-table tbody tr { cursor: default; }
 .import-table .fx { display: block; }
 .import-table td.move { display: grid; gap: var(--space-1); }
-.import-move-label { font-weight: 600; color: var(--sky-text); }
+.import-move-label { font-weight: 600; color: var(--text-secondary); }
 @media (max-width: 720px) {
   .import-table tbody tr { grid-template-rows: auto auto auto; }
   .import-table td.select { grid-row: 1 / span 3; }
@@ -747,7 +647,7 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .ledger td.merchant .trail { display: grid; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
 .trail .trail-link { display: inline; white-space: normal; text-align: left; font-weight: 600; }
 /* --- one payment recorded twice --- */
-.duplicate { display: grid; gap: 4px; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: var(--status-warning-soft); }
+.duplicate { display: grid; gap: 4px; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: var(--bg-raised); }
 .duplicate .caption { color: var(--status-warning); }
 .ledger td.merchant .duplicate .caption { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; white-space: normal; }
 .section-title { margin: var(--space-2) 0 calc(-1 * var(--space-2)); font-size: 1rem; color: var(--text-secondary); }
@@ -771,7 +671,7 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .plan-chart { margin: var(--space-3) 0 0; }
 .plan-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
 .plan-chart .price { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
-.plan-chart .zone rect { fill: var(--emerald-soft); }
+.plan-chart .zone rect { fill: transparent; }
 .plan-chart .level line { stroke-width: 1.5; stroke-dasharray: 4 3; }
 .plan-chart .level.stop line { stroke: var(--rose-accent); }
 .plan-chart .level.target line { stroke: var(--emerald-accent); }
@@ -780,11 +680,9 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .plan-chart .crosshair circle { fill: var(--accent); stroke: var(--bg-card); stroke-width: 2; }
 .plan-chart .hit { fill: transparent; cursor: crosshair; }
 .plan-chart .level.cost line { stroke: var(--text-muted); stroke-dasharray: 2 3; }
-.verdict h2 { font-size: 1.6rem; margin: var(--space-1) 0; }
-.verdict-reason { font-weight: 600; }
 .chip { font-size: 0.8125rem; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--bg-card); }
-.kind-chip { margin-left: var(--space-2); vertical-align: 2px; color: var(--sky-text); background: var(--sky-soft); font-weight: 600; }
-.callout { margin: var(--space-3) 0 0; padding: var(--space-3); border-radius: var(--radius); background: var(--status-warning-soft); border: 1px solid var(--status-warning-border); }
+.kind-chip { margin-left: var(--space-2); vertical-align: 2px; color: var(--text-secondary); font-weight: 600; }
+.callout { margin: var(--space-3) 0 0; padding: var(--space-3); border-radius: var(--radius); background: var(--bg-raised); }
 .why-list h3 { margin-bottom: var(--space-1); }
 .why-list.up h3 { color: var(--emerald-accent); }
 .why-list.down h3 { color: var(--rose-accent); }
@@ -866,7 +764,7 @@ html.keyboard .drawer { top: var(--vv-top, 0px); bottom: auto; height: var(--vv-
 .reservation-bar { display: flex; gap: var(--space-2); overflow-x: auto; margin-bottom: var(--space-4); padding-bottom: var(--space-1); }
 .reservation-chip { display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap; min-height: 36px; padding: 0 var(--space-3); border-radius: 8px; border: 1px solid var(--border-card); background: var(--bg-card); color: var(--text-primary); text-decoration: none; font-weight: 600; }
 .reservation-chip:hover { background: var(--bg-card-hover); }
-.reservation-chip .count { min-width: 20px; padding: 0 var(--space-1); border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); text-align: center; font-size: 0.8125rem; }
+.reservation-chip .count { min-width: 20px; padding: 0 var(--space-1); border-radius: 999px; background: var(--bg-raised); color: var(--accent-text); text-align: center; font-size: 0.8125rem; }
 details.section { margin-bottom: var(--space-4); }
 details.section > summary { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; }
 details.section > summary::-webkit-details-marker { display: none; }
@@ -909,7 +807,7 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .month { position: relative; height: 100%; display: flex; align-items: flex-end; }
 .month-bar { position: relative; display: block; width: 100%; border-radius: 10px; background: var(--pal-track); }
 /* A usual month, outlined behind this month's bar. */
-.month-usual { position: absolute; left: 0; right: 0; bottom: 0; border: 1.5px dashed rgba(var(--accent-rgb), 0.8); border-radius: 10px; }
+.month-usual { position: absolute; left: 0; right: 0; bottom: 0; border: 1.5px dashed var(--accent-border); border-radius: 10px; }
 /* In the chart, a month's column is a button; the month shown is outlined. */
 .month-hit {
   position: relative; display: flex; align-items: flex-end; width: 100%; height: 100%; margin: 0; padding: 0;
@@ -934,7 +832,7 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .legend span { display: inline-flex; align-items: center; gap: var(--space-2); }
 .key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 .key.past { background: var(--pal-track); }
-.key.usual { background: transparent; border: 1.5px dashed rgba(var(--accent-rgb), 0.8); }
+.key.usual { background: transparent; border: 1.5px dashed var(--accent-border); }
 .key.over { background: repeating-linear-gradient(135deg, var(--rose-accent) 0 2px, rgba(var(--rose-rgb), 0.25) 2px 4px); }
 .key.now { background: var(--accent); }
 .key.line { width: 14px; height: 0; border-radius: 0; border-top: 1px dashed var(--text-secondary); }
@@ -953,8 +851,8 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .split-bar span { flex-basis: 0; min-width: 4px; }
 /* Category swatches, in palette order; the rest share the mist. */
 .sw-1 { background: var(--pal-accent); }
-.sw-2 { background: var(--pal-teal); }
-.sw-3 { background: var(--pal-lime); }
+.sw-2 { background: var(--pal-slate); }
+.sw-3 { background: var(--pal-track); }
 .sw-4 { background: var(--pal-slate); }
 .rest { background: var(--pal-track); }
 .split-list { display: grid; margin: 0; padding: 0; list-style: none; }
@@ -969,7 +867,7 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
   text-align: left; cursor: pointer;
 }
 .split-toggle:hover .split-name, .split-toggle[aria-expanded="true"] .split-name { color: var(--text-primary); text-decoration: underline dotted; text-underline-offset: 3px; }
-.split-toggle:focus-visible { outline: 2px solid var(--sky-text); outline-offset: 2px; border-radius: var(--radius-inner); }
+.split-toggle:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: var(--radius-inner); }
 .chevron {
   justify-self: end; width: 7px; height: 7px; border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted);
   transform: translateY(-2px) rotate(45deg); transition: transform 0.15s ease;
@@ -992,7 +890,7 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 .peek-row-btn .num { white-space: nowrap; text-align: right; }
 .peek-row-btn:hover { background: var(--bg-card-hover); }
 .peek-row-btn:active { background: var(--bg-card-hover); }
-.peek-row-btn:focus-visible { outline: 2px solid var(--sky-text); outline-offset: -2px; }
+.peek-row-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 @media (hover: none) {
   .peek-row-btn:hover { background: transparent; }
   .peek-row-btn:active { background: var(--bg-card-hover); }
@@ -1032,7 +930,6 @@ details.section[open] > summary { margin-bottom: var(--space-3); }
 /* --- motion: things rising and filling into view --- */
 .rail, .main-viewport { position: relative; }
 /* Was the heading accent word; Paper titles are one colour, so it is now plain (removed in the component PR). */
-.accent-serif { font-family: inherit; font-style: normal; font-weight: inherit; letter-spacing: inherit; color: inherit; }
 /* Rising into view, a few at a time (motion.tsx). */
 [data-reveal="pending"] { opacity: 0; transform: translateY(10px); }
 [data-reveal="in"] { animation: reveal 360ms cubic-bezier(0.16, 1, 0.3, 1) var(--reveal-delay, 0ms) both; }
@@ -1172,7 +1069,7 @@ table.ledger tbody tr.day-row:hover { background: none; }
 .people-actions .btn { min-height: 44px; }
 .confirm-box { display: grid; gap: var(--space-2); margin-top: var(--space-3); padding: var(--space-3); border-radius: var(--radius-inner); background: var(--bg-card-hover); }
 .confirm-box p { margin: 0; }
-.confirm-danger { border-color: rgba(var(--danger-rgb), 0.45); background: rgba(var(--danger-rgb), 0.08); }
+.confirm-danger { border-color: var(--rose-accent); }
 .confirm-box .people-actions { margin-top: 0; }
 .check-row { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; cursor: pointer; }
 .check-row input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }

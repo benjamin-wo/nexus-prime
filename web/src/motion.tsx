@@ -109,15 +109,3 @@ export function CountUp({ value, ms = 650 }: { value: string; ms?: number }) {
   });
   return <span ref={ref}>{value.replace(match[0], middle)}</span>;
 }
-
-/** A heading whose last word is set in the italic serif, as an accent. */
-export function AccentTitle({ text }: { text: string }) {
-  const cut = text.lastIndexOf(" ");
-  if (cut < 0) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, cut + 1)}
-      <em className="accent-serif">{text.slice(cut + 1)}</em>
-    </>
-  );
-}
