@@ -111,6 +111,8 @@ users = Table(
     # data (null: not agreed, or withdrawn).
     Column("show_health", Boolean),
     Column("health_consent_at", TZ),
+    # The unit they log weights in, 'kg' or 'lb' (migration 0077); null: no choice, so kg.
+    Column("weight_unit", Text),
     # Their address, lower-case, when they signed up with email (migration 0073); else null.
     Column("email", Text),
     ForeignKeyConstraint(

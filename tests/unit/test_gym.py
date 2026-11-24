@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -143,6 +144,19 @@ def test_search_limit() -> None:
     for bad in (0, 201):
         with pytest.raises(InvalidInput):
             search(pool, limit=bad)
+
+
+def test_search_pages_are_stable_and_never_overlap() -> None:
+    # Equal names (so equal ranks) end on the id.
+    pool = [make("Row") for _ in range(3)]
+    pool = [replace(e, id=f"Row_{i}") for i, e in zip(range(3), reversed(pool), strict=True)]
+    whole = [e.id for e in search(pool, text="row", limit=10)]
+    assert whole == ["Row_0", "Row_1", "Row_2"]
+    pages = [[e.id for e in search(pool, text="row", limit=2, offset=o)] for o in (0, 2, 4)]
+    assert pages == [["Row_0", "Row_1"], ["Row_2"], []]
+    assert [e.id for e in search(reversed(pool), text="row", limit=10)] == whole
+    with pytest.raises(InvalidInput):
+        search(pool, offset=-1)
 
 
 def test_the_bundled_catalogue_is_valid() -> None:
