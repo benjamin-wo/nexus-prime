@@ -6,7 +6,7 @@ and logging a set without a unit then uses kg. Every ``users`` row keeps the row
 it already has.
 
 Revision ID: 0079
-Revises: 0075
+Revises: 0078
 Create Date: 2026-11-24
 """
 
