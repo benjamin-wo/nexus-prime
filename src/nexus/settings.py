@@ -143,6 +143,11 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-3.7-flash"
     llm_fallback_model: str | None = None
+    # Who receives health data when a user allows it, as the consent screen tells them. Unset:
+    # the name and country of the LLM_PROVIDER in use (``domain.health.PROVIDER_DEFAULTS``).
+    # Set them when the traffic really goes elsewhere, e.g. OpenRouter routed to one provider.
+    ai_provider_name: str | None = None
+    ai_provider_country: str | None = None
     openrouter_api_key: SecretStr | None = None
     openrouter_model: str | None = None
     # With LLM_PROVIDER=openrouter everything goes through OpenRouter, and Gemini is

@@ -15,6 +15,7 @@ from typing import Any
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
+from nexus.application.health_menu import note_health_write
 from nexus.application.ports import UnitOfWork
 from nexus.domain.errors import Conflict, ConsentRequired, InvalidInput, NotFound, NothingToUndo
 from nexus.domain.gym import Equipment, Exercise, Level, Muscle, search
@@ -37,7 +38,7 @@ from nexus.domain.gym_training import (
     volume_by_muscle,
     week_start,
 )
-from nexus.domain.ledger import MenuSection, UserId
+from nexus.domain.ledger import UserId
 
 
 async def sync_catalogue(uow: UnitOfWork, catalogue: list[Exercise]) -> int:
@@ -106,11 +107,6 @@ async def _begin_write(uow: UnitOfWork, user_id: UserId) -> None:
         raise ConsentRequired("agree to Nexus keeping your health data first")
 
 
-async def _wrote(uow: UnitOfWork, user_id: UserId) -> None:
-    """The first write shows Health in the menu, unless the user switched it off."""
-    await uow.ledger.turn_on_menu(user_id, MenuSection.HEALTH)
-
-
 async def _zone(uow: UnitOfWork, user_id: UserId) -> tzinfo:
     user = await uow.ledger.get_user(user_id)
     return ZoneInfo(user.timezone) if user else ZoneInfo("UTC")
@@ -150,7 +146,7 @@ async def save_routine(
                 raise NotFound("no such routine")
             routine = dataclasses.replace(old, name=name, slots=tuple(slots), updated_at=now)
             await uow.gym.update_routine(routine)
-        await _wrote(uow, user_id)
+        await note_health_write(uow, user_id)
         await uow.commit()
         return routine
 
@@ -198,7 +194,7 @@ async def set_plan(
         if len(await uow.gym.routine_ids(user_id, wanted)) != len(wanted):
             raise InvalidInput("a plan can only use your own routines")
         await uow.gym.save_plan(plan, now)
-        await _wrote(uow, user_id)
+        await note_health_write(uow, user_id)
         await uow.commit()
     return plan
 
@@ -248,7 +244,7 @@ async def start_workout(
             raise Conflict("you already have a workout in progress")
         workout = Workout(uuid4(), user_id, routine_id, now)
         await uow.gym.add_workout(workout)
-        await _wrote(uow, user_id)
+        await note_health_write(uow, user_id)
         await uow.commit()
         return workout
 
@@ -295,7 +291,7 @@ async def log_set(
             now,
         )
         await uow.gym.add_set(user_id, entry)
-        await _wrote(uow, user_id)
+        await note_health_write(uow, user_id)
         await uow.commit()
         return entry
 
@@ -322,7 +318,7 @@ async def edit_set(
             await _known_exercises(uow, [changes["exercise_id"]])
         entry = dataclasses.replace(old, **changes)  # validated again on construction
         await uow.gym.update_set(user_id, entry)
-        await _wrote(uow, user_id)
+        await note_health_write(uow, user_id)
         await uow.commit()
         return entry
 
@@ -364,7 +360,7 @@ async def finish_workout(
             exclude_workout=workout_id,
         )
         await uow.gym.update_workout(finished)
-        await _wrote(uow, user_id)
+        await note_health_write(uow, user_id)
         await uow.commit()
         return summarise(finished, sets, history)
 
