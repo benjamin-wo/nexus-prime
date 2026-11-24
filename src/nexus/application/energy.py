@@ -27,7 +27,8 @@ from nexus.domain.energy import (
     weight_trend,
 )
 from nexus.domain.errors import InvalidInput, NotFound
-from nexus.domain.health import HealthProfile, SampleKind
+from nexus.domain.health import HealthProfile, SampleKind, Sex
+from nexus.domain.health_texts import Signpost
 from nexus.domain.ledger import UserId
 
 MAX_DAYS = 365
@@ -201,3 +202,56 @@ async def current_targets(
         profile, energy.estimate, trend[-1].trend_kg, default_rate_pct(profile), apply_safety
     )
     return TargetsOverview(result, energy, energy.hidden)
+
+
+def missing_inputs(profile: HealthProfile | None) -> list[str]:
+    """What the profile still needs before an estimate can be made: height, birth year, sex
+    (``Sex.UNSPECIFIED`` is how an unset sex is stored) and activity level."""
+    if profile is None:
+        return ["height", "birth year", "sex", "activity level"]
+    found = [
+        ("height", profile.height_cm is not None),
+        ("birth year", profile.birth_year is not None),
+        ("sex", profile.sex_for_equations is not Sex.UNSPECIFIED),
+        ("activity level", profile.activity_level is not None),
+    ]
+    return [name for name, present in found if not present]
+
+
+def _kcal(value: Decimal) -> str:
+    return f"{value:.0f}"
+
+
+def energy_text(
+    overview: TargetsOverview, *, suspended: bool, signposts: tuple[Signpost, ...]
+) -> str:
+    """The energy estimate for the model to quote, built from the figures: a range, how it was
+    worked out, and today's targets when there are any. With numbers-free mode on it is words
+    only; when calorie targets are suspended there are none and the signposts are listed."""
+    energy = overview.energy
+    lines: list[str] = []
+    if overview.hidden:
+        lines.append(
+            f"Numbers-free mode is on, so no figures: your weight trend is {energy.trend_words}."
+        )
+    elif energy.estimate is not None:
+        e = energy.estimate
+        low, high = e.kcal_range
+        lines.append(
+            f"Daily energy use, {energy.label}: about {_kcal(low)}-{_kcal(high)} kcal "
+            f"(point {_kcal(e.kcal)} kcal)."
+        )
+        if energy.basis == BASIS_LOGGED:
+            lines.append(f"Based on {e.days_used} logged days.")
+        lines.append(f"Weight trend: {energy.trend_words}.")
+        t = overview.targets
+        if t is not None and not suspended:
+            lines.append(
+                f"Today's targets: {_kcal(t.kcal)} kcal (range {_kcal(t.kcal_range[0])}-"
+                f"{_kcal(t.kcal_range[1])}), {t.protein_g:.0f} g protein, {t.fibre_g:.0f} g fibre."
+            )
+            lines.extend(t.notes)
+    if suspended:
+        lines.append("Calorie targets are switched off, so there are none to give.")
+        lines.extend(f"- {s.name}: {s.contact}. {s.note}" for s in signposts)
+    return "\n".join(lines)

@@ -18,7 +18,7 @@ def test_bundled_skills_load_and_name_real_tools() -> None:
     assert "Finance expense" in library.body("gym") and "qualified professional" in library.body(
         "gym"
     )
-    assert set(library.tools()["nutrition"]) == {"log_food", "food_today"}
+    assert set(library.tools()["nutrition"]) == {"log_food", "food_today", "energy_estimate"}
     nutrition = library.body("nutrition")
     assert (
         "Finance" in nutrition and "log_expense" in nutrition and "Singapore database" in nutrition

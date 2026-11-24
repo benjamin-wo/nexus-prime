@@ -35,6 +35,7 @@ from nexus.application import coach as coach_cases
 from nexus.application import day_slots, food_entry, mistakes, trip_split
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
+from nexus.application import energy as energy_cases
 from nexus.application import gym as gym_cases
 from nexus.application import health_targets as targets_cases
 from nexus.application import income as income_cases
@@ -5012,6 +5013,31 @@ async def _food_today(ctx: ToolContext, a: FoodTodayArgs) -> ToolResult:
     return ToolResult(food_entry.day_text(summary, names))
 
 
+async def _energy_estimate(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
+    async with ctx.uow() as uow:
+        profile = await uow.health.get_profile(ctx.user.id)
+    missing = energy_cases.missing_inputs(profile)
+    if missing:
+        return ToolResult(
+            f"Error: I need your {', '.join(missing)} to estimate your energy use. They can be "
+            "set in the Health profile.",
+            error="NeedsProfile",
+        )
+    found = await targets_cases.safe_targets(ctx.uow, ctx.user.id, now=ctx.now, record=False)
+    if found.overview.energy.estimate is None:
+        return ToolResult(
+            "Error: I need a weigh-in to estimate your energy use. Log your weight first.",
+            error="NeedsWeighIn",
+        )
+    return ToolResult(
+        energy_cases.energy_text(
+            found.overview, suspended=found.suspended, signposts=found.signposts
+        )
+    )
+
+
 FOOD_TOOLS = (
     ToolSpec(
         "log_food",
@@ -5037,6 +5063,15 @@ FOOD_TOOLS = (
         "today's targets, as worked out by code. Read-only.",
         FoodTodayArgs,
         _food_today,
+    ),
+    ToolSpec(
+        "energy_estimate",
+        "The user's daily energy use (maintenance calories, TDEE) as a range, whether it is "
+        "estimated from their profile or from their logs, and today's targets if any, as worked "
+        "out by code. Quote it exactly: never estimate it yourself. If it asks for profile "
+        "details, tell the user to set them in the Health profile. Read-only.",
+        NoArgs,
+        _energy_estimate,
     ),
 )
 
@@ -5327,7 +5362,8 @@ READ_ONLY = frozenset(
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
         "trade_history", "trip_status", "what_moved_today",
-        "find_exercise", "food_today", "last_time", "personal_records", "suggest_adjustments",
+        "energy_estimate", "find_exercise", "food_today", "last_time", "personal_records",
+        "suggest_adjustments",
         "todays_workout", "weekly_volume", "workout_history",
     }
 )  # fmt: skip
@@ -5347,8 +5383,8 @@ MENU_OF: dict[str, MenuSection] = {
     ),
     **dict.fromkeys(
         (
-            "apply_adjustments", "draft_training_plan", "find_exercise", "finish_workout",
-            "food_today", "last_time", "log_food", "log_sets", "personal_records",
+            "apply_adjustments", "draft_training_plan", "energy_estimate", "find_exercise",
+            "finish_workout", "food_today", "last_time", "log_food", "log_sets", "personal_records",
             "suggest_adjustments", "todays_workout", "undo_last_set", "weekly_volume",
             "workout_history",
         ),
