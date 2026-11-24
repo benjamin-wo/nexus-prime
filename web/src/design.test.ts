@@ -30,6 +30,7 @@ const OTHER_CSS = [
   join(SRC, "components/overlay/overlay.css"),
   join(SRC, "components/shell.css"),
   join(SRC, "health/body/body-map.css"),
+  join(SRC, "health/health.css"),
   join(SRC, "pages/home.css"),
   join(SRC, "pages/invest.css"),
   join(SRC, "pages/money.css"),
