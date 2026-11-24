@@ -6,16 +6,17 @@ pre-check for messages.
   returns adjusted targets with reason codes. Code that sets calories, a loss rate or protein
   without going through it is a bug.
 - ``assess`` reads the stored data and says which signals are active, whether calorie-target
-  features are suspended, and which signposts to show. Intake data does not exist yet, so the
-  intake source is an injected provider (``no_intake`` for now). The weekly trend defaults to a
-  plain bucket-mean of the weights; the energy module's trend plugs in as ``weekly_trend``, and
-  its resting rate as ``bmr_kcal``.
-- ``precheck_message`` wraps ``red_flags``. HOW IT IS TO BE USED (not wired in yet): the agent
-  graph calls it on the user's message before any health answer. If it returns a ``RedFlag``,
-  the graph replies with ``flag.text`` (and ``flag.signposts``) verbatim and skips the model;
-  for an eating-disorder flag it also calls ``assess(..., flagged_language=True, record=True)``
-  so calorie-target tools are off. Calorie-target tools must also call ``assess`` (or
-  ``check_targets``) and refuse when ``suspended`` is true.
+  features are suspended, and which signposts to show. The intake source
+  is an injected provider (``application/health_targets`` supplies the real one from logged
+  meals; ``no_intake`` is the default). The weekly trend defaults to a plain bucket-mean of the
+  weights; ``health_targets`` plugs in the energy module's trend as ``weekly_trend``, and its
+  resting rate as ``bmr_kcal``.
+- ``precheck_message`` wraps ``red_flags``. The agent graph's kernel calls it on every typed
+  message, in any domain, before the model: a ``RedFlag`` is answered with its fixed text (and
+  signposts) and no model or tool runs; for an eating-disorder flag the graph also calls
+  ``assess(..., flagged_language=True, record=True)`` so calorie-target tools are off.
+  Calorie-target tools must also call ``assess`` (or ``check_targets``) and refuse when
+  ``suspended`` is true.
 """
 
 from collections.abc import Awaitable, Callable, Sequence

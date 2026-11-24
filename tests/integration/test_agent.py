@@ -980,3 +980,44 @@ async def test_a_browser_that_leaves_does_not_cancel_the_streamed_turn(
         await asyncio.sleep(0.05)
     assert await kept() == ["kopi 4", "Logged 4 at Kopi."]
     assert await ledger(uow, alice) == [("out", Decimal("4"))]
+
+
+# --- health red flags: the kernel answers, whatever the domain ------------------------------
+
+
+@pytest.mark.parametrize(
+    "text", ["I have chest pain and feel faint", "ok so my chest hurts when I run, sgd 5 for water"]
+)
+async def test_a_red_flag_gets_the_fixed_referral_without_the_model(
+    uow: UowFactory, alice: UserId, text: str
+) -> None:
+    model = scripted()  # any model call fails the test
+    reply = only(await build(uow, model).handle_text(alice, text, "tg:1:1"))
+    assert "995" in reply.text and "I can't assess it" in reply.text
+    assert model.seen == [] and await ledger(uow, alice) == []
+
+
+async def test_a_gym_message_with_chest_in_it_goes_to_the_model(
+    uow: UowFactory, alice: UserId
+) -> None:
+    model = scripted(say("Nice. Want me to log it?"))
+    reply = only(
+        await build(uow, model).handle_text(alice, "chest day today, bench 3x5 at 80", "tg:1:1")
+    )
+    assert reply.text == "Nice. Want me to log it?" and len(model.seen) == 1
+
+
+async def test_eating_disorder_language_gets_the_referral_and_records_a_check_in(
+    uow: UowFactory, alice: UserId, engine: AsyncEngine
+) -> None:
+    from nexus.infra.db.tables import health_safety_events
+
+    model = scripted()
+    reply = only(
+        await build(uow, model).handle_text(alice, "I've been purging after dinner", "tg:1:1")
+    )
+    assert "Eating Disorders Programme" in reply.text and model.seen == []
+    async with engine.connect() as connection:
+        found = await connection.execute(select(health_safety_events.c.kind))
+        kinds: list[str] = list(found.scalars().all())
+    assert kinds == ["compensating_language"]

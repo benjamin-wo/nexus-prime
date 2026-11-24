@@ -1,6 +1,6 @@
 """The agent graph.
 
-    kernel ─┬─ reply (deterministic) ──────────────────────────────► END
+    kernel ─┬─ reply (deterministic: red flags, stop, jobs, ...) ──► END
             ├─ receipt draft ─► confirm ─► tools ─► kernel_reply ──► END
             └─ agent ⇄ (confirm ─► tools)                        ──► END
 
@@ -49,6 +49,7 @@ from nexus.agent.tools import (
     safe_for_images,
 )
 from nexus.application import departments as department_cases
+from nexus.application import health_safety as safety_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
 from nexus.application import mistakes, ops
@@ -65,6 +66,7 @@ from nexus.application.users import get_user, turn_on_menu
 from nexus.application.web_lookup import WebLooker
 from nexus.application.whereabouts import ZoneFinder
 from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError
+from nexus.domain.health_safety import RedFlag, RedFlagKind
 from nexus.domain.ledger import MenuSection, User, UserId
 from nexus.domain.money import Money
 from nexus.domain.voice import STOCK_PHRASES, prompt_block, reminder
@@ -781,6 +783,8 @@ class AgentGraph:
         self, ctx: ToolContext, text: str, meta: dict[str, Any]
     ) -> Command[Any] | None:
         """What the kernel answers itself from a typed message, without the model."""
+        if (flag := safety_cases.precheck_message(text)) is not None:
+            return await self._red_flag(ctx, flag)
         if kernel.is_termination(text):
             return _reply("Okay, stopped.")
         if kernel.is_jobs_question(text):
@@ -797,6 +801,23 @@ class AgentGraph:
             await log_capability_gap(ctx.uow(), ctx.user.id, text, intent, "telegram")
             return _reply(REFUSALS[intent])
         return None
+
+    async def _red_flag(self, ctx: ToolContext, flag: RedFlag) -> Command[Any]:
+        """A red flag in the user's words (an emergency, a symptom, a medication question,
+        eating-disorder language) gets the fixed referral, in every domain, with no model and
+        no tool. Eating-disorder language also switches calorie targets off."""
+        if flag.kind is RedFlagKind.EATING_DISORDER:
+            try:
+                await safety_cases.assess(
+                    ctx.uow(), ctx.user.id, now=ctx.now, flagged_language=True, record=True
+                )
+            except Exception:  # the referral must go out whatever else fails
+                log.exception("recording the eating-disorder flag failed")
+        lines = [flag.text]
+        lines += [
+            f"{s.name}: {s.contact}. {s.note}" for s in flag.signposts if s.contact not in flag.text
+        ]
+        return _reply("\n".join(lines))
 
     async def _memories(self, ctx: ToolContext, text: str) -> str:
         try:
