@@ -90,6 +90,7 @@ ERASE_ORDER: tuple[str, ...] = (
     "plans",
     "department_runs",
     # Gym: sets, then their workouts, the plan, and the routines they point at.
+    "health_safety_events",
     "health_samples",
     "health_profiles",
     "health_consents",

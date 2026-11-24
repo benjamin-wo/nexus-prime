@@ -55,8 +55,9 @@ AREAS: tuple[Area, ...] = (
          ("routines", "training_plans", "workouts", "workout_sets")),
     Area("health.json",
          "Your body and activity samples (weight, steps, sleep and more, from any source), "
-         "your health profile, and which health consents you gave or withdrew.",
-         ("health_samples", "health_profiles", "health_consents")),
+         "your health profile, which health consents you gave or withdrew, and when a safety "
+         "check-in was first offered (the kind and the time only).",
+         ("health_samples", "health_profiles", "health_consents", "health_safety_events")),
     Area("trade_plans.json", "Your trade plans.", ("plans",)),
     Area("research.json", "Research runs (stocks and trips) and what they found.",
          ("department_runs",)),

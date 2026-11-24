@@ -555,7 +555,12 @@ async def test_samples_and_profile_over_http(world: World) -> None:
     )  # fmt: skip
     assert saved.status_code == 200
     assert (saved.json()["numbers_free"], saved.json()["height_cm"]) == (True, "168.3")
-    assert (await owner.get("/api/health/profile")).json()["goal"] == "lose"
+    # an eating-disorder history blocks a loss goal: stored as maintain, with the reason
+    assert saved.json()["goal"] == "maintain"
+    assert saved.json()["safety"]["gates"] == [
+        {"name": "weight_loss", "allowed": False, "reason": "ed_history"}
+    ]
+    assert (await owner.get("/api/health/profile")).json()["goal"] == "maintain"
     assert (await owner.send("PUT", "/api/health/profile", {"birth_year": 1700})).status_code == 422
     assert (await owner.send("PUT", "/api/health/profile", {"goal": "bulk"})).status_code == 422
 

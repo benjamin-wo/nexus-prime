@@ -7,6 +7,7 @@ first write turns Health on in the menu (``users.show_health``), as Gym's does.
 """
 
 from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -30,6 +31,7 @@ from nexus.domain.health import (
     edited,
     scope_for,
 )
+from nexus.domain.health_safety import Gate, bmi_of, safe_age, weight_loss_allowed
 from nexus.domain.ledger import UserId
 
 DEFAULT_WINDOW = timedelta(days=30)
@@ -172,7 +174,20 @@ async def profile(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> HealthP
         return await uow.health.get_profile(user_id)
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileSaved:
+    profile: HealthProfile
+    gate: Gate  # whether a weight-loss goal is allowed for this person now
+
+
 async def save_profile(
+    uow: UnitOfWork, user_id: UserId, *, now: datetime, **fields: Any
+) -> HealthProfile:
+    """``save_profile_checked`` for callers that only need the stored profile."""
+    return (await save_profile_checked(uow, user_id, now=now, **fields)).profile
+
+
+async def save_profile_checked(
     uow: UnitOfWork,
     user_id: UserId,
     *,
@@ -185,10 +200,16 @@ async def save_profile(
     numbers_free: bool | None = None,
     ed_history: bool = False,
     unit_system: UnitSystem = UnitSystem.METRIC,
+    confirm_ed_override: bool = False,
     now: datetime,
-) -> HealthProfile:
-    """Replace the user's profile. Figures are checked for input errors only; whether a goal
-    is safe is decided elsewhere. ``numbers_free`` follows ``ed_history`` unless it is given."""
+) -> ProfileSaved:
+    """Replace the user's profile. Figures are checked for input errors. ``numbers_free``
+    follows ``ed_history`` unless it is given.
+
+    A "lose" goal for someone the safety gates block (under 18, BMI under 18.5, an unknown age
+    or BMI, or an eating-disorder history without ``confirm_ed_override``) still saves the
+    profile, but the goal is stored as "maintain" with no target rate, and the gate's reason
+    comes back with it."""
     new = HealthProfile(
         user_id,
         sex_for_equations,
@@ -204,7 +225,16 @@ async def save_profile(
     ).check(this_year=now.year)
     async with uow:
         await require_consent(uow, user_id, None)
+        weight = await uow.health.latest_sample(user_id, SampleKind.WEIGHT, until=now)
+        gate = weight_loss_allowed(
+            safe_age(new.birth_year, now.year),
+            bmi_of(weight.weight_kg if weight else None, new.height_cm),
+            new.ed_history,
+            ed_override_confirmed=confirm_ed_override,
+        )
+        if new.goal is Goal.LOSE and not gate.allowed:
+            new = replace(new, goal=Goal.MAINTAIN, target_rate_pct_per_week=None)
         await uow.health.save_profile(new)
         await note_health_write(uow, user_id)
         await uow.commit()
-    return new
+    return ProfileSaved(new, gate)
