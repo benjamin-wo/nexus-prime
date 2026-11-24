@@ -102,6 +102,7 @@ SHARED: dict[str, str] = {
     "inbound_events": "ids of Telegram updates already handled; no user, no content",
     "demo_costs": "what erased demo accounts cost, by day, feature and model: no user, no content",
     "demo_starts": "how many demos were started each day: a count, no user",
+    "exercises": "the exercise catalogue (free-exercise-db), the same for every user",
     "ops_events": "timings and error types with a keyed hash for the user, never what anyone "
     "said or spent; kept 30 days",
 }

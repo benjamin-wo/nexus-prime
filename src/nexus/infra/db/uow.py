@@ -8,6 +8,7 @@ from nexus.application.acting import current_user_id
 from nexus.domain.ledger import UserId
 from nexus.infra.db.email_repository import SqlEmailRepository
 from nexus.infra.db.external_cache_repository import SqlExternalCacheRepository
+from nexus.infra.db.gym_repository import SqlGymRepository
 from nexus.infra.db.investment_repository import SqlInvestmentRepository
 from nexus.infra.db.ledger_repository import SqlLedgerRepository
 from nexus.infra.db.memory_repository import SqlMemoryRepository
@@ -38,6 +39,7 @@ class SqlUnitOfWork:
         self._memory: SqlMemoryRepository | None = None
         self._statements: SqlStatementRepository | None = None
         self._runs: SqlRunRepository | None = None
+        self._gym: SqlGymRepository | None = None
         self._investments: SqlInvestmentRepository | None = None
         self._trips: SqlTripRepository | None = None
         self._rates: SqlRateRepository | None = None
@@ -94,6 +96,12 @@ class SqlUnitOfWork:
         return self._runs
 
     @property
+    def gym(self) -> SqlGymRepository:
+        if self._gym is None:
+            raise RuntimeError("unit of work is not active")
+        return self._gym
+
+    @property
     def investments(self) -> SqlInvestmentRepository:
         if self._investments is None:
             raise RuntimeError("unit of work is not active")
@@ -148,6 +156,7 @@ class SqlUnitOfWork:
         self._memory = SqlMemoryRepository(self._connection)
         self._statements = SqlStatementRepository(self._connection)
         self._runs = SqlRunRepository(self._connection)
+        self._gym = SqlGymRepository(self._connection)
         self._investments = SqlInvestmentRepository(self._connection)
         self._trips = SqlTripRepository(self._connection)
         self._rates = SqlRateRepository(self._connection)
