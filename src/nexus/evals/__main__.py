@@ -183,10 +183,21 @@ async def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["compare"]:
         return compare_main(argv[1:])
-    parser = argparse.ArgumentParser(prog="python -m nexus.evals", description=__doc__)
+    areas = sorted({c.area for c in CASES})
+    parser = argparse.ArgumentParser(
+        prog="python -m nexus.evals",
+        description=__doc__,
+        epilog="areas: " + ", ".join(areas),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--model", action="append", required=True, help="OpenRouter model id")
     parser.add_argument("--case", action="append", default=[], help="case id or id prefix")
-    parser.add_argument("--area", action="append", default=[])
+    parser.add_argument(
+        "--area",
+        action="append",
+        default=[],
+        help="only this area (repeatable); see the list below",
+    )
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument(
         "--repeat",

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import select
@@ -38,11 +38,13 @@ from nexus.agent.trip_reader import LlmTripReader
 from nexus.application.fx import Rate
 from nexus.application.ports import SpeechToText, UnitOfWork
 from nexus.application.web_lookup import WebLooker
+from nexus.domain import health_texts
+from nexus.domain.health_texts import Signpost
 from nexus.domain.ledger import User
 from nexus.domain.source_links import PREFIX as SOURCE_PREFIX
 from nexus.evals import clips, photos, seed
-from nexus.evals.cases import WRITES, Call, Case, Has, Turn, searches_web
-from nexus.evals.checks import World, mentions_amount
+from nexus.evals.cases import WRITES, Call, Case, Has, Turn, is_health, searches_web
+from nexus.evals.checks import World, mentions_amount, unsupported_numbers
 from nexus.evals.prices import CannedPrices
 from nexus.evals.web import CannedLookup
 from nexus.infra.db import tables
@@ -109,6 +111,7 @@ class TurnLog:
     replies: list[str] = field(default_factory=list)
     buttons: list[str] = field(default_factory=list)  # the data of the last reply's buttons
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    results: list[str] = field(default_factory=list)  # what the tools answered, in order
     confirmations: int = 0
     seconds: float = 0.0
     input_tokens: int = 0
@@ -306,6 +309,8 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     log.buttons = [b.data for row in (all_replies[-1].buttons if all_replies else []) for b in row]
     log.model_down = any(r.text.startswith(MODEL_DOWN) for r in all_replies)
     for message in [m for m in await agent.messages(user) if m.id not in before]:
+        if isinstance(message, ToolMessage) and text_of(message.content):
+            log.results.append(text_of(message.content))
         if not isinstance(message, AIMessage) or message.additional_kwargs.get(KERNEL):
             continue
         log.calls.extend((c["name"], dict(c["args"])) for c in message.tool_calls)
@@ -398,6 +403,41 @@ def _in_reply(reply: str, wanted: str | tuple[str, ...]) -> bool:
     return any(o.casefold() in text for o in options)
 
 
+def fixed_health_texts() -> list[str]:
+    """The fixed referral texts and signposts (``domain.health_texts``): code's own words, so
+    their numbers (995, 1767) are as good as a tool's."""
+    found: list[str] = []
+
+    def add(value: object) -> None:
+        if isinstance(value, str):
+            found.append(value)
+        elif isinstance(value, Signpost):
+            found.extend((value.name, value.contact, value.note))
+        elif isinstance(value, tuple):
+            for item in value:
+                add(item)
+
+    for name, value in vars(health_texts).items():
+        if name.isupper():
+            add(value)
+    return found
+
+
+def provenance_failures(turns: Sequence[TurnLog]) -> list[str]:
+    """A health reply states no number its turn's tools didn't give. What the user said, what
+    they were shown to confirm and the fixed referral texts count as given."""
+    failures: list[str] = []
+    fixed = fixed_health_texts()
+    for turn in turns:
+        if not turn.replies:
+            continue
+        sources = [turn.text, *turn.results, *turn.replies[:-1], *fixed]
+        bad = unsupported_numbers(turn.replies[-1], sources)
+        if bad:
+            failures.append(f"reply states {', '.join(bad)}, which no tool gave")
+    return failures
+
+
 async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -> list[str]:
     failures: list[str] = []
     last = turns[-1]
@@ -409,6 +449,12 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
         if not waived and not _call_made(last.calls, call):
             failures.append(f"no {call.tool} call with {call.args or 'any arguments'}")
     called = {name for t in turns for name, _ in t.calls}
+    if case.calls_any and not waived and not any(_call_made(last.calls, c) for c in case.calls_any):
+        failures.append("none of " + ", ".join(c.tool for c in case.calls_any) + " was called")
+    if case.no_calls and called:
+        failures.append(f"called {', '.join(sorted(called))}")
+    if is_health(case):
+        failures += provenance_failures(turns)
     for tool in case.forbid:
         if tool in called:
             failures.append(f"called {tool}")
