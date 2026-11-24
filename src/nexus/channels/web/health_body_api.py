@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.application import health as health_cases
 from nexus.application import health_consent as consent_cases
+from nexus.application import health_safety as safety_cases
 from nexus.channels.web.health_api import _uuid, _weight
 from nexus.channels.web.security import Auth, Runtime
 from nexus.domain.errors import InvalidInput, NotFound
@@ -28,6 +29,7 @@ from nexus.domain.health import (
     UnitSystem,
     provider_disclosure,
 )
+from nexus.domain.health_safety import Gate
 
 router = APIRouter(prefix="/api/health")
 
@@ -171,6 +173,26 @@ class ProfileIn(Model):
     numbers_free: bool | None = None  # follows ed_history when left out
     ed_history: bool = False
     unit_system: UnitSystem = UnitSystem.METRIC
+    # Explicitly confirm a loss goal despite an eating-disorder history. Never stored.
+    confirm_ed_override: bool = False
+
+
+class GateOut(Model):
+    name: str
+    allowed: bool
+    reason: str  # a reason code, not prose
+
+
+class SignpostOut(Model):
+    name: str
+    contact: str
+    note: str
+
+
+class SafetyOut(Model):
+    gates: list[GateOut]
+    suspended: bool  # calorie-target features are off
+    signposts: list[SignpostOut]
 
 
 class ProfileOut(Model):
@@ -184,9 +206,21 @@ class ProfileOut(Model):
     ed_history: bool
     unit_system: UnitSystem
     updated_at: datetime
+    safety: SafetyOut
 
 
-def _profile(p: HealthProfile) -> ProfileOut:
+def _safety(state: safety_cases.SafetyState, gate: Gate | None = None) -> SafetyOut:
+    gate = gate or state.weight_loss_gate
+    return SafetyOut(
+        gates=[GateOut(name="weight_loss", allowed=gate.allowed, reason=gate.reason.value)],
+        suspended=state.suspended,
+        signposts=[
+            SignpostOut(name=s.name, contact=s.contact, note=s.note) for s in state.signposts
+        ],
+    )
+
+
+def _profile(p: HealthProfile, safety: SafetyOut) -> ProfileOut:
     return ProfileOut(
         sex_for_equations=p.sex_for_equations,
         birth_year=p.birth_year,
@@ -200,19 +234,24 @@ def _profile(p: HealthProfile) -> ProfileOut:
         ed_history=p.ed_history,
         unit_system=p.unit_system,
         updated_at=p.updated_at,
+        safety=safety,
     )
 
 
 @router.get("/profile")
 async def get_profile(auth: Auth, web: Runtime) -> ProfileOut | None:
     found = await health_cases.profile(web.uow(), auth.user.id, now=web.clock())
-    return _profile(found) if found else None
+    if found is None:
+        return None
+    state = await safety_cases.assess(web.uow(), auth.user.id, now=web.clock())
+    return _profile(found, _safety(state))
 
 
 @router.put("/profile")
 async def save_profile(body: ProfileIn, auth: Auth, web: Runtime) -> ProfileOut:
-    """Replace the profile. Only input errors are refused here."""
-    saved = await health_cases.save_profile(
+    """Replace the profile. Only input errors are refused here. A loss goal the safety gates
+    block is stored as "maintain", and ``safety.gates`` says why."""
+    saved = await health_cases.save_profile_checked(
         web.uow(),
         auth.user.id,
         sex_for_equations=body.sex_for_equations,
@@ -224,9 +263,11 @@ async def save_profile(body: ProfileIn, auth: Auth, web: Runtime) -> ProfileOut:
         numbers_free=body.numbers_free,
         ed_history=body.ed_history,
         unit_system=body.unit_system,
+        confirm_ed_override=body.confirm_ed_override,
         now=web.clock(),
     )
-    return _profile(saved)
+    state = await safety_cases.assess(web.uow(), auth.user.id, now=web.clock())
+    return _profile(saved.profile, _safety(state, saved.gate))
 
 
 # --- consents -------------------------------------------------------------------------------

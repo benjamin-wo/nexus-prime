@@ -12,7 +12,7 @@ The user tables get row-level security, the policy 0056 gave the others (copied 
 purpose: a migration keeps meaning what it meant).
 
 Revision ID: 0078
-Revises: 0076
+Revises: 0077
 Create Date: 2026-11-24
 """
 
@@ -23,8 +23,8 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0078"
-# The safety layer's 0077 is built on a sibling branch; the chain is fixed when they merge.
-down_revision: str | None = "0076"
+# Built after the safety layer (0077) merged in.
+down_revision: str | None = "0077"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

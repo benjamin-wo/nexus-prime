@@ -1201,6 +1201,14 @@ class HealthRepository(Protocol):
         """Insert or replace the user's one profile."""
         ...
 
+    async def last_safety_event(self, user_id: UserId, kind: str) -> datetime | None:
+        """When a signal of this kind was last recorded."""
+        ...
+
+    async def add_safety_event(self, user_id: UserId, kind: str, at: datetime) -> None:
+        """Record that a signal fired (kind and time only)."""
+        ...
+
 
 class InvestmentRepository(Protocol):
     async def list_holdings(self, user_id: UserId) -> list[Holding]: ...

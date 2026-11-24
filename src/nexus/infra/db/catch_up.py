@@ -143,6 +143,7 @@ CHANGE_COLUMNS: dict[str, tuple[str, ...]] = {
     "health_samples": ("created_at",),
     "health_profiles": ("updated_at",),
     "health_consents": ("granted_at", "withdrawn_at"),
+    "health_safety_events": ("created_at",),
     "meal_entries": ("created_at", "updated_at"),
     "meal_items": (),
     "trips": ("created_at", "updated_at", "photo_tried_at", "activity_digest_at"),

@@ -465,6 +465,13 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             fat_g=Decimal("1.5"),
         )
         await add(
+            t["health_safety_events"],
+            id=uid(),
+            user_id=user,
+            kind="many_weigh_ins",
+            created_at=now,
+        )
+        await add(
             t["market_alerts"],
             id=uid(),
             user_id=user,

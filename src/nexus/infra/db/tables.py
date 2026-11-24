@@ -1840,6 +1840,23 @@ health_consents = Table(
     CheckConstraint("withdrawn_at IS NULL OR withdrawn_at >= granted_at", name="withdrawn_after"),
 )
 
+# Health safety (migration 0077). When a safety signal first fired: the kind and the time, never
+# any text, so the app can offer a soft check-in once.
+health_safety_events = Table(
+    "health_safety_events",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("kind", Text, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint(
+        "kind IN ('intake_below_floor', 'rapid_loss', 'many_weigh_ins', 'compensating_language')",
+        name="kind",
+    ),
+    Index("ix_health_safety_events_user_id_kind_created_at", "user_id", "kind", "created_at"),
+)
+
 
 def not_demo(user_id: ColumnElement[Any]) -> ColumnElement[bool]:
     """For the sweeps that message people or reach outside services on a schedule: true when
