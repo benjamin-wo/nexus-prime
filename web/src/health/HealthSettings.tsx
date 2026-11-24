@@ -4,9 +4,15 @@ import { Link } from "react-router-dom";
 
 import { ConfirmBox } from "../components/ConfirmBox";
 import { LoadError } from "../components/LoadError";
-import { Button, Section } from "../components/ui";
+import { Button, Row, RowList, Section } from "../components/ui";
 import { formatDate } from "../format";
 import { healthApi, healthKey, type WeightUnit } from "./api";
+import { useProfile } from "./bodyHooks";
+import { ConsentSwitches } from "./ConsentSwitches";
+import { ProfileSheet } from "./ProfileSheet";
+import { Signposts, TargetsPaused } from "./SafetyNotes";
+import { reasonText } from "./safety";
+import { WellnessStatement } from "./WellnessStatement";
 
 /** kg or lb for the weights logged in a workout. Needs no consent; quiet if it can't load. */
 function WeightUnitChoice() {
@@ -36,6 +42,34 @@ function WeightUnitChoice() {
         </p>
       )}
     </div>
+  );
+}
+
+/** Your profile, what the safety rules did with it in plain sentences, and the way to change it. */
+function ProfileRow() {
+  const profile = useProfile();
+  const [open, setOpen] = useState(false);
+  const p = profile.data;
+  const lines = (p?.safety.gates ?? []).map((g) => reasonText(g.reason)).filter(Boolean);
+  return (
+    <>
+      <RowList aria-label="Profile">
+        <Row
+          title="Profile and targets"
+          sub={p ? "Birth year, height, activity, goal and privacy" : "Not set up yet"}
+          label="Open profile and targets"
+          onClick={() => setOpen(true)}
+        />
+      </RowList>
+      {lines.map((l) => (
+        <p key={l} className="caption">
+          {l}
+        </p>
+      ))}
+      {p?.safety.suspended && <TargetsPaused safety={p.safety} />}
+      {p && !p.safety.suspended && <Signposts items={p.safety.signposts} />}
+      {open && <ProfileSheet profile={p} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
@@ -71,10 +105,12 @@ export function HealthSettings() {
         <p className="state">Loading…</p>
       ) : given ? (
         <>
-          <p>Nexus keeps your routines, plan, workouts and sets, from {formatDate(given)}. It is for general wellness, not medical advice.</p>
+          <p>Nexus keeps your workouts, food logs, body weight and other measurements, and your health profile, from {formatDate(given)}. It is for general wellness, not medical advice.</p>
           <p className="caption">
-            Turning Health off stops new workouts being kept. What you logged stays until you delete it.
+            Turning Health off stops new entries being kept. What you logged stays until you delete it.
           </p>
+          <ConsentSwitches />
+          <ProfileRow />
           {confirming ? (
             <ConfirmBox
               label="Turn off Health"
@@ -100,6 +136,7 @@ export function HealthSettings() {
           {error}
         </p>
       )}
+      <WellnessStatement />
     </Section>
   );
 }
