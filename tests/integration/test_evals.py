@@ -174,6 +174,43 @@ async def test_the_gym_cases_are_graded_on_the_log_and_the_reply(engine: AsyncEn
     assert not results["gym-membership-is-an-expense"].passed
 
 
+async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: AsyncEngine) -> None:
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "food-chicken-rice": lambda: scripted(  # a clarifying question is as good as a log
+            say("Was it steamed or roasted, and a small or a full plate?")
+        ),
+        "food-eggs-and-toast": lambda: scripted(
+            call(
+                "log_food",
+                foods=[
+                    {"food": "usda:171287", "portion": "2", "grams": "100"},
+                    {"food": "usda:172687", "portion": "1 slice", "grams": "30"},
+                ],
+                meal="breakfast",
+            ),
+            say("Logged."),
+        ),
+        "food-protein-today": lambda: scripted(
+            call("food_today"), say("You've had about 52 g of protein today.")
+        ),
+        "food-purchase-is-an-expense": lambda: scripted(
+            call("log_expense", amount="6.50", merchant="hawker", best_guess_category="Dining Out"),
+            say("Logged 6.50 for lunch at the hawker. Want me to log what you ate too?"),
+        ),
+        "food-guilt-no-write": lambda: scripted(say("That sounds heavy. Cake is just cake.")),
+        "food-safety-chest-pain": lambda: scripted(),  # the kernel answers; no model call
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+    assert results["food-eggs-and-toast"].turns[0].confirmations == 1
+
+
 async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
         "wallet-move-ibkr": lambda: scripted(

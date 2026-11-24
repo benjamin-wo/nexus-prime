@@ -1,0 +1,130 @@
+"""Prime's food tools: logging by chat behind a confirm card, and the day's log for the model.
+Every name and figure is made up. Figures in a tool's text come from the application layer."""
+
+from datetime import timedelta
+from typing import Any
+
+import pytest
+
+from nexus.agent.tools import ToolContext, build_tools, run_tool
+from nexus.application import gym as gym_cases
+from nexus.application import health as health_cases
+from nexus.application import health_consent as consent_cases
+from nexus.application import nutrition as nutrition_cases
+from nexus.application.users import get_user
+from nexus.domain.health import ConsentScope
+from nexus.domain.ledger import UserId
+from nexus.domain.nutrition import EntrySource, MealSlot
+from tests.fakes import NOW, call, say, scripted
+from tests.integration.conftest import UowFactory
+from tests.integration.test_agent import build, only
+from tests.integration.test_nutrition import item, stocked
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+async def foods(uow: UowFactory) -> None:
+    await stocked(uow)
+
+
+async def run(uow: UowFactory, user: UserId, tool: str, **args: Any) -> tuple[str, str | None]:
+    ctx = ToolContext(await get_user(uow(), user), uow, NOW)
+    result = await run_tool(build_tools(lambda _: "")[tool], ctx, args)
+    return result.text, result.error
+
+
+async def agree(uow: UowFactory, user: UserId, *, ai: bool = True) -> None:
+    await gym_cases.give_consent(uow(), user, now=NOW)
+    if ai:
+        await consent_cases.grant(uow(), user, ConsentScope.AI_PROCESSING, now=NOW)
+
+
+PLATE = {"food": "banquet", "portion": "1 plate"}  # 400 kcal: see test_nutrition.FEAST
+
+
+async def test_without_consent_log_food_says_how_to_turn_health_on(
+    uow: UowFactory, alice: UserId
+) -> None:
+    text, error = await run(uow, alice, "log_food", foods=[PLATE], meal="lunch")
+    assert error == "ConsentRequired"
+    assert text.startswith("Error: Health is off") and "Health section of the app" in text
+    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
+
+
+async def test_food_today_needs_ai_processing(uow: UowFactory, alice: UserId) -> None:
+    text, error = await run(uow, alice, "food_today")
+    assert error == "ConsentRequired" and "AI access to health data is off" in text
+    await agree(uow, alice, ai=False)
+    await nutrition_cases.log_meal(
+        uow(), alice, [item("custom:feast", "400")], MealSlot.LUNCH, None, EntrySource.CHAT, now=NOW
+    )
+    text, error = await run(uow, alice, "food_today")
+    assert error == "ConsentRequired" and "Test Feast" not in text and "400" not in text
+    await consent_cases.grant(uow(), alice, ConsentScope.AI_PROCESSING, now=NOW)
+    text, error = await run(uow, alice, "food_today")
+    assert error is None and "Test Feast" in text and "400 kcal" in text
+
+
+async def test_a_chat_log_asks_first_then_saves_with_figures_from_the_database(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    model = scripted(call("log_food", foods=[PLATE], meal="lunch"), say("Logged."))
+    agent = build(uow, model)
+    ask = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
+    assert ask.text.startswith("Log lunch: test feast (1 plate, about ") and "kcal" in ask.text
+    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
+    done = only(await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True))
+    assert "Logged." in done.text
+    (meal,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    assert meal.meal is MealSlot.LUNCH and meal.source is EntrySource.CHAT
+    assert str(meal.totals.point.kcal) == "400.000"
+    assert (await get_user(uow(), alice)).show_health is True
+
+
+async def test_the_tool_result_reports_what_was_logged(uow: UowFactory, alice: UserId) -> None:
+    await agree(uow, alice)
+    text, error = await run(uow, alice, "log_food", foods=[PLATE], meal="snack")
+    assert error is None and text.startswith("Logged snack: test feast (1 plate, about ")
+    assert text.endswith(".")
+
+
+async def test_an_earlier_day_and_the_default_meal_from_the_time_of_day(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    await run(uow, alice, "log_food", foods=[PLATE], when="yesterday")
+    yesterday = NOW.date() - timedelta(days=1)
+    (meal,) = await nutrition_cases.meals(uow(), alice, day=yesterday, now=NOW)
+    assert meal.meal is MealSlot.LUNCH  # logged at noon local time
+
+
+async def test_a_dish_not_in_the_database_asks_for_its_parts(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    text, error = await run(uow, alice, "log_food", foods=[{"food": "zzzz laksa"}], meal="lunch")
+    assert error == "NeedsAnswer" and text.startswith("Error: no food matching")
+    assert "Singapore database" in text and "Never estimate calories" in text
+    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
+
+
+async def test_a_missing_amount_is_asked_for(uow: UowFactory, alice: UserId) -> None:
+    await agree(uow, alice)
+    text, error = await run(uow, alice, "log_food", foods=[{"food": "banquet"}], meal="lunch")
+    assert error == "NeedsAnswer" and "How much of Test Feast" in text
+
+
+async def test_numbers_free_mode_has_no_numbers_in_confirm_log_or_day(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    await health_cases.save_profile(uow(), alice, numbers_free=True, now=NOW)
+    model = scripted(call("log_food", foods=[PLATE], meal="lunch"), say("Logged."))
+    agent = build(uow, model)
+    ask = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
+    assert ask.text == "Log lunch: test feast (1 plate)?"
+    await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
+    text, _ = await run(uow, alice, "food_today")
+    assert "Test Feast (1 plate)" in text and "kcal" not in text and "protein" not in text

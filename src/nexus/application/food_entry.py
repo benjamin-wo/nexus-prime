@@ -39,7 +39,7 @@ MAX_CANDIDATES = 5
 
 type UowFactory = Callable[[], UnitOfWork]
 AI_OFF = (
-    "Error: AI access to health data is off, so I can't read your food log. To turn it on, "
+    "Error: AI access to health data is off, so I can't read your logs. To turn it on, "
     "open Health, then Privacy, and switch on AI processing."
 )
 
@@ -83,8 +83,10 @@ async def _pick(uow: UowFactory, request: FoodRequest) -> Food:
     found = await nutrition_cases.find_foods(uow(), name, limit=MAX_CANDIDATES + 1)
     if not found:
         raise NeedsAnswer(
-            f"Error: no food matching {name!r} in the food database. Ask the user for a "
-            "simpler or more common name for it."
+            f"Error: no food matching {name!r} in the food database (some local dishes are "
+            "missing until the Singapore database is loaded). Ask the user what it is made of "
+            "(for example rice and chicken) and how much, or its weight in grams, then call "
+            "again with those. Never estimate calories yourself."
         )
     if len(found) == 1 or _same(found[0], name):
         return found[0]
@@ -158,18 +160,19 @@ def _preview_totals(resolved: Resolved) -> tuple[list[MealTotals], MealTotals]:
     return [meal_totals([item]) for item in items], meal_totals(items)
 
 
-def confirm_text(resolved: Resolved, meal: MealSlot, *, hidden: bool) -> str:
+def confirm_text(resolved: Resolved, meal: MealSlot, *, hidden: bool, done: bool = False) -> str:
     """ "Log lunch: chicken rice (1 plate, about 600-750 kcal)? I estimated the portion."
-    built from the database figures. With ``hidden`` (numbers-free mode) no number appears."""
+    built from the database figures ("Logged lunch: ...." with ``done``). With ``hidden``
+    (numbers-free mode) no number appears."""
     each, total = _preview_totals(resolved)
     parts = []
     for food, item, t in zip(resolved.foods, resolved.inputs, each, strict=True):
         detail = item.label if hidden else f"{item.label}, about {kcal_range_words(t)}"
         parts.append(f"{food.name.lower()} ({detail})")
-    text = f"Log {meal.value}: {', '.join(parts)}"
+    text = f"{'Logged' if done else 'Log'} {meal.value}: {', '.join(parts)}"
     if not hidden and len(parts) > 1:
         text += f"; about {kcal_range_words(total)} in all"
-    text += "?"
+    text += "." if done else "?"
     estimated = [i for i in resolved.inputs if i.kind is EstimateKind.ESTIMATED]
     if estimated:
         text += " I estimated the portion." if len(estimated) == 1 else " I estimated the portions."

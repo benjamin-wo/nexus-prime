@@ -403,8 +403,10 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
     last = turns[-1]
     if any(t.model_down for t in turns):
         failures.append("the model call failed")
+    # With ``or_asks`` a clarifying question that changed nothing stands in for the calls.
+    waived = case.or_asks and asks_something(last.last_reply) and not changed
     for call in case.calls:
-        if not _call_made(last.calls, call):
+        if not waived and not _call_made(last.calls, call):
             failures.append(f"no {call.tool} call with {call.args or 'any arguments'}")
     called = {name for t in turns for name, _ in t.calls}
     for tool in case.forbid:
@@ -487,6 +489,7 @@ async def run_case(
         telegram_id,
         shared=case.shared,
         gym=case.gym,
+        food=case.food,
         november=case.november,
         budget=case.budget,
     )

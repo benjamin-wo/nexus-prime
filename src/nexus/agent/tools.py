@@ -31,10 +31,11 @@ from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import categories as category_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import day_slots, mistakes, trip_split
+from nexus.application import day_slots, food_entry, mistakes, trip_split
 from nexus.application import duplicates as duplicate_cases
 from nexus.application import email as email_cases
 from nexus.application import gym as gym_cases
+from nexus.application import health_targets as targets_cases
 from nexus.application import income as income_cases
 from nexus.application import investments as investment_cases
 from nexus.application import ledger_questions as question_cases
@@ -42,6 +43,7 @@ from nexus.application import money_history as history_cases
 from nexus.application import month_outlook as outlook_cases
 from nexus.application import moves as move_cases
 from nexus.application import notifications as notify_cases
+from nexus.application import nutrition as nutrition_cases
 from nexus.application import people as people_cases
 from nexus.application import places as place_cases
 from nexus.application import plans as plan_cases
@@ -119,6 +121,7 @@ from nexus.domain.live_prices import (
 from nexus.domain.market import describe_price_time
 from nexus.domain.money import Money
 from nexus.domain.notifications import Frequency
+from nexus.domain.nutrition import Cooking, EntrySource, MealSlot
 from nexus.domain.odds import describe_ranges
 from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.places import Place, place_id
@@ -4338,6 +4341,14 @@ async def _need_consent(ctx: ToolContext) -> None:
         raise ConsentRequired(HEALTH_OFF)
 
 
+async def _ai_blocked(ctx: ToolContext) -> ToolResult | None:
+    """The reply for a tool that puts the user's past health data in front of the model, when
+    they haven't allowed it (Health consent plus the AI processing scope)."""
+    if await food_entry.ai_may_read(ctx.uow(), ctx.user.id):
+        return None
+    return ToolResult(food_entry.AI_OFF, error="ConsentRequired")
+
+
 def _enum[E: StrEnum](kind: type[E], value: str | None, what: str) -> E | None:
     if not value:
         return None
@@ -4410,6 +4421,8 @@ async def _find_exercise(ctx: ToolContext, a: FindExerciseArgs) -> ToolResult:
 
 
 async def _todays_workout(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
     today = await gym_cases.todays_workout(ctx.uow(), ctx.user.id, now=ctx.now)
     lines: list[str] = []
     if today.in_progress is not None:
@@ -4444,6 +4457,8 @@ class ExerciseArgs(Args):
 
 
 async def _last_time(ctx: ToolContext, a: ExerciseArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
     found = await _resolve_exercise(ctx, a.exercise)
     sets = await gym_cases.last_sets(ctx.uow(), ctx.user.id, found.id)
     if not sets:
@@ -4487,6 +4502,8 @@ class OptionalExerciseArgs(Args):
 
 
 async def _personal_records(ctx: ToolContext, a: OptionalExerciseArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
     note = " (Estimated one-rep maxes use the Epley formula and are in kg.)"
     if a.exercise:
         found = await _resolve_exercise(ctx, a.exercise)
@@ -4508,6 +4525,8 @@ class HistoryArgs(Args):
 
 
 async def _workout_history(ctx: ToolContext, a: HistoryArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
     first, after = gym_entry.parse_range(a.range, ctx.today())
     found = await gym_cases.workouts(ctx.uow(), ctx.user.id, start=first, end=after)
     span = f"{gym_text.day_text(first, ctx.today())} to " + gym_text.day_text(
@@ -4551,6 +4570,8 @@ class WeekArgs(Args):
 
 
 async def _weekly_volume(ctx: ToolContext, a: WeekArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
     monday = gym_entry.parse_week(a.week, ctx.today())
     span = f"{gym_text.day_text(monday, ctx.today())} to " + gym_text.day_text(
         monday + timedelta(days=6), ctx.today()
@@ -4831,6 +4852,141 @@ GYM_TOOLS = (
 )
 
 
+# --- Health: Nutrition -------------------------------------------------------------------------
+# Food figures come from ``application.food_entry`` and ``application.nutrition``: the model
+# names foods and portions, code looks them up and does the sums.
+
+
+class FoodItemArgs(Args):
+    food: str = Field(
+        description="The food as the user said it ('chicken rice', 'egg'), or its id from an "
+        "earlier answer of this tool"
+    )
+    portion: str | None = Field(
+        None, description="A serving the user said ('1 cup', '1 plate', '2 slices')"
+    )
+    grams: str | None = Field(
+        None, description="Weight in grams: what the user said, or your estimate (estimated true)"
+    )
+    estimated: bool = Field(False, description="True when grams is your guess, not the user's")
+    cooking: Literal["fried", "stir-fried", "curry/gravy"] | None = Field(
+        None, description="Only if the user said how it was cooked"
+    )
+    modifiers: list[str] = Field(
+        default_factory=list, description="'less rice', 'extra gravy': only what the user said"
+    )
+
+
+class LogFoodArgs(Args):
+    foods: list[FoodItemArgs] = Field(description="Everything eaten in this meal")
+    meal: Literal["breakfast", "lunch", "dinner", "snack"] | None = Field(
+        None, description="The meal; left out, it follows the time of day"
+    )
+    when: str | None = Field(
+        None, description="The day, if not today and the user said so: 2026-09-14 or yesterday"
+    )
+
+
+class FoodTodayArgs(Args):
+    day: str | None = Field(
+        None, description="'today' (the default), 'yesterday' or a date like 2026-09-14"
+    )
+
+
+def _slot_for(ctx: ToolContext, at: datetime) -> MealSlot:
+    hour = at.astimezone(ctx.tz).hour
+    if 5 <= hour < 11:
+        return MealSlot.BREAKFAST
+    if 11 <= hour < 15:
+        return MealSlot.LUNCH
+    if 17 <= hour < 22:
+        return MealSlot.DINNER
+    return MealSlot.SNACK
+
+
+def _food_requests(a: LogFoodArgs) -> list[food_entry.FoodRequest]:
+    if not a.foods:
+        raise InvalidInput("no foods given: ask the user what they ate")
+    return [
+        food_entry.FoodRequest(
+            f.food,
+            f.portion,
+            _decimal(f.grams, "the weight"),
+            f.estimated,
+            Cooking(f.cooking) if f.cooking else None,
+            tuple(f.modifiers),
+        )
+        for f in a.foods
+    ]
+
+
+async def _prepared_meal(
+    ctx: ToolContext, a: LogFoodArgs
+) -> tuple[food_entry.Resolved, MealSlot, datetime | None]:
+    at = _log_day(ctx, a.when)
+    meal = MealSlot(a.meal) if a.meal else _slot_for(ctx, at or ctx.now)
+    return await food_entry.resolve(ctx.uow, _food_requests(a)), meal, at
+
+
+async def _describe_log_food(ctx: ToolContext, a: LogFoodArgs) -> str:
+    await _need_consent(ctx)
+    resolved, meal, _ = await _prepared_meal(ctx, a)
+    hidden = await nutrition_cases.numbers_hidden(ctx.uow(), ctx.user.id)
+    return food_entry.confirm_text(resolved, meal, hidden=hidden)
+
+
+async def _log_food(ctx: ToolContext, a: LogFoodArgs) -> ToolResult:
+    if not await _has_consent(ctx):
+        return _health_off()
+    try:
+        resolved, meal, at = await _prepared_meal(ctx, a)
+    except food_entry.NeedsAnswer as exc:  # its text is already an "Error: ..." for the model
+        return ToolResult(str(exc), error="NeedsAnswer")
+    await nutrition_cases.log_meal(
+        ctx.uow(), ctx.user.id, resolved.inputs, meal, at, EntrySource.CHAT, now=ctx.now
+    )
+    hidden = await nutrition_cases.numbers_hidden(ctx.uow(), ctx.user.id)
+    return ToolResult(food_entry.confirm_text(resolved, meal, hidden=hidden, done=True), wrote=True)
+
+
+async def _food_today(ctx: ToolContext, a: FoodTodayArgs) -> ToolResult:
+    if (blocked := await _ai_blocked(ctx)) is not None:
+        return blocked
+    day = parse_day(ctx, a.day).astimezone(ctx.tz).date() if a.day else None
+    targets = None
+    if day is None or day == ctx.today():
+        found = await targets_cases.safe_targets(ctx.uow, ctx.user.id, now=ctx.now, record=False)
+        targets = found.overview.targets
+    summary = await nutrition_cases.day_summary(
+        ctx.uow(), ctx.user.id, day, targets=targets, now=ctx.now
+    )
+    names = await nutrition_cases.food_names(
+        ctx.uow(), [i.food_id for e in summary.entries for i in e.items]
+    )
+    return ToolResult(food_entry.day_text(summary, names))
+
+
+FOOD_TOOLS = (
+    ToolSpec(
+        "log_food",
+        "Log what the user ate, as foods with a serving or a weight. Calories and macros are "
+        "worked out by code from the food database: never state or estimate them yourself. "
+        "If a food isn't found or is unclear it says what to ask the user. Asks the user to "
+        "confirm.",
+        LogFoodArgs,
+        _log_food,
+        confirm=_describe_log_food,
+    ),
+    ToolSpec(
+        "food_today",
+        "What the user ate on a day (today by default), with totals and what is left of "
+        "today's targets, as worked out by code. Read-only.",
+        FoodTodayArgs,
+        _food_today,
+    ),
+)
+
+
 # Tools that only read. With these and the tools that confirm first, the agent can
 # answer about an image without anything in the image changing the user's data;
 # every other tool waits until the user asks (see AgentGraph.offered). A new tool is
@@ -4846,8 +5002,8 @@ READ_ONLY = frozenset(
         "place_info", "plan_record", "query_ledger", "show_dividends", "show_pay_schedule",
         "show_plan", "show_portfolio", "show_watchlist", "spending_summary", "stock_levels",
         "trade_history", "trip_status", "what_moved_today",
-        "find_exercise", "last_time", "personal_records", "todays_workout", "weekly_volume",
-        "workout_history",
+        "find_exercise", "food_today", "last_time", "personal_records", "todays_workout",
+        "weekly_volume", "workout_history",
     }
 )  # fmt: skip
 
@@ -4866,8 +5022,9 @@ MENU_OF: dict[str, MenuSection] = {
     ),
     **dict.fromkeys(
         (
-            "find_exercise", "finish_workout", "last_time", "log_sets", "personal_records",
-            "todays_workout", "undo_last_set", "weekly_volume", "workout_history",
+            "find_exercise", "finish_workout", "food_today", "last_time", "log_food", "log_sets",
+            "personal_records", "todays_workout", "undo_last_set", "weekly_volume",
+            "workout_history",
         ),
         MenuSection.HEALTH,
     ),
@@ -5076,6 +5233,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
             confirm=_describe_unwatch,
         ),
         *GYM_TOOLS,
+        *FOOD_TOOLS,
         ToolSpec("restore_transaction", "Bring back a deleted transaction.", IdArgs, _restore),
         ToolSpec("undo_last_change", "Undo the user's most recent change.", NoArgs, _undo),
         ToolSpec("spending_summary", "Totals for a period, by category.", SummaryArgs, _summary),
