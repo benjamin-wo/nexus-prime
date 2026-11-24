@@ -75,6 +75,7 @@ from nexus.channels.web import (
     health,
     health_api,
     health_body_api,
+    health_energy_api,
     investments_api,
     ops_api,
     travel_api,
@@ -892,6 +893,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
     app.include_router(investments_api.router)
     app.include_router(health_api.router)
     app.include_router(health_body_api.router)
+    app.include_router(health_energy_api.router)
     app.include_router(travel_api.router)
     app.include_router(travel_api.shared_router)
     app.include_router(ops_api.router)
