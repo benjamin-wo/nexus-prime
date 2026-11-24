@@ -36,6 +36,8 @@ from nexus.domain.nutrition import (
 )
 
 MAX_CANDIDATES = 5
+MAX_NAME = 60
+ID_PREFIXES = ("usda:", "sgfoodid:", "custom:")
 
 type UowFactory = Callable[[], UnitOfWork]
 AI_OFF = (
@@ -45,7 +47,14 @@ AI_OFF = (
 
 
 class NeedsAnswer(NexusError):
-    """Something the user has to say before this can be logged."""
+    """Something the user has to say before this can be logged. ``kind`` says what is missing
+    (``none``: no such food, ``several``: which one of ``candidates``, ``portion``: how much)
+    so a flow with no model in it (the photo flow) can ask the user itself."""
+
+    def __init__(self, message: str, kind: str = "other", candidates: Sequence[Food] = ()) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.candidates = list(candidates)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +65,9 @@ class FoodRequest:
     estimated: bool = False  # True when ``grams`` is a guess, not a weighed amount
     cooking: Cooking | None = None
     modifiers: tuple[str, ...] = ()
+    # Read from a photo: whatever the amount, it is an estimate (``EstimateKind.ESTIMATED``).
+    photo: bool = False
+    shown: str | None = None  # what to call it when shown, if not ``food`` (a photo's item name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,11 +86,18 @@ def _same(food: Food, text: str) -> bool:
     return any(" ".join(words(n)) == wanted for n in (food.name, *food.aliases))
 
 
+def shown_name(request: FoodRequest) -> str | None:
+    """The user's own words for the food, for the confirm card and the day: what they typed or
+    the photo's item name; None when all there is is an id (the food's own name is shown)."""
+    text = " ".join((request.shown or request.food).split())[:MAX_NAME]
+    return None if not text or text.startswith(ID_PREFIXES) else text
+
+
 async def _pick(uow: UowFactory, request: FoodRequest) -> Food:
     name = request.food.strip()
     if not words(name):
         raise NeedsAnswer("Error: a food needs a name. Ask the user what they ate.")
-    if name.startswith(("usda:", "sgfoodid:", "custom:")):
+    if name.startswith(ID_PREFIXES):
         return await nutrition_cases.food(uow(), name)
     found = await nutrition_cases.find_foods(uow(), name, limit=MAX_CANDIDATES + 1)
     if not found:
@@ -86,19 +105,31 @@ async def _pick(uow: UowFactory, request: FoodRequest) -> Food:
             f"Error: no food matching {name!r} in the food database (some local dishes are "
             "missing until the Singapore database is loaded). Ask the user what it is made of "
             "(for example rice and chicken) and how much, or its weight in grams, then call "
-            "again with those. Never estimate calories yourself."
+            "again with those. Never estimate calories yourself.",
+            "none",
         )
     if len(found) == 1 or _same(found[0], name):
         return found[0]
     more = ", and more" if len(found) > MAX_CANDIDATES else ""
     raise NeedsAnswer(
         f"Error: {name!r} could be several foods: {_names(found)}{more}. Ask the user which "
-        "one, then call again with that food's id."
+        "one, then call again with that food's id.",
+        "several",
+        found[:MAX_CANDIDATES],
     )
 
 
 def _grams_and_kind(request: FoodRequest, food: Food) -> tuple[Decimal, str, EstimateKind]:
     portion_text = (request.portion or "").strip()
+    if request.photo:
+        # The photo's amounts are the model's guess: a known portion's weight is used, but
+        # the item still gets the estimated range (plus or minus 30%).
+        if request.grams is not None:
+            label = portion_text or f"{request.grams.normalize():f} g"
+            return request.grams, label, EstimateKind.ESTIMATED
+        matched = portion_grams(food, portion_text) if portion_text else None
+        if matched is not None:
+            return matched[1], portion_text, EstimateKind.ESTIMATED
     if portion_text:
         matched = portion_grams(food, portion_text)
         if matched is not None:
@@ -113,7 +144,8 @@ def _grams_and_kind(request: FoodRequest, food: Food) -> tuple[Decimal, str, Est
     what = f"{portion_text!r} is not a portion I know for" if portion_text else "How much of"
     raise NeedsAnswer(
         f"Error: {what} {food.name}.{options} Ask the user how much they had "
-        "(a known portion or a weight in grams)."
+        "(a known portion or a weight in grams).",
+        "portion",
     )
 
 
@@ -139,6 +171,7 @@ async def resolve(uow: UowFactory, requests: Sequence[FoodRequest]) -> Resolved:
                 request.cooking,
                 MODIFIER_WIDEN if mods else Decimal(0),
                 ", ".join(mods) or None,
+                shown_name(request),
             )
         )
         foods.append(food)
@@ -160,21 +193,32 @@ def _preview_totals(resolved: Resolved) -> tuple[list[MealTotals], MealTotals]:
     return [meal_totals([item]) for item in items], meal_totals(items)
 
 
-def confirm_text(resolved: Resolved, meal: MealSlot, *, hidden: bool, done: bool = False) -> str:
+def confirm_text(
+    resolved: Resolved,
+    meal: MealSlot,
+    *,
+    hidden: bool,
+    done: bool = False,
+    photo: bool = False,
+) -> str:
     """ "Log lunch: chicken rice (1 plate, about 600-750 kcal)? I estimated the portion."
     built from the database figures ("Logged lunch: ...." with ``done``). With ``hidden``
-    (numbers-free mode) no number appears."""
+    (numbers-free mode) no number appears. A meal read from a photo says so ("Log lunch from
+    your photo: ...") and that the portions are estimates."""
     each, total = _preview_totals(resolved)
     parts = []
     for food, item, t in zip(resolved.foods, resolved.inputs, each, strict=True):
         detail = item.label if hidden else f"{item.label}, about {kcal_range_words(t)}"
-        parts.append(f"{food.name.lower()} ({detail})")
-    text = f"{'Logged' if done else 'Log'} {meal.value}: {', '.join(parts)}"
+        parts.append(f"{(item.name or food.name).lower()} ({detail})")
+    source = " from your photo" if photo else ""
+    text = f"{'Logged' if done else 'Log'} {meal.value}{source}: {', '.join(parts)}"
     if not hidden and len(parts) > 1:
         text += f"; about {kcal_range_words(total)} in all"
     text += "." if done else "?"
     estimated = [i for i in resolved.inputs if i.kind is EstimateKind.ESTIMATED]
-    if estimated:
+    if photo:
+        text += " I estimated the portions."
+    elif estimated:
         text += " I estimated the portion." if len(estimated) == 1 else " I estimated the portions."
     if resolved.notes:
         text += f" Noted: {'; '.join(resolved.notes)}" + (
@@ -190,7 +234,9 @@ def day_text(summary: DaySummary, names: dict[str, str]) -> str:
         return f"{summary.day.isoformat()}: nothing logged."
     lines = [f"{summary.day.isoformat()}:"]
     for entry in summary.entries:
-        foods = ", ".join(f"{names.get(i.food_id, i.food_id)} ({i.label})" for i in entry.items)
+        foods = ", ".join(
+            f"{i.name or names.get(i.food_id, i.food_id)} ({i.label})" for i in entry.items
+        )
         line = f"- {entry.meal.value}: {foods}"
         if not summary.hidden:
             line += f" [about {kcal_range_words(entry.totals)}]"

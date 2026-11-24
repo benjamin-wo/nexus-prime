@@ -229,6 +229,7 @@ class FoodItem:
     cooking: Cooking | None = None
     extra_uncertainty: Decimal = NONE
     note: str | None = None
+    name: str | None = None  # what to call it when shown: the user's own word, else the food's
     id: UUID | None = None
 
     def __post_init__(self) -> None:
@@ -247,6 +248,7 @@ def make_item(
     cooking: Cooking | None = None,
     extra_uncertainty: Decimal = NONE,
     note: str | None = None,
+    name: str | None = None,
 ) -> FoodItem:
     """An item for ``grams`` of ``food`` with the nutrients computed here, from the database."""
     return FoodItem(
@@ -258,6 +260,7 @@ def make_item(
         cooking,
         extra_uncertainty,
         note,
+        name,
     )
 
 

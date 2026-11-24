@@ -17,10 +17,11 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from nexus.agent import kernel, progress
+from nexus.agent import kernel, meal_photo, progress
 from nexus.agent.graph import (
     BUTTONS,
     IMAGE,
+    MEAL,
     MENU_ADDED,
     RECEIPT,
     REF,
@@ -38,8 +39,10 @@ from nexus.agent.image_look import (
     ImageLook,
     ImageLooker,
     Route,
+    meal_caption,
     route,
 )
+from nexus.agent.meal_reader import MealReader
 from nexus.agent.ops_timing import TurnTimer
 from nexus.agent.progress import StepSink
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
@@ -48,7 +51,7 @@ from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import costs, found_cards, ops
+from nexus.application import costs, food_entry, found_cards, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
@@ -339,8 +342,11 @@ class AgentService:
         speech: SpeechToText | None = None,
         receipt_text: ReceiptTextReader | None = None,
         demo: DemoGate | None = None,
+        meals: MealReader | None = None,
     ) -> None:
         self._graph = graph
+        # Reads meal photos into foods and portions; None: a meal photo is read as before.
+        self._meals = meals
         # Public-demo accounts' allowances and spend cap; None: not counted (tests, evals).
         self._demo = demo
         # Turns voice notes into text; None: voice notes aren't set up.
@@ -644,7 +650,9 @@ class AgentService:
                 if IMAGE in m.additional_kwargs
                 else text_of(m.content)
                 for m in state.values.get("messages", [])
-                if isinstance(m, HumanMessage) and RECEIPT not in m.additional_kwargs
+                if isinstance(m, HumanMessage)
+                and RECEIPT not in m.additional_kwargs
+                and MEAL not in m.additional_kwargs
             ]
             await self._after_turn(actor, [t for t in said if t][-RECENT_MESSAGES:], ref)
         except Exception:
@@ -687,11 +695,19 @@ class AgentService:
             and self._receipts is None
             and self._holdings is None
             and self._trips is None
+            and self._meals is None
         ):
             return [Reply("Reading photos isn't set up yet. Tell me what it says instead.")]
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
-        seen = await asyncio.gather(*(self._look(p, caption) for p in pictures))
+        # A caption that says it's a meal needs no first look: the photo goes to the meal
+        # reader (only with the user's AI consent), not to another model first.
+        by_caption = self._meals is not None and meal_caption(caption)
+        seen = (
+            [None] * len(pictures)
+            if by_caption
+            else await asyncio.gather(*(self._look(p, caption) for p in pictures))
+        )
         looks = [_hidden_look(look) for look in seen]
         hid = any(a is not b for a, b in zip(looks, seen, strict=True))
         replies: list[Reply] = []
@@ -700,7 +716,12 @@ class AgentService:
         unread = 0
         for picture, look in zip(pictures, looks, strict=True):
             done = await self._read_as(
-                actor, route(look, caption), picture, look, caption, no_total
+                actor,
+                route(look, caption, meals=self._meals is not None),
+                picture,
+                look,
+                caption,
+                no_total,
             )
             if done is not None:
                 replies += done
@@ -752,9 +773,45 @@ class AgentService:
             if holding is not None:
                 return [holding]
             return None if look is not None else [_NO_POSITIONS]
+        if where is Route.MEAL and self._meals is not None:
+            return await self._meal_photo(actor, picture, caption)
         if where is Route.RECEIPT and self._receipts is not None:
             return await self._receipt_photo(actor, picture, look, caption, no_total)
         return None
+
+    async def _meal_photo(
+        self, actor: UserId, picture: Picture, caption: str | None
+    ) -> list[Reply] | None:
+        """A meal photo: read into foods and portions (never nutrients), then asked about
+        and confirmed in the graph. The photo only goes to the model with the master health
+        consent and AI processing both on; without them nothing is sent and nothing read.
+        None when the photo isn't a meal after all (the chat agent answers). The photo is
+        not stored."""
+        meals = self._meals
+        if meals is None:  # pragma: no cover - routed only when set up
+            return None
+        if not await food_entry.ai_may_read(self._uow(), actor):
+            return [Reply(food_entry.AI_OFF.removeprefix("Error: "))]
+        try:
+            user = await get_user(self._uow(), actor)
+            today = self._clock().astimezone(ZoneInfo(user.timezone)).date()
+            draft = await meals.read(picture.data, picture.mime_type, caption, today=today)
+        except Exception:
+            log.exception("meal photo reading failed")
+            return [Reply("I couldn't read that photo right now. Tell me what you ate instead.")]
+        if not draft.is_meal or not draft.items:
+            return None
+        async with self._locks[actor]:
+            await self._decline_pending(actor)
+            message = HumanMessage(
+                content="[meal photo]" + (f" {caption}" if caption else ""),
+                additional_kwargs={
+                    MEAL: meal_photo.pending_from(draft, caption),
+                    REF: picture.ref,
+                    SENT_AT: self._sent(),
+                },
+            )
+            return await self._run(actor, {"messages": [message]})
 
     @as_actor
     @in_voice

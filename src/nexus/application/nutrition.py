@@ -57,6 +57,7 @@ class ItemInput:
     cooking: Cooking | None = None
     extra_uncertainty: Decimal = Decimal(0)
     note: str | None = None
+    name: str | None = None  # the user's own word for it ("rice"), shown instead of the food's
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +132,7 @@ async def _build_items(uow: UnitOfWork, items: Sequence[ItemInput]) -> tuple[Foo
             cooking=item.cooking,
             extra_uncertainty=item.extra_uncertainty,
             note=item.note,
+            name=item.name,
         )
         built.append(replace(made, id=uuid4()))
     return tuple(built)

@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Row, delete, func, or_, select, update
+from sqlalchemy import Row, any_, case, delete, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -73,6 +73,7 @@ def _item(row: Row[Any]) -> FoodItem:
         cooking=Cooking(row.cooking) if row.cooking else None,
         extra_uncertainty=row.extra_uncertainty,
         note=row.note,
+        name=row.display_name,
         id=row.id,
     )
 
@@ -87,6 +88,7 @@ def _item_values(user_id: UserId, entry_id: UUID, position: int, item: FoodItem)
         "food_id": item.food_id,
         "grams": item.grams,
         "portion_label": item.label,
+        "display_name": item.name,
         "estimate_kind": item.kind.value,
         "cooking": item.cooking.value if item.cooking else None,
         "extra_uncertainty": item.extra_uncertainty,
@@ -137,10 +139,17 @@ class SqlFoodRepository:
             )
             for word in words(text)
         ]
+        # Foods an everyday name points at ("egg") come first, whatever their name's length:
+        # the domain ranking then puts them with the exact name matches.
+        named = " ".join(words(text))
         query = (
             select(foods)
             .where(*clauses)
-            .order_by(func.length(foods.c.name), foods.c.id)
+            .order_by(
+                case((literal(named) == any_(foods.c.aliases), 0), else_=1),
+                func.length(foods.c.name),
+                foods.c.id,
+            )
             .limit(limit)
         )
         return [_food(r) for r in (await self._connection.execute(query)).all()]
