@@ -41,8 +41,7 @@ describe("Routines", () => {
       "GET /health/consent": () => ({ consented_at: "2026-11-20T08:00:00Z" }),
       "GET /health/routines": () => [twoSlots],
       "GET /health/plan": () => null,
-      "GET /health/exercises/Barbell_Bench_Press": () => bench,
-      "GET /health/exercises/Barbell_Squat": () => squat,
+      "GET /health/exercises": (_b, url) => { const ids = url.searchParams.get("ids"); return ids ? exercises.filter((e) => ids.split(",").includes(e.id)) : exercises; },
       "PUT /health/routines/11111111-1111-1111-1111-111111111111": (b) => b,
     });
     renderWithProviders(<HealthRoutines />);
@@ -69,8 +68,7 @@ describe("Routines", () => {
       "GET /health/consent": () => ({ consented_at: "2026-11-20T08:00:00Z" }),
       "GET /health/routines": () => [],
       "GET /health/plan": () => null,
-      "GET /health/exercises": () => exercises,
-      "GET /health/exercises/Barbell_Bench_Press": () => bench,
+      "GET /health/exercises": (_b, url) => { const ids = url.searchParams.get("ids"); return ids ? exercises.filter((e) => ids.split(",").includes(e.id)) : exercises; },
       "POST /health/routines": (b) => ({ ...(b as object), id: "n", created_at: "", updated_at: "" }),
     });
     renderWithProviders(<HealthRoutines />);

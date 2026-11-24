@@ -27,4 +27,22 @@ describe("Settings > Health data", () => {
     renderWithProviders(<HealthSettings />);
     expect(await screen.findByRole("link", { name: "Turn it on" })).toHaveAttribute("href", "/health");
   });
+
+  it("chooses the weight unit", async () => {
+    let unit = "kg";
+    const calls = mockApi({
+      "GET /health/consent": () => ({ consented_at: null }),
+      "GET /health/preferences": () => ({ unit }),
+      "PUT /health/preferences": (b) => {
+        unit = (b as { unit: string }).unit;
+        return { unit };
+      },
+    });
+    renderWithProviders(<HealthSettings />);
+    const lb = await screen.findByRole("button", { name: "lb" });
+    expect(screen.getByRole("button", { name: "kg" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(lb);
+    expect(await screen.findByRole("button", { name: "lb" })).toHaveAttribute("aria-pressed", "true");
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
+  });
 });

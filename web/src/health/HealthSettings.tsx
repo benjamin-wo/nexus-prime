@@ -6,7 +6,38 @@ import { ConfirmBox } from "../components/ConfirmBox";
 import { LoadError } from "../components/LoadError";
 import { Button, Section } from "../components/ui";
 import { formatDate } from "../format";
-import { healthApi, healthKey } from "./api";
+import { healthApi, healthKey, type WeightUnit } from "./api";
+
+/** kg or lb for the weights logged in a workout. Needs no consent; quiet if it can't load. */
+function WeightUnitChoice() {
+  const client = useQueryClient();
+  const prefs = useQuery({ queryKey: healthKey.preferences, queryFn: healthApi.preferences });
+  const [error, setError] = useState<string | null>(null);
+  if (!prefs.data) return null;
+  const choose = async (unit: WeightUnit) => {
+    setError(null);
+    try {
+      client.setQueryData(healthKey.preferences, await healthApi.setPreferences(unit));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save that");
+    }
+  };
+  return (
+    <div role="group" aria-label="Weight unit">
+      <p className="caption">Log weights in</p>
+      {(["kg", "lb"] as const).map((u) => (
+        <Button key={u} variant={prefs.data.unit === u ? "primary" : undefined} aria-pressed={prefs.data.unit === u} onClick={() => void choose(u)}>
+          {u}
+        </Button>
+      ))}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 /** Settings > Health data: whether Nexus keeps the person's workouts, and the way to take that back. */
 export function HealthSettings() {
@@ -33,6 +64,7 @@ export function HealthSettings() {
 
   return (
     <Section id="health-data" title="Health data">
+      <WeightUnitChoice />
       {consent.isError ? (
         <LoadError message="Couldn't load this." query={consent} />
       ) : consent.isLoading ? (

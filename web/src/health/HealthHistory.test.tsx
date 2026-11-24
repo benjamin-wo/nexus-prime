@@ -18,7 +18,7 @@ function history() {
   return mockApi({
     "GET /health/consent": () => ({ consented_at: "2026-11-20T08:00:00Z" }),
     "GET /health/workouts": () => [done, { ...done, id: "open", finished_at: null }],
-    "GET /health/exercises/Barbell_Bench_Press": () => bench,
+    "GET /health/exercises": () => [bench],
     "GET /health/exercises/Barbell_Bench_Press/progress": () => [
       { workout_id: "a", at: "2026-11-10T08:00:00Z", weight: "80.00", unit: "kg", reps: 5, e1rm_kg: "93.33" },
       { workout_id: "b", at: "2026-11-17T08:00:00Z", weight: "82.50", unit: "kg", reps: 5, e1rm_kg: "96.25" },
@@ -40,7 +40,7 @@ describe("History", () => {
     renderWithProviders(<HealthHistory />);
     const list = await screen.findByRole("list", { name: "Past workouts" });
     expect(within(list).getAllByRole("button")).toHaveLength(1);
-    expect(within(list).getByText(/2 sets · 52 min · Barbell bench press/)).toBeInTheDocument();
+    expect(await within(list).findByText(/2 sets · 52 min · Barbell bench press/)).toBeInTheDocument();
     await userEvent.click(within(list).getByRole("button"));
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByText("80 kg × 5, 85 kg × 5")).toBeInTheDocument();

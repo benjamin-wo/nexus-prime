@@ -73,6 +73,9 @@ export type SetInput = {
   seconds?: number | null;
   rpe?: string | null;
 };
+export type SetRecord = { kind: PrKind; exercise_id: string; value_text: string };
+/** What logging a set returns: the set, and the records it sets (none for a warm-up). */
+export type LoggedSet = SetEntry & { records: SetRecord[] };
 export type SetPatch = Partial<Omit<SetInput, "exercise_id">> & { exercise_id?: string };
 export type Summary = {
   workout_id: string;
@@ -98,6 +101,7 @@ const base = "/health";
 export const healthKey = {
   all: ["health"] as const,
   consent: ["health", "consent"] as const,
+  preferences: ["health", "preferences"] as const,
 };
 
 function query(params: Record<string, string | number | undefined>): string {
@@ -108,11 +112,15 @@ function query(params: Record<string, string | number | undefined>): string {
 }
 
 export const healthApi = {
+  preferences: () => api<{ unit: WeightUnit }>(`${base}/preferences`),
+  setPreferences: (unit: WeightUnit) => api<{ unit: WeightUnit }>(`${base}/preferences`, { method: "PUT", body: { unit } }),
   consent: () => api<Consent>(`${base}/consent`),
   giveConsent: () => api<Consent>(`${base}/consent`, { method: "POST" }),
   withdrawConsent: () => api<null>(`${base}/consent`, { method: "DELETE" }),
 
   exercises: (f: ExerciseFilter) => api<Exercise[]>(`${base}/exercises${query({ ...f })}`),
+  /** Several exercises in one call, in the order given; unknown ids are left out. */
+  exercisesByIds: (ids: readonly string[]) => api<Exercise[]>(`${base}/exercises${query({ ids: ids.join(",") })}`),
   exercise: (id: string) => api<Exercise>(`${base}/exercises/${encodeURIComponent(id)}`),
   lastSets: (id: string) => api<SetEntry[]>(`${base}/exercises/${encodeURIComponent(id)}/last`),
   progress: (id: string) => api<ProgressPoint[]>(`${base}/exercises/${encodeURIComponent(id)}/progress`),
@@ -134,7 +142,7 @@ export const healthApi = {
     api<Summary>(`${base}/workouts/${id}/finish`, { method: "POST", body: note ? { note } : {} }),
   discardWorkout: (id: string) => api<null>(`${base}/workouts/${id}`, { method: "DELETE" }),
   logSet: (workout: string, body: SetInput) =>
-    api<SetEntry>(`${base}/workouts/${workout}/sets`, { method: "POST", body }),
+    api<LoggedSet>(`${base}/workouts/${workout}/sets`, { method: "POST", body }),
   undoSet: (workout: string) => api<SetEntry>(`${base}/workouts/${workout}/undo`, { method: "POST" }),
   editSet: (id: string, body: SetPatch) => api<SetEntry>(`${base}/sets/${id}`, { method: "PATCH", body }),
 

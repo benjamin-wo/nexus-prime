@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { type Exercise, healthApi, healthKey } from "./api";
@@ -24,21 +24,21 @@ export function useExercise(id: string | null | undefined) {
   });
 }
 
-/** Exercises by id, for naming sets and slots. An exercise still loading is missing from the map. */
+/** Exercises by id, for naming sets and slots: one batch request. An exercise still loading is missing from the map. */
 export function useExerciseMap(ids: readonly string[]): Map<string, Exercise> {
-  const unique = [...new Set(ids)];
-  const results = useQueries({
-    queries: unique.map((id) => ({
-      queryKey: [...healthKey.all, "exercise", id],
-      queryFn: () => healthApi.exercise(id),
-      staleTime: STALE,
-    })),
+  const unique = [...new Set(ids)].sort();
+  const found = useQuery({
+    queryKey: [...healthKey.all, "exercises-by-id", unique],
+    queryFn: async () => {
+      const out: Exercise[] = [];
+      for (let i = 0; i < unique.length; i += 100) out.push(...(await healthApi.exercisesByIds(unique.slice(i, i + 100))));
+      return out;
+    },
+    enabled: unique.length > 0,
+    staleTime: STALE,
+    placeholderData: (previous) => previous,
   });
-  const map = new Map<string, Exercise>();
-  results.forEach((r, i) => {
-    if (r.data) map.set(unique[i], r.data);
-  });
-  return map;
+  return new Map((found.data ?? []).map((e) => [e.id, e]));
 }
 
 /** The name of an exercise, or a quiet stand-in while it loads. */

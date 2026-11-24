@@ -49,13 +49,14 @@ async function healthApi(page: Page) {
       const b = JSON.parse(req.postData() ?? "{}");
       const set = { id: "s1", workout_id: WORKOUT, position: 1, kind: "working", seconds: null, rpe: null, unit: "kg", done_at: new Date().toISOString(), ...b };
       state.sets.push(set);
-      return json(route, set, 201);
+      return json(route, { ...set, records: [] }, 201);
     }
     if (path === `/workouts/${WORKOUT}/finish`) {
       state.finished = true;
       return json(route, { workout_id: WORKOUT, duration_seconds: 600, sets: state.sets.length, volume_kg: "400.00", prs: {} });
     }
     if (path === "/exercises") return json(route, [bench]);
+    if (path === "/preferences") return json(route, { unit: "kg" });
     if (path === `/exercises/${bench.id}`) return json(route, bench);
     if (path === `/exercises/${bench.id}/last`) return json(route, []);
     if (path === `/exercises/${bench.id}/progress`) return json(route, []);

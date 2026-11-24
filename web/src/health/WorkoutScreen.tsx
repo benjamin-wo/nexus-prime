@@ -6,11 +6,11 @@ import { Sheet } from "../components/Sheet";
 import { Toast } from "../components/Toast";
 import { Button } from "../components/ui";
 import { nativeHaptic } from "../native";
-import { healthApi, healthKey, type SetEntry, type SetInput, type Slot, type Summary, type WorkoutDetail } from "./api";
+import { healthApi, healthKey, type LoggedSet, type SetInput, type Slot, type Summary, type WorkoutDetail } from "./api";
 import { ExerciseBlock } from "./ExerciseBlock";
 import { ExerciseSearch } from "./ExerciseSearch";
 import { FinishSheet } from "./FinishSheet";
-import { e1rm, formatDuration, formatSet, toKg } from "./format";
+import { formatDuration, formatSet } from "./format";
 import { exerciseName, useExerciseMap } from "./hooks";
 import { RestTimer } from "./RestTimer";
 
@@ -48,24 +48,15 @@ export function WorkoutScreen({ workout }: { workout: WorkoutDetail }) {
   };
   const refresh = () => client.invalidateQueries({ queryKey: [...healthKey.all, "workout", workout.id] });
 
-  async function newBest(set: SetEntry) {
-    // Only a working set with a weight and 1 to 12 reps has an estimated max; the best of earlier workouts is the bar.
-    if (set.kind !== "working" || set.weight === null || set.reps === null) return null;
-    const mine = e1rm(toKg(Number(set.weight), set.unit), set.reps);
-    if (mine === null) return null;
-    const points = await client.fetchQuery({
-      queryKey: [...healthKey.all, "progress", set.exercise_id],
-      queryFn: () => healthApi.progress(set.exercise_id),
-      staleTime: 5 * 60_000,
-    });
-    const before = points.filter((p) => p.workout_id !== workout.id).map((p) => Number(p.e1rm_kg));
-    if (before.length === 0 || mine <= Math.max(...before)) return null;
-    return `New best: ${formatSet({ weight: set.weight, unit: set.unit, reps: set.reps, seconds: null })}`;
-  }
+  /** "New best: ..." when the server says this set sets a record (it never does for a warm-up). */
+  const newBest = (set: LoggedSet) =>
+    set.records.length > 0
+      ? `New best: ${formatSet({ weight: set.weight, unit: set.unit, reps: set.reps, seconds: null })}`
+      : null;
 
   async function log(exerciseId: string, input: Omit<SetInput, "exercise_id">, restSeconds: number) {
     const set = await healthApi.logSet(workout.id, { ...input, exercise_id: exerciseId });
-    const best = await newBest(set).catch(() => null);
+    const best = newBest(set);
     if (best) setBests((b) => ({ ...b, [set.id]: best }));
     await refresh();
     setRest({ seconds: restSeconds, run: Date.now() });

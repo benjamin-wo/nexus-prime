@@ -23,15 +23,16 @@ function gym({ routine = null as typeof push | null, open = null as Workout | nu
     },
     "GET /health/workouts/22222222-2222-2222-2222-222222222222": () => ({ ...state.open, sets: state.sets }),
     [`GET /health/routines/${push.id}`]: () => push,
-    "GET /health/exercises/Barbell_Bench_Press": () => bench,
     "GET /health/exercises/Barbell_Bench_Press/last": () => last,
     "GET /health/exercises/Barbell_Bench_Press/progress": () => prior,
-    "GET /health/exercises": () => exercises,
+    "GET /health/exercises": (_b, url) => { const ids = url.searchParams.get("ids"); return ids ? exercises.filter((e) => ids.split(",").includes(e.id)) : exercises; },
     "POST /health/workouts/22222222-2222-2222-2222-222222222222/sets": (body) => {
       const b = body as Partial<SetEntry>;
       const set = setEntry({ id: `s${state.sets.length + 1}`, position: state.sets.length + 1, done_at: `2026-11-24T08:1${state.sets.length}:00Z`, ...b });
       state.sets.push(set);
-      return set;
+      // The server names the records a set sets: here, a working set heavier than the 80 kg of earlier workouts.
+      const beats = set.kind === "working" && Number(set.weight) > 80;
+      return { ...set, records: beats ? [{ kind: "best_e1rm", exercise_id: set.exercise_id, value_text: "99.17 kg" }] : [] };
     },
     "POST /health/workouts/22222222-2222-2222-2222-222222222222/undo": () => state.sets.pop(),
     "POST /health/workouts/22222222-2222-2222-2222-222222222222/finish": () => {
