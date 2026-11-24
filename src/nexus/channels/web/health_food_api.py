@@ -9,10 +9,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from nexus.application import energy as energy_cases
+from nexus.application import health_targets as targets_cases
 from nexus.application import nutrition as nutrition_cases
 from nexus.channels.web.health_api import _uuid
-from nexus.channels.web.health_energy_api import _safety_pending_h2
+from nexus.channels.web.health_energy_api import SafetyNoteOut, safety_note
 from nexus.channels.web.security import Auth, Runtime
 from nexus.domain.errors import InvalidInput
 from nexus.domain.nutrition import (
@@ -308,21 +308,16 @@ class DayOut(Model):
     totals: TotalsOut | None
     targets_kcal: str | None
     remaining: RemainingOut | None
+    safety: SafetyNoteOut
 
 
 @router.get("/day")
 async def day(auth: Auth, web: Runtime, date: date | None = None) -> DayOut:
     """A day's meals with totals and ranges and, for today, what is left of the targets."""
     now = web.clock()
-    t = await energy_cases.current_targets(
-        web.uow(),
-        auth.user.id,
-        now=now,
-        intake_provider=nutrition_cases.intake_provider(web.uow),
-        apply_safety=_safety_pending_h2,
-    )
+    found = await targets_cases.safe_targets(web.uow, auth.user.id, now=now)
     summary = await nutrition_cases.day_summary(
-        web.uow(), auth.user.id, date, targets=t.targets, now=now
+        web.uow(), auth.user.id, date, targets=found.overview.targets, now=now
     )
     names = await nutrition_cases.food_names(
         web.uow(), [i.food_id for e in summary.entries for i in e.items]
@@ -342,4 +337,5 @@ async def day(auth: Auth, web: Runtime, date: date | None = None) -> DayOut:
             protein_g=str(r.protein_g.quantize(ONE, ROUND_HALF_UP)),
             fibre_g=None if r.fibre_g is None else str(r.fibre_g.quantize(ONE, ROUND_HALF_UP)),
         ),
+        safety=safety_note(found),
     )
