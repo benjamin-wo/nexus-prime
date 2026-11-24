@@ -35,3 +35,9 @@ The body-map outlines come from [melihcolpan/MuscleMap](https://github.com/melih
 ## openGym
 
 [openGym](https://github.com/DuarteSantos8/openGym) was used as a design reference only. None of its code, data or media is included.
+
+## USDA FoodData Central
+
+Nutrient values and portion weights for foods come from [USDA FoodData Central](https://fdc.nal.usda.gov/): the SR Legacy (April 2018) and Foundation Foods (October 2026) datasets. The data is in the public domain and published under CC0 1.0 Universal; no permission is needed, and the USDA asks users to name FoodData Central as the source. Suggested citation: U.S. Department of Agriculture, Agricultural Research Service, Beltsville Human Nutrition Research Center. FoodData Central. https://fdc.nal.usda.gov/
+
+Nexus keeps a normalised subset (energy, protein, carbohydrate, fat, fibre per 100 g, and household portions); `scripts/import_usda_fdc.py` builds it. The USDA does not endorse Nexus.

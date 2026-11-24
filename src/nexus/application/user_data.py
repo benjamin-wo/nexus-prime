@@ -57,6 +57,10 @@ AREAS: tuple[Area, ...] = (
          "Your body and activity samples (weight, steps, sleep and more, from any source), "
          "your health profile, and which health consents you gave or withdrew.",
          ("health_samples", "health_profiles", "health_consents")),
+    Area("food.json",
+         "The meals you logged, each with its foods, portions, and the calories and macros "
+         "worked out when you logged it.",
+         ("meal_entries", "meal_items")),
     Area("trade_plans.json", "Your trade plans.", ("plans",)),
     Area("research.json", "Research runs (stocks and trips) and what they found.",
          ("department_runs",)),
@@ -109,6 +113,7 @@ SHARED: dict[str, str] = {
     "demo_costs": "what erased demo accounts cost, by day, feature and model: no user, no content",
     "demo_starts": "how many demos were started each day: a count, no user",
     "exercises": "the exercise catalogue (free-exercise-db), the same for every user",
+    "foods": "the food database (USDA FoodData Central), the same for every user",
     "ops_events": "timings and error types with a keyed hash for the user, never what anyone "
     "said or spent; kept 30 days",
 }

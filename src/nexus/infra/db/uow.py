@@ -8,6 +8,7 @@ from nexus.application.acting import current_user_id
 from nexus.domain.ledger import UserId
 from nexus.infra.db.email_repository import SqlEmailRepository
 from nexus.infra.db.external_cache_repository import SqlExternalCacheRepository
+from nexus.infra.db.food_repository import SqlFoodRepository
 from nexus.infra.db.gym_repository import SqlGymRepository
 from nexus.infra.db.health_repository import SqlHealthRepository
 from nexus.infra.db.investment_repository import SqlInvestmentRepository
@@ -42,6 +43,7 @@ class SqlUnitOfWork:
         self._runs: SqlRunRepository | None = None
         self._gym: SqlGymRepository | None = None
         self._health: SqlHealthRepository | None = None
+        self._food: SqlFoodRepository | None = None
         self._investments: SqlInvestmentRepository | None = None
         self._trips: SqlTripRepository | None = None
         self._rates: SqlRateRepository | None = None
@@ -110,6 +112,12 @@ class SqlUnitOfWork:
         return self._health
 
     @property
+    def food(self) -> SqlFoodRepository:
+        if self._food is None:
+            raise RuntimeError("unit of work is not active")
+        return self._food
+
+    @property
     def investments(self) -> SqlInvestmentRepository:
         if self._investments is None:
             raise RuntimeError("unit of work is not active")
@@ -166,6 +174,7 @@ class SqlUnitOfWork:
         self._runs = SqlRunRepository(self._connection)
         self._gym = SqlGymRepository(self._connection)
         self._health = SqlHealthRepository(self._connection)
+        self._food = SqlFoodRepository(self._connection)
         self._investments = SqlInvestmentRepository(self._connection)
         self._trips = SqlTripRepository(self._connection)
         self._rates = SqlRateRepository(self._connection)
