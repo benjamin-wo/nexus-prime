@@ -23,6 +23,7 @@ from nexus.domain.gym_training import (
     MuscleVolume,
     PlanKind,
     ProgressPoint,
+    Record,
     Routine,
     SetEntry,
     SetKind,
@@ -35,12 +36,15 @@ from nexus.domain.gym_training import (
     e1rm_kg,
     last_time,
     progress,
+    records_of_set,
     summarise,
     todays_routine,
     volume_by_muscle,
     week_start,
 )
 from nexus.domain.ledger import UserId
+
+MAX_BATCH = 100
 
 
 async def sync_catalogue(uow: UnitOfWork, catalogue: list[Exercise]) -> int:
@@ -60,12 +64,31 @@ async def find_exercises(
     equipment: Equipment | None = None,
     level: Level | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[Exercise]:
     async with uow:
         found = await uow.gym.find_exercises(
             text=text, muscle=muscle, equipment=equipment, level=level
         )
-    return search(found, text=text, muscle=muscle, equipment=equipment, level=level, limit=limit)
+    return search(
+        found,
+        text=text,
+        muscle=muscle,
+        equipment=equipment,
+        level=level,
+        limit=limit,
+        offset=offset,
+    )
+
+
+async def exercises_by_id(uow: UnitOfWork, ids: Sequence[str]) -> list[Exercise]:
+    """These exercises in the order given (repeats once), unknown ids skipped. One query."""
+    wanted = list(dict.fromkeys(ids))
+    if len(wanted) > MAX_BATCH:
+        raise InvalidInput(f"at most {MAX_BATCH} ids at a time")
+    async with uow:
+        found = await uow.gym.get_exercises(wanted)
+    return [found[i] for i in wanted if i in found]
 
 
 async def exercise(uow: UnitOfWork, exercise_id: str) -> Exercise:
@@ -101,6 +124,21 @@ async def withdraw_consent(uow: UnitOfWork, user_id: UserId) -> None:
     async with uow:
         await uow.gym.set_health_consent(user_id, None)
         await uow.commit()
+
+
+async def weight_unit(uow: UnitOfWork, user_id: UserId) -> WeightUnit:
+    """The unit they log weights in: their choice, else kilograms."""
+    async with uow:
+        return await uow.gym.weight_unit(user_id) or WeightUnit.KG
+
+
+async def set_weight_unit(uow: UnitOfWork, user_id: UserId, unit: WeightUnit) -> WeightUnit:
+    """Choose the unit sets are logged in when none is given. A preference, not health data,
+    so it needs no consent."""
+    async with uow:
+        await uow.gym.set_weight_unit(user_id, unit)
+        await uow.commit()
+    return unit
 
 
 async def _begin_write(uow: UnitOfWork, user_id: UserId) -> None:
@@ -260,6 +298,12 @@ async def _open(uow: UnitOfWork, user_id: UserId, workout_id: UUID) -> Workout:
     return workout
 
 
+@dataclass(frozen=True, slots=True)
+class LoggedSet:
+    entry: SetEntry
+    records: tuple[Record, ...]  # the records this set sets; never for a warm-up
+
+
 async def log_set(
     uow: UnitOfWork,
     user_id: UserId,
@@ -269,16 +313,51 @@ async def log_set(
     kind: SetKind = SetKind.WORKING,
     reps: int | None = None,
     weight: Decimal | None = None,
-    unit: WeightUnit = WeightUnit.KG,
+    unit: WeightUnit | None = None,
     seconds: int | None = None,
     rpe: Decimal | None = None,
     now: datetime,
 ) -> SetEntry:
-    """Add a set to the end of a workout in progress."""
+    """Add a set to the end of a workout in progress (see ``log_set_with_records``)."""
+    return (
+        await log_set_with_records(
+            uow,
+            user_id,
+            workout_id,
+            exercise_id=exercise_id,
+            kind=kind,
+            reps=reps,
+            weight=weight,
+            unit=unit,
+            seconds=seconds,
+            rpe=rpe,
+            now=now,
+        )
+    ).entry
+
+
+async def log_set_with_records(
+    uow: UnitOfWork,
+    user_id: UserId,
+    workout_id: UUID,
+    *,
+    exercise_id: str,
+    kind: SetKind = SetKind.WORKING,
+    reps: int | None = None,
+    weight: Decimal | None = None,
+    unit: WeightUnit | None = None,
+    seconds: int | None = None,
+    rpe: Decimal | None = None,
+    now: datetime,
+) -> LoggedSet:
+    """Add a set to the end of a workout in progress, and say which records it sets: against
+    the history before this workout and the sets already in it, the same rules as the summary
+    at ``finish_workout``. Without a ``unit`` the user's own is used, else kilograms."""
     async with uow:
         await _begin_write(uow, user_id)
-        await _open(uow, user_id, workout_id)
+        workout = await _open(uow, user_id, workout_id)
         await _known_exercises(uow, [exercise_id])
+        unit = unit or await uow.gym.weight_unit(user_id) or WeightUnit.KG
         entry = SetEntry(
             uuid4(),
             workout_id,
@@ -292,10 +371,17 @@ async def log_set(
             rpe,
             now,
         )
+        records: list[Record] = []
+        if entry.counts:
+            earlier = (await uow.gym.sets_of_workouts(user_id, [workout_id]))[workout_id]
+            history = await uow.gym.sets_of_exercises(
+                user_id, [exercise_id], before=workout.started_at, exclude_workout=workout_id
+            )
+            records = records_of_set(entry, earlier, history)
         await uow.gym.add_set(user_id, entry)
         await note_health_write(uow, user_id)
         await uow.commit()
-        return entry
+        return LoggedSet(entry, tuple(records))
 
 
 EDITABLE = frozenset({"exercise_id", "kind", "reps", "weight", "unit", "seconds", "rpe", "done_at"})

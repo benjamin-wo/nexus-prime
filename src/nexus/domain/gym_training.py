@@ -360,6 +360,54 @@ def detect_prs(
     return found
 
 
+@dataclass(frozen=True, slots=True)
+class Record:
+    """A record one set achieves, as the live logging screen shows it."""
+
+    kind: PrKind
+    exercise_id: str
+    value_text: str  # "102.5 kg", "e1RM 120 kg", "8 reps at 100 kg"
+
+
+def _plain(value: Decimal) -> str:
+    text = format(value, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def records_of_set(
+    entry: SetEntry, earlier: Sequence[SetEntry], history: Sequence[SetEntry]
+) -> list[Record]:
+    """The records ``entry`` sets, against ``history`` (everything before its workout) and
+    ``earlier`` (the sets before it in the same workout). Only records that ``detect_prs``
+    would also report for the workout so far count, so what shows live agrees with the summary
+    at the end. Warm-ups never count."""
+    if not entry.counts:
+        return []
+    same = [s for s in earlier if s.exercise_id == entry.exercise_id]
+    past = [h for h in history if h.exercise_id == entry.exercise_id]
+    so_far = set(detect_prs([*same, entry], past).get(entry.exercise_id, ()))
+    mine = detect_prs([entry], [*past, *same]).get(entry.exercise_id, ())
+    unit = entry.unit.value
+    out: list[Record] = []
+    weight = None if entry.weight is None else _plain(entry.weight)
+    for kind in mine:
+        if kind not in so_far:
+            continue
+        if kind is PrKind.MOST_REPS:
+            text = f"{entry.reps} reps" + ("" if weight is None else f" at {weight} {unit}")
+        elif entry.weight is None:
+            continue
+        elif kind is PrKind.HEAVIEST_WEIGHT:
+            text = f"{weight} {unit}"
+        else:
+            estimate = epley_1rm(entry.weight, entry.reps or 0)
+            if estimate is None:
+                continue
+            text = f"e1RM {_plain(estimate)} {unit}"
+        out.append(Record(kind, entry.exercise_id, text))
+    return out
+
+
 def _beats_reps(mine: Sequence[SetEntry], old: Sequence[SetEntry]) -> bool:
     def top(sets: Sequence[SetEntry]) -> dict[Decimal | None, int]:
         out: dict[Decimal | None, int] = {}

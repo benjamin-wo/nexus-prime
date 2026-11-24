@@ -212,6 +212,17 @@ class SqlGymRepository:
             update(users).where(users.c.id == user_id).values(health_consent_at=at)
         )
 
+    async def weight_unit(self, user_id: UserId) -> WeightUnit | None:
+        value = (
+            await self._connection.execute(select(users.c.weight_unit).where(users.c.id == user_id))
+        ).scalar_one_or_none()
+        return WeightUnit(value) if value else None
+
+    async def set_weight_unit(self, user_id: UserId, unit: WeightUnit) -> None:
+        await self._connection.execute(
+            update(users).where(users.c.id == user_id).values(weight_unit=unit.value)
+        )
+
     # --- routines and the plan -----------------------------------------------------------
 
     async def add_routine(self, routine: Routine) -> None:

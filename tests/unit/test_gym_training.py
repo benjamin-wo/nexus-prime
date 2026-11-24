@@ -28,6 +28,7 @@ from nexus.domain.gym_training import (
     last_time,
     next_in_rotation,
     progress,
+    records_of_set,
     summarise,
     to_kg,
     todays_routine,
@@ -473,3 +474,75 @@ def test_progress_is_the_best_set_of_each_workout_oldest_first() -> None:
     assert [p.workout_id for p in points] == [w1, w2]
     assert [p.e1rm_kg for p in points] == [D("116.67"), D("122.50")]
     assert progress([a_set(kind=SetKind.WARMUP)]) == []
+
+
+# --- records while logging ------------------------------------------------------------------------
+
+
+def test_a_set_flags_the_records_it_sets_with_text() -> None:
+    old = a_set(reps=5, weight="100", at=T0 - timedelta(days=7))
+    heavier = a_set(reps=3, weight="110.50")
+    found = records_of_set(heavier, [], [old])
+    assert [(r.kind, r.exercise_id, r.value_text) for r in found] == [
+        (PrKind.HEAVIEST_WEIGHT, "bench", "110.5 kg"),
+        (PrKind.BEST_E1RM, "bench", "e1RM 121.55 kg"),
+    ]
+    more = records_of_set(a_set(reps=6, weight="100"), [], [old])
+    assert [(r.kind, r.value_text) for r in more] == [
+        (PrKind.BEST_E1RM, "e1RM 120 kg"),
+        (PrKind.MOST_REPS, "6 reps at 100 kg"),
+    ]
+    bodyweight = records_of_set(
+        a_set("pullup", weight=None, reps=10), [], [a_set("pullup", weight=None, reps=8)]
+    )
+    assert [(r.kind, r.value_text) for r in bodyweight] == [(PrKind.MOST_REPS, "10 reps")]
+
+
+def test_warmups_and_first_times_flag_nothing() -> None:
+    old = a_set(reps=5, weight="100")
+    assert records_of_set(a_set(reps=1, weight="200", kind=SetKind.WARMUP), [], [old]) == []
+    assert records_of_set(a_set(reps=5, weight="100"), [], []) == []
+    assert records_of_set(a_set("squat", reps=5, weight="300"), [], [old]) == []
+
+
+def test_a_set_is_measured_against_the_sets_before_it_in_the_workout() -> None:
+    old = a_set(reps=5, weight="100", at=T0 - timedelta(days=7))
+    first = a_set(reps=5, weight="110", position=1)
+    second = a_set(reps=5, weight="105", position=2)  # beats history, not the first set
+    third = a_set(reps=5, weight="115", position=3)
+    assert [r.kind for r in records_of_set(first, [], [old])] == [
+        PrKind.HEAVIEST_WEIGHT,
+        PrKind.BEST_E1RM,
+    ]
+    assert records_of_set(second, [first], [old]) == []
+    assert [r.kind for r in records_of_set(third, [first, second], [old])] == [
+        PrKind.HEAVIEST_WEIGHT,
+        PrKind.BEST_E1RM,
+    ]
+
+
+def test_a_warmup_earlier_in_the_workout_sets_no_bar() -> None:
+    old = a_set(reps=5, weight="100", at=T0 - timedelta(days=7))
+    warm = a_set(reps=1, weight="200", kind=SetKind.WARMUP, position=1)
+    work = a_set(reps=5, weight="105", position=2)
+    assert PrKind.HEAVIEST_WEIGHT in [r.kind for r in records_of_set(work, [warm], [old])]
+
+
+def test_live_flags_add_up_to_the_summary() -> None:
+    old = a_set(reps=5, weight="100", at=T0 - timedelta(days=7))
+    # A weight first lifted in this workout can't be a reps record at the end, so not live either.
+    sequence = [
+        a_set(reps=5, weight="80", position=1),
+        a_set(reps=8, weight="80", position=2),
+        a_set(reps=6, weight="100", position=3),
+        a_set(reps=3, weight="110", position=4),
+        a_set(reps=3, weight="112.5", unit=WeightUnit.KG, position=5),
+        a_set("squat", reps=5, weight="150", position=6),
+    ]
+    live: dict[str, set[PrKind]] = {}
+    for i, entry in enumerate(sequence):
+        for r in records_of_set(entry, sequence[:i], [old]):
+            live.setdefault(r.exercise_id, set()).add(r.kind)
+    final = detect_prs(sequence, [old])
+    assert live == {e: set(kinds) for e, kinds in final.items()}
+    assert live  # the sequence does set records

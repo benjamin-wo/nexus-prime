@@ -15,7 +15,9 @@ from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.gym import Equipment, Exercise, Level, Muscle
 from nexus.domain.gym_training import (
     PlanKind,
+    PrKind,
     ProgressPoint,
+    Record,
     Routine,
     SetEntry,
     SetKind,
@@ -74,9 +76,27 @@ async def exercises(
     equipment: Equipment | None = None,
     level: Level | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    ids: Annotated[str | None, Query(max_length=5000)] = None,
 ) -> list[ExerciseOut]:
+    """Find exercises, best match first. Page with ``offset``: a page shorter than ``limit``
+    is the last (there is no total). With ``ids`` (comma-separated, at most 100) it instead
+    returns those exercises in the order given, skipping unknown ids; the filters, ``limit``
+    and ``offset`` don't apply and can't be sent with it."""
+    if ids is not None:
+        if text or muscle or equipment or level or offset:
+            raise InvalidInput("ids can't be combined with a search")
+        wanted = [i.strip() for i in ids.split(",") if i.strip()]
+        listed = await gym_cases.exercises_by_id(web.uow(), wanted)
+        return [_exercise(e, web.settings.exercise_image_base_url) for e in listed]
     found = await gym_cases.find_exercises(
-        web.uow(), text=text, muscle=muscle, equipment=equipment, level=level, limit=limit
+        web.uow(),
+        text=text,
+        muscle=muscle,
+        equipment=equipment,
+        level=level,
+        limit=limit,
+        offset=offset,
     )
     return [_exercise(e, web.settings.exercise_image_base_url) for e in found]
 
@@ -110,6 +130,32 @@ async def give_consent(auth: Auth, web: Runtime) -> ConsentOut:
 async def withdraw_consent(auth: Auth, web: Runtime) -> None:
     """Take it back. What is stored stays until you delete it."""
     await gym_cases.withdraw_consent(web.uow(), auth.user.id)
+
+
+# --- preferences --------------------------------------------------------------------------------
+
+
+class HealthPreferencesIn(Model):
+    unit: WeightUnit
+
+
+class HealthPreferencesOut(Model):
+    unit: WeightUnit  # what sets are logged in when none is given; kg until chosen
+
+
+@router.get("/preferences")
+async def get_preferences(auth: Auth, web: Runtime) -> HealthPreferencesOut:
+    return HealthPreferencesOut(unit=await gym_cases.weight_unit(web.uow(), auth.user.id))
+
+
+@router.put("/preferences")
+async def put_preferences(
+    body: HealthPreferencesIn, auth: Auth, web: Runtime
+) -> HealthPreferencesOut:
+    """Choose the weight unit. Needs no consent: it isn't health data."""
+    return HealthPreferencesOut(
+        unit=await gym_cases.set_weight_unit(web.uow(), auth.user.id, body.unit)
+    )
 
 
 # --- routines and the plan --------------------------------------------------------------------
@@ -383,19 +429,34 @@ def _weight(value: str | None) -> Decimal | None:
         raise InvalidInput("that weight isn't a number") from exc
 
 
+class RecordOut(Model):
+    kind: PrKind
+    exercise_id: str
+    value_text: str
+
+
+class LoggedSetOut(SetOut):
+    records: list[RecordOut]  # records this set sets; empty for a warm-up or none
+
+
+def _record(r: Record) -> RecordOut:
+    return RecordOut(kind=r.kind, exercise_id=r.exercise_id, value_text=r.value_text)
+
+
 class SetIn(Model):
     exercise_id: str = Field(min_length=1, max_length=200)
     kind: SetKind = SetKind.WORKING
     reps: int | None = None
     weight: str | None = Field(None, max_length=16)
-    unit: WeightUnit = WeightUnit.KG
+    unit: WeightUnit | None = None  # None: the user's preference, else kg
     seconds: int | None = None
     rpe: str | None = Field(None, max_length=8)
 
 
 @router.post("/workouts/{workout_id}/sets", status_code=201)
-async def log_set(workout_id: str, body: SetIn, auth: Auth, web: Runtime) -> SetOut:
-    logged = await gym_cases.log_set(
+async def log_set(workout_id: str, body: SetIn, auth: Auth, web: Runtime) -> LoggedSetOut:
+    """Log a set; ``records`` lists the records it sets, as the summary at the end would."""
+    logged = await gym_cases.log_set_with_records(
         web.uow(),
         auth.user.id,
         _uuid(workout_id, "workout"),
@@ -408,7 +469,9 @@ async def log_set(workout_id: str, body: SetIn, auth: Auth, web: Runtime) -> Set
         rpe=_weight(body.rpe),
         now=web.clock(),
     )
-    return _set(logged)
+    return LoggedSetOut(
+        **_set(logged.entry).model_dump(), records=[_record(r) for r in logged.records]
+    )
 
 
 @router.post("/workouts/{workout_id}/undo")

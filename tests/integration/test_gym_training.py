@@ -3,6 +3,7 @@ user never sees or writes another's. Every name and figure is made up."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -848,3 +849,148 @@ async def test_two_users_over_http_never_meet(world: World) -> None:
     assert (await owner.get("/api/health/consent")).json()["consented_at"] is not None
     still = (await owner.get(f"/api/health/workouts/{workout['id']}")).json()
     assert [s["reps"] for s in still["sets"]] == [5]
+
+
+# --- paging, batches, the unit preference and live records ---------------------------------------
+
+
+async def test_exercise_pages_follow_the_ranking_and_never_overlap(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    whole = (await owner.get("/api/health/exercises?text=press&limit=12")).json()
+    assert len(whole) == 12
+    pages = []
+    for offset in (0, 5, 10, 15):
+        page = (await owner.get(f"/api/health/exercises?text=press&limit=5&offset={offset}")).json()
+        assert len(page) <= 5
+        pages.extend(page)
+    assert [e["id"] for e in pages[:12]] == [e["id"] for e in whole]
+    assert len({e["id"] for e in pages}) == len(pages)
+    past_end = (await owner.get("/api/health/exercises?text=press&offset=100000")).json()
+    assert past_end == []  # a short page is the end
+    assert (await owner.get("/api/health/exercises?offset=-1")).status_code == 422
+
+
+async def test_exercises_by_id_come_back_in_order_skipping_unknown(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    got = await owner.get(f"/api/health/exercises?ids={SQUAT},Nope,{BENCH},{SQUAT}, {PLANK},")
+    assert got.status_code == 200
+    assert [e["id"] for e in got.json()] == [SQUAT, BENCH, PLANK]
+    assert got.json()[0]["images"][0].endswith(f"{SQUAT}/0.jpg")
+    assert (await owner.get("/api/health/exercises?ids=")).json() == []
+    assert (await owner.get("/api/health/exercises?ids=Nope")).json() == []
+
+    many = ",".join(f"x{i}" for i in range(100))
+    assert (await owner.get(f"/api/health/exercises?ids={many}")).status_code == 200
+    assert (await owner.get(f"/api/health/exercises?ids={many},x100")).status_code == 422
+    assert (await owner.get(f"/api/health/exercises?ids={BENCH}&text=squat")).status_code == 422
+    assert (await owner.get(f"/api/health/exercises?ids={BENCH}&offset=1")).status_code == 422
+
+
+async def test_the_weight_unit_preference_is_per_user_and_used_when_logging(world: World) -> None:
+    owner, invite = await owner_and_invite(world)
+    member = world.browser()
+    assert (await member.login(MEMBER, invite=invite)).status_code == 200
+    for who in (owner, member):
+        await who.send("POST", "/api/health/consent")
+
+    assert (await owner.get("/api/health/preferences")).json() == {"unit": "kg"}
+    assert (await owner.send("PUT", "/api/health/preferences", {"unit": "lb"})).json() == {
+        "unit": "lb"
+    }
+    assert (await owner.get("/api/health/preferences")).json() == {"unit": "lb"}
+    assert (await member.get("/api/health/preferences")).json() == {"unit": "kg"}  # not theirs
+    for bad in ({"unit": "stone"}, {}, {"unit": None}, {"unit": "lb", "x": 1}):
+        assert (await owner.send("PUT", "/api/health/preferences", bad)).status_code == 422
+    wrong = await owner.send(
+        "PUT", "/api/health/preferences", {"unit": "kg"}, **{"X-CSRF-Token": "x"}
+    )
+    assert wrong.status_code == 403
+    assert (await owner.get("/api/health/preferences")).json() == {"unit": "lb"}
+
+    async def log(who: Any, body: dict[str, Any]) -> dict[str, Any]:
+        workout = (await who.get("/api/health/today")).json()["in_progress"]
+        if workout is None:
+            workout = (await who.send("POST", "/api/health/workouts", {})).json()
+        response = await who.send("POST", f"/api/health/workouts/{workout['id']}/sets", body)
+        assert response.status_code == 201
+        return dict(response.json())
+
+    plain = {"exercise_id": BENCH, "reps": 5, "weight": "135"}
+    assert (await log(owner, plain))["unit"] == "lb"  # their preference
+    assert (await log(owner, {**plain, "unit": "kg"}))["unit"] == "kg"  # an explicit unit wins
+    assert (await log(member, plain))["unit"] == "kg"  # the other user's is untouched
+
+    await owner.send("PUT", "/api/health/preferences", {"unit": "kg"})
+    assert (await log(owner, plain))["unit"] == "kg"
+    assert (await member.get("/api/health/preferences")).json() == {"unit": "kg"}
+
+
+async def test_the_preference_needs_no_consent_and_a_session(world: World) -> None:
+    assert (await world.browser().get("/api/health/preferences")).status_code in (401, 403)
+    owner = world.browser()
+    await owner.login(OWNER)
+    assert (await owner.send("PUT", "/api/health/preferences", {"unit": "lb"})).status_code == 200
+
+
+async def test_live_records_match_the_summary_at_the_end(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await owner.send("POST", "/api/health/consent")
+
+    async def run(
+        at: datetime, sets: list[dict[str, Any]]
+    ) -> tuple[list[list[Any]], dict[str, Any]]:
+        world.clock.now = at
+        workout = (await owner.send("POST", "/api/health/workouts", {})).json()
+        flags = []
+        for body in sets:
+            world.clock.now += timedelta(minutes=3)
+            response = await owner.send("POST", f"/api/health/workouts/{workout['id']}/sets", body)
+            assert response.status_code == 201
+            flags.append(response.json()["records"])
+        world.clock.now += timedelta(minutes=3)
+        done = await owner.send("POST", f"/api/health/workouts/{workout['id']}/finish", {})
+        return flags, done.json()
+
+    first, _ = await run(
+        NOW - timedelta(days=7), [{"exercise_id": BENCH, "reps": 5, "weight": "100"}]
+    )
+    assert first == [[]]  # nothing to beat yet
+
+    sets = [
+        {"exercise_id": BENCH, "reps": 10, "weight": "40", "kind": "warmup"},
+        {"exercise_id": BENCH, "reps": 5, "weight": "100"},  # equal: nothing
+        {"exercise_id": BENCH, "reps": 6, "weight": "100"},  # reps and e1RM
+        {"exercise_id": BENCH, "reps": 3, "weight": "110.5"},  # heaviest and e1RM
+        {"exercise_id": BENCH, "reps": 3, "weight": "105"},  # under this workout's best
+        {"exercise_id": BENCH, "reps": 1, "weight": "300", "kind": "warmup"},  # never counts
+        {"exercise_id": SQUAT, "reps": 5, "weight": "150"},  # first time: nothing
+    ]
+    flags, summary = await run(NOW, sets)
+    kinds = [[r["kind"] for r in f] for f in flags]
+    assert kinds == [
+        [],
+        [],
+        ["best_e1rm", "most_reps"],
+        ["heaviest_weight", "best_e1rm"],
+        [],
+        [],
+        [],
+    ]
+    assert flags[2][1] == {
+        "kind": "most_reps",
+        "exercise_id": BENCH,
+        "value_text": "6 reps at 100 kg",
+    }
+    assert flags[3][0] == {
+        "kind": "heaviest_weight",
+        "exercise_id": BENCH,
+        "value_text": "110.5 kg",
+    }
+    live: dict[str, set[str]] = {}
+    for f in flags:
+        for r in f:
+            live.setdefault(r["exercise_id"], set()).add(r["kind"])
+    assert summary["prs"] and live == {e: set(k) for e, k in summary["prs"].items()}
