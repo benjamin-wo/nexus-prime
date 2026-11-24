@@ -61,7 +61,7 @@ describe("Health consent", () => {
     });
     renderWithProviders(<HealthToday />);
     expect(await screen.findByText(/not medical advice/i)).toBeInTheDocument();
-    expect(screen.getByText(/routines, training plan, workouts and sets/i)).toBeInTheDocument();
+    expect(screen.getByText(/workouts, food logs, body weight and other measurements, and your\s+health profile/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(calls.some((c) => c.path === "/health/today")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Turn on Health" }));

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { LoadError } from "../components/LoadError";
 import { Button } from "../components/ui";
 import { healthApi, healthKey } from "./api";
+import { WellnessStatement } from "./WellnessStatement";
 
 import "./health.css";
 
@@ -40,14 +41,15 @@ function ConsentScreen() {
         </div>
         <div className="card section-body health-prose">
           <p>
-            Nexus will keep your routines, training plan, workouts and sets: the exercises, weights, reps and times you log. It
-            is used only to show your own history and progress, and it stays on your account.
+            Nexus will keep what you log in Health: your workouts, food logs, body weight and other measurements, and your
+            health profile. It is used only to show your own history and progress, and it stays on your account.
           </p>
           <p>
             Health is for general wellness, not medical advice. It does not diagnose, treat or monitor any condition. Talk to a
             doctor before you change how you train if you have a health concern.
           </p>
           <p>You can turn Health off in Settings at any time. What you logged stays until you delete it.</p>
+          <WellnessStatement />
           {error && (
             <p className="error-text" role="alert">
               {error}
