@@ -3153,7 +3153,9 @@ CASES: tuple[Case, ...] = (
         food=True,
         forbid=WRITES,
         unchanged=True,
-        reply=(("doctor", "physio", "professional", "medical", "clinician"),),
+        no_calls=True,
+        # The red-flag pre-check answers with the fixed joint referral: no model, no tools.
+        reply=(("doctor", "physiotherapist"),),
         never_say=("you can keep", "fine to keep", "safe to keep", "just push through"),
     ),
     Case(
