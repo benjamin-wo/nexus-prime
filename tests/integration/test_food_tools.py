@@ -188,8 +188,9 @@ async def test_energy_estimate_asks_for_the_missing_inputs(uow: UowFactory, alic
     await agree(uow, alice)
     text, error = await run(uow, alice, "energy_estimate")
     assert error == "NeedsProfile" and text.startswith("Error:")
-    for needed in ("height", "birth year", "sex", "Health profile"):
+    for needed in ("height", "birth year", "activity level", "Health profile"):
         assert needed in text
+    assert "sex" not in text  # unspecified uses the mean of the two equations
     await health_cases.save_profile(
         uow(), alice, sex_for_equations=Sex.FEMALE, birth_year=NOW.year - 30, now=NOW
     )

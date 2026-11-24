@@ -27,7 +27,7 @@ from nexus.domain.energy import (
     weight_trend,
 )
 from nexus.domain.errors import InvalidInput, NotFound
-from nexus.domain.health import HealthProfile, SampleKind, Sex
+from nexus.domain.health import HealthProfile, SampleKind
 from nexus.domain.health_texts import Signpost
 from nexus.domain.ledger import UserId
 
@@ -205,14 +205,14 @@ async def current_targets(
 
 
 def missing_inputs(profile: HealthProfile | None) -> list[str]:
-    """What the profile still needs before an estimate can be made: height, birth year, sex
-    (``Sex.UNSPECIFIED`` is how an unset sex is stored) and activity level."""
+    """What the profile still needs before an estimate can be made: height, birth year and
+    activity level. Sex is not required: ``Sex.UNSPECIFIED`` (unset, or chosen) uses the mean
+    of the two Mifflin-St Jeor equations, so nobody is made to pick one."""
     if profile is None:
-        return ["height", "birth year", "sex", "activity level"]
+        return ["height", "birth year", "activity level"]
     found = [
         ("height", profile.height_cm is not None),
         ("birth year", profile.birth_year is not None),
-        ("sex", profile.sex_for_equations is not Sex.UNSPECIFIED),
         ("activity level", profile.activity_level is not None),
     ]
     return [name for name, present in found if not present]
