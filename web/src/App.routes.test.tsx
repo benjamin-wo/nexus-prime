@@ -102,6 +102,43 @@ describe("where pages live now", () => {
   });
 });
 
+describe("Health", () => {
+  /** Signed in with Health on and agreed to; the library has one exercise. */
+  function withHealth() {
+    const me = { ...member, preferences: { track_cards: false, show_health: true } };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const path = new URL(String(input), "http://localhost").pathname.replace(/^\/api/, "");
+      const body =
+        path === "/me" ? me : path === "/health/consent" ? { consented_at: "2026-11-20T08:00:00Z" } : path === "/health/today" ? { routine: null, in_progress: null } : [];
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+  }
+
+  it("opens each page under Health, with its four tabs, and the menu has Health when it is on", async () => {
+    withHealth();
+    window.history.pushState({}, "", "/health/library");
+    render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    expect(await screen.findByRole("heading", { name: "Library", level: 1 })).toBeInTheDocument();
+    const tabs = screen.getByRole("navigation", { name: "Health pages" });
+    expect(within(tabs).getAllByRole("link").map((l) => l.textContent)).toEqual(["Today", "Routines", "Library", "History"]);
+    expect(within(tabs).getByRole("link", { name: "Library" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Health" })).toHaveAttribute("aria-current", "page");
+    expect(within(screen.getByRole("navigation", { name: "Main (mobile)" })).getByRole("link", { name: "Health" })).toBeInTheDocument();
+    fireEvent.click(within(tabs).getByRole("link", { name: "History" }));
+    expect(await screen.findByRole("heading", { name: "History", level: 1 })).toBeInTheDocument();
+    fireEvent.click(within(tabs).getByRole("link", { name: "Routines" }));
+    expect(await screen.findByRole("heading", { name: "Routines", level: 1 })).toBeInTheDocument();
+    fireEvent.click(within(tabs).getByRole("link", { name: "Today" }));
+    expect(await screen.findByRole("button", { name: "Start an empty workout" })).toBeInTheDocument();
+  });
+
+  it("opens by link before it is in the menu, on the consent screen", async () => {
+    await open("/health", "Health");
+    expect(screen.getByRole("button", { name: "Turn on Health" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Main" })).queryByRole("link", { name: "Health" })).toBeNull();
+  });
+});
+
 describe("an address that matches no page", () => {
   it("says so, keeps the shell, and links back to Home", async () => {
     await open("/no/such/page", "This page doesn't exist");

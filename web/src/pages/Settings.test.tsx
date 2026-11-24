@@ -71,6 +71,7 @@ describe("Settings", () => {
       "Wallets",
       "Category rules",
       "What Nexus remembers",
+      "Health data",
       "Download or delete",
       "Model costs",
     ]);
