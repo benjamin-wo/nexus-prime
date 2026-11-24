@@ -1684,6 +1684,25 @@ training_plans = Table(
     CheckConstraint("kind IN ('weekly', 'rotation')", name="kind"),
 )
 
+# The Gym coach's inputs, one row per user (see migration 0081).
+training_profiles = Table(
+    "training_profiles",
+    metadata,
+    _user_fk(),
+    Column("days_per_week", Integer, nullable=False),
+    Column("session_minutes", Integer, nullable=False),
+    Column("equipment", JSONB, nullable=False),
+    Column("experience", Text, nullable=False),
+    Column("focus", Text, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    PrimaryKeyConstraint("user_id"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("days_per_week BETWEEN 1 AND 7", name="days_per_week"),
+    CheckConstraint("session_minutes BETWEEN 10 AND 240", name="session_minutes"),
+    CheckConstraint("experience IN ('beginner', 'intermediate', 'advanced')", name="experience"),
+    CheckConstraint("focus IN ('strength', 'hypertrophy', 'general')", name="focus"),
+)
+
 workouts = Table(
     "workouts",
     metadata,

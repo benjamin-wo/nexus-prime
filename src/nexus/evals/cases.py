@@ -89,6 +89,8 @@ WRITES = (
     "finish_workout",
     "undo_last_set",
     "log_food",
+    "draft_training_plan",
+    "apply_adjustments",
 )
 
 TODAY = date(2026, 9, 28)

@@ -18,6 +18,7 @@ from nexus.domain.access import Invite, Session
 from nexus.domain.alerts import AlertKind, MarketAlert
 from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.chat import ChatLine
+from nexus.domain.coach import TrainingProfile
 from nexus.domain.departments import Run, Usage
 from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.email import (
@@ -1106,6 +1107,13 @@ class GymRepository(Protocol):
 
     async def sets_between(self, user_id: UserId, start: datetime, end: datetime) -> list[SetEntry]:
         """Sets done in ``[start, end)``, oldest first."""
+        ...
+
+    async def get_training_profile(self, user_id: UserId) -> TrainingProfile | None: ...
+    async def save_training_profile(
+        self, user_id: UserId, profile: TrainingProfile, at: datetime
+    ) -> None:
+        """Insert or replace the user's coach inputs."""
         ...
 
 

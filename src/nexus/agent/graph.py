@@ -272,6 +272,14 @@ def _last(messages: Sequence[BaseMessage], kind: type[BaseMessage]) -> Any:
     raise LookupError(f"no {kind.__name__} in state")
 
 
+RECENT_SAID = 3  # the user's last messages a tool may check for pain or an injury
+
+
+def _recent_said(messages: Sequence[BaseMessage]) -> str:
+    said = [text_of(m.content) for m in messages if isinstance(m, HumanMessage)]
+    return "\n".join(t for t in said[-RECENT_SAID:] if t)
+
+
 def _turn_batch(messages: Sequence[BaseMessage]) -> UUID:
     """Stands for the turn: derived from the id of the user's latest message, which the
     state gives every message and keeps across the agent's steps and a pause to confirm."""
@@ -491,7 +499,9 @@ class AgentGraph:
             self._models[names] = bound
         return bound
 
-    async def _context(self, config: RunnableConfig) -> ToolContext:
+    async def _context(
+        self, config: RunnableConfig, state: AgentState | None = None
+    ) -> ToolContext:
         configurable = config.get("configurable") or {}
         actor = UserId(UUID(str(configurable["user_id"])))
         if configurable.get("thread_id") != thread_id(actor):
@@ -511,6 +521,7 @@ class AgentGraph:
             lookup=self.deps.lookup,
             prices=self.deps.prices,
             zones=self.deps.zones,
+            message=_recent_said(state["messages"]) if state else "",
         )
 
     async def _prompt(self, ctx: ToolContext, state: AgentState) -> str:
@@ -1144,7 +1155,7 @@ class AgentGraph:
     async def confirm_node(
         self, state: AgentState, config: RunnableConfig
     ) -> Command[Literal["tools", "__end__"]]:
-        ctx = await self._context(config)
+        ctx = await self._context(config, state)
         request: AIMessage = _last(state["messages"], AIMessage)
         from_kernel = bool(request.additional_kwargs.get(KERNEL))
         summaries: list[str] = []
@@ -1175,7 +1186,7 @@ class AgentGraph:
     ) -> Command[Literal["agent", "kernel_reply"]]:
         # One batch id for the whole turn (it's rebuilt for every node), so Undo reverses
         # what one message changed together.
-        ctx = replace(await self._context(config), batch=_turn_batch(state["messages"]))
+        ctx = replace(await self._context(config, state), batch=_turn_batch(state["messages"]))
         request: AIMessage = _last(state["messages"], AIMessage)
         from_kernel = bool(request.additional_kwargs.get(KERNEL))
         results: list[ToolMessage] = []
