@@ -13,6 +13,11 @@ def test_bundled_skills_load_and_name_real_tools() -> None:
     library.validate_tools(set(tools))
     assert "- expenses:" in library.index()
     assert "## Splitting" in library.body("expenses")
+    gym = library.tools()["gym"]
+    assert {"log_sets", "finish_workout", "undo_last_set", "last_time"} <= set(gym)
+    assert "Finance expense" in library.body("gym") and "qualified professional" in library.body(
+        "gym"
+    )
     with pytest.raises(NotFound):
         library.body("nope")
 

@@ -10,6 +10,7 @@ from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from nexus.application import gym as gym_cases
 from nexus.application import memory as memory_cases
 from nexus.application import notifications as notification_cases
 from nexus.application import splits as split_cases
@@ -120,6 +121,34 @@ class Logged:
             ):
                 return True
         return False
+
+
+@dataclass(frozen=True, slots=True)
+class Lifted:
+    """This many sets of ``reps`` at ``weight`` kg (or, with ``weight`` None, no weight) of the
+    exercise were logged on or after ``since``: new ones, not the seed's."""
+
+    exercise_id: str
+    reps: int
+    weight: str | None
+    sets: int
+    since: date
+
+    def describe(self) -> str:
+        at = f" at {self.weight} kg" if self.weight else ""
+        return f"logged {self.sets} sets of {self.reps}{at} on {self.exercise_id}"
+
+    async def holds(self, world: World) -> bool:
+        found = await gym_cases.workouts(world.uow(), world.user.id, start=self.since)
+        matching = [
+            s
+            for w in found
+            for s in w.sets
+            if s.exercise_id == self.exercise_id
+            and s.reps == self.reps
+            and (s.weight == Decimal(self.weight) if self.weight else s.weight is None)
+        ]
+        return len(matching) == self.sets
 
 
 @dataclass(frozen=True, slots=True)

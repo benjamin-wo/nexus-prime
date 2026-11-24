@@ -27,6 +27,7 @@ from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import budgets as budget_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import gym as gym_cases
 from nexus.application import salary as salary_cases
 from nexus.application import splits as split_cases
 from nexus.application import transactions as tx_cases
@@ -37,11 +38,13 @@ from nexus.application.categories import list_categories
 from nexus.application.plans import PlanResult
 from nexus.application.ports import UnitOfWork
 from nexus.application.users import RegisterUser, register_user
+from nexus.domain.gym_training import PlanKind, Slot
 from nexus.domain.ledger import Direction, ShareRequest, Source, User
 from nexus.domain.money import Money
 from nexus.domain.planning import Cadence, PayRule
 from nexus.domain.plans import PlanStatus, SavedPlan, Verdict
 from nexus.domain.recurring import Subscription, SubscriptionStatus, merchant_key
+from nexus.infra.exercises import load_catalogue
 
 type UowFactory = Callable[[], UnitOfWork]
 
@@ -248,10 +251,44 @@ def open_plan(user: User, symbol: str, close: str, *, keep_fresh: bool) -> Saved
     )
 
 
+# The ``gym`` variant (see ``seed_gym``): the user has agreed to Health, has a Push routine on
+# Mondays (today), and three past workouts. The figures the gym cases check against.
+BENCH = "Barbell_Bench_Press_-_Medium_Grip"
+SQUAT = "Barbell_Squat"
+GYM_SQUAT_LAST = "100"  # kg, 3 sets of 5, Mon 21 Sep
+GYM_BENCH_BEST = "80"  # kg for 5 reps, Thu 24 Sep (the heaviest bench set)
+
+
+async def seed_gym(new_uow: UowFactory, user: User) -> None:
+    """Health on for ``user`` with a Monday routine and last week's squat and bench."""
+    await gym_cases.sync_catalogue(new_uow(), load_catalogue())
+    await gym_cases.give_consent(new_uow(), user.id, now=NOW)
+    push = await gym_cases.save_routine(
+        new_uow(), user.id, name="Push",
+        slots=[Slot(BENCH, 3, 5, None, 120), Slot("Standing_Military_Press", 3, 8, None)],
+        now=NOW,
+    )  # fmt: skip
+    await gym_cases.set_plan(new_uow(), user.id, PlanKind.WEEKLY, weekly={0: push.id}, now=NOW)
+    for day, exercise, weight, reps in (
+        (date(2026, 9, 21), SQUAT, GYM_SQUAT_LAST, 5),
+        (date(2026, 9, 24), BENCH, GYM_BENCH_BEST, 5),
+        (date(2026, 9, 17), BENCH, "75", 5),
+    ):
+        at = datetime.combine(day, time(18, 0), tzinfo=TZ)
+        started = await gym_cases.start_workout(new_uow(), user.id, now=at)
+        for _ in range(3):
+            await gym_cases.log_set(
+                new_uow(), user.id, started.id,
+                exercise_id=exercise, reps=reps, weight=Decimal(weight), now=at,
+            )  # fmt: skip
+        await gym_cases.finish_workout(new_uow(), user.id, started.id, now=at.replace(hour=19))
+
+
 async def seed_user(
     new_uow: UowFactory,
     telegram_id: int,
     *,
+    gym: bool = False,
     shared: bool = False,
     november: bool = False,
     budget: bool = False,
@@ -370,6 +407,8 @@ async def seed_user(
             )
         )
         await db.commit()
+    if gym:
+        await seed_gym(new_uow, user)
     if not shared:
         return Seeded(user, trip_id=await _japan(new_uow, user))
     owner = (
