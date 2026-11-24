@@ -22,6 +22,10 @@ class Forbidden(NexusError):
     """The actor may not do this."""
 
 
+class ConsentRequired(Forbidden):
+    """Health data is only written once the user has agreed to it (``users.health_consent_at``)."""
+
+
 class Conflict(NexusError):
     """The request clashes with existing state."""
 

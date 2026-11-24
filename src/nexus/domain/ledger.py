@@ -31,6 +31,7 @@ class MenuSection(StrEnum):
 
     INVEST = "invest"
     TRAVEL = "travel"
+    HEALTH = "health"
 
 
 class ZoneSource(StrEnum):
@@ -120,12 +121,25 @@ class User:
     # it off (hidden, never turned on by itself). Chat and the API work whatever they say.
     show_invest: bool | None = None
     show_travel: bool | None = None
+    # Health (migration 0075): the same three states as above.
+    show_health: bool | None = None
+    # When they agreed to Nexus keeping their health data (Gym); None if they haven't, or
+    # withdrew. Writing health data needs it; what is stored stays when it is withdrawn.
+    health_consent_at: datetime | None = None
     # The lower-case address they signed up with, if they did that; None otherwise.
     email: str | None = None
 
     def __post_init__(self) -> None:
         if not self.home_timezone:
             object.__setattr__(self, "home_timezone", self.timezone)
+
+    def menu_choice(self, section: MenuSection) -> bool | None:
+        """Whether ``section`` shows in their menu: None undecided, True shown, False off."""
+        if section is MenuSection.INVEST:
+            return self.show_invest
+        if section is MenuSection.TRAVEL:
+            return self.show_travel
+        return self.show_health
 
     @property
     def is_demo(self) -> bool:

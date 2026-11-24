@@ -53,7 +53,7 @@ async def test_a_new_user_starts_in_simple_mode_and_the_setting_round_trips(
 async def test_me_shows_the_preference_and_the_endpoint_changes_it(world: World) -> None:  # noqa: F811
     owner = world.browser()
     await owner.login(OWNER)
-    undecided = {"show_invest": None, "show_travel": None}
+    undecided = {"show_invest": None, "show_travel": None, "show_health": None}
     assert (await owner.get("/api/me")).json()["preferences"] == {"track_cards": False, **undecided}
 
     on = await owner.send("PUT", "/api/settings/preferences", {"track_cards": True})

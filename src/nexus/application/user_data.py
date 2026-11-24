@@ -51,6 +51,8 @@ AREAS: tuple[Area, ...] = (
          ("holdings", "trades", "dividends", "holding_drafts")),
     Area("watchlist.json", "Stocks you follow and the stock alerts Nexus kept.",
          ("watchlist", "market_alerts")),
+    Area("gym.json", "Your workout routines, training plan, workouts and every set you logged.",
+         ("routines", "training_plans", "workouts", "workout_sets")),
     Area("trade_plans.json", "Your trade plans.", ("plans",)),
     Area("research.json", "Research runs (stocks and trips) and what they found.",
          ("department_runs",)),

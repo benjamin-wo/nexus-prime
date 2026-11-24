@@ -220,6 +220,7 @@ def _noted(replies: list[Reply], hid: bool) -> list[Reply]:
 MENU_NOTES = {
     MenuSection.INVEST: "I've added Invest to your menu.",
     MenuSection.TRAVEL: "I've added Travel to your menu.",
+    MenuSection.HEALTH: "I've added Health to your menu.",
 }
 
 

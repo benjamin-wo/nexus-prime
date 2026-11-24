@@ -89,6 +89,11 @@ ERASE_ORDER: tuple[str, ...] = (
     "watchlist",
     "plans",
     "department_runs",
+    # Gym: sets, then their workouts, the plan, and the routines they point at.
+    "workout_sets",
+    "workouts",
+    "training_plans",
+    "routines",
     "trip_reminders",
     "serp_searches",
     # Sign-in state, then the invites the user made or used, then the user.

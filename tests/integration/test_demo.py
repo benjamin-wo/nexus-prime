@@ -209,7 +209,12 @@ async def test_a_visitor_gets_a_private_signed_in_account(world: Demo) -> None:
     assert when(me["demo"]["expires_at"]) == NOW + timedelta(hours=24)
     assert me["demo"]["messages_left"] == 50
     # A demo shows off which card paid, and Invest and Travel in the menu.
-    assert me["preferences"] == {"track_cards": True, "show_invest": True, "show_travel": True}
+    assert me["preferences"] == {
+        "track_cards": True,
+        "show_invest": True,
+        "show_travel": True,
+        "show_health": None,
+    }
     assert me["user"]["telegram_linked"] is False  # a demo has no chat
 
     user = await world.user_of(visitor)
@@ -235,13 +240,19 @@ async def test_a_demo_can_switch_card_tracking_off_and_a_real_user_starts_with_i
         "track_cards": False,
         "show_invest": None,
         "show_travel": None,
+        "show_health": None,
     }
     visitor = await world.visit()
     off = await visitor.send("PUT", "/api/settings/preferences", {"track_cards": False})
     assert off.status_code == 200 and off.json()["track_cards"] is False
     # Turning one setting off leaves the demo's menu as it was.
     preferences = (await visitor.get("/api/me")).json()["preferences"]
-    assert preferences == {"track_cards": False, "show_invest": True, "show_travel": True}
+    assert preferences == {
+        "track_cards": False,
+        "show_invest": True,
+        "show_travel": True,
+        "show_health": None,
+    }
 
 
 async def test_the_cookie_lasts_the_demos_24_hours_not_90_days(world: Demo) -> None:

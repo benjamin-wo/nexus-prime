@@ -1175,7 +1175,7 @@ class AgentGraph:
         """After a tool of ``section`` worked: show that section in the web menu if the user
         has not decided (null), and say which one it turned on now. A user who turned it off
         (false) keeps it off, and the tool worked all the same. Never fails the turn."""
-        decided = ctx.user.show_invest if section is MenuSection.INVEST else ctx.user.show_travel
+        decided = ctx.user.menu_choice(section)
         if decided is not None:
             return None
         try:
