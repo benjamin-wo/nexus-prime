@@ -13,6 +13,10 @@ from nexus.agent import receipts
 from nexus.agent.receipts import LlmReceiptReader, ReceiptDraft, TextReceiptReader
 from tests.fakes import ScriptedModel, call, say, scripted
 
+# Long enough that a scripted reply is never cut off on a slow runner, far short of
+# how long Hangs waits.
+CUT_OFF = 0.5
+
 
 class Hangs(ScriptedModel):
     """A model that never answers in time."""
@@ -40,7 +44,7 @@ async def read(reader: LlmReceiptReader) -> ReceiptDraft:
 async def test_a_hanging_first_model_hands_over_to_the_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(receipts, "READ_TIMEOUT", 0.05)
+    monkeypatch.setattr(receipts, "READ_TIMEOUT", CUT_OFF)
     first, other = Hangs(), scripted(draft())
     found = await read(LlmReceiptReader(first, other))
     assert found.amount == "6.40" and found.merchant == "Toast Box"
@@ -66,7 +70,7 @@ async def test_an_unparseable_reply_is_tried_again_on_the_fallback() -> None:
 async def test_a_hanging_model_with_no_fallback_tries_itself_once_more(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(receipts, "READ_TIMEOUT", 0.05)
+    monkeypatch.setattr(receipts, "READ_TIMEOUT", CUT_OFF)
     first = Hangs()
     with pytest.raises(TimeoutError):
         await read(LlmReceiptReader(first))
@@ -103,6 +107,6 @@ async def test_the_text_read_gets_one_attempt() -> None:
 
 
 async def test_the_text_read_is_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(receipts, "READ_TIMEOUT", 0.05)
+    monkeypatch.setattr(receipts, "READ_TIMEOUT", CUT_OFF)
     with pytest.raises(TimeoutError):
         await TextReceiptReader(Hangs()).read_text("TOAST BOX / TOTAL 6.40", None)

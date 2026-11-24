@@ -36,6 +36,9 @@ pytestmark = pytest.mark.integration
 
 CIPHER = FernetCipher(Fernet.generate_key().decode())
 GRAB = "Merchant: Grab\nTotal: 18.50\nCurrency: SGD\nDate: 2026-09-27"
+# READ_TIMEOUT in tests that stall a read: long enough that a read meant to succeed is
+# never cut off on a slow runner, far short of how long a stalled read sleeps.
+CUT_OFF = timedelta(milliseconds=500)
 
 
 async def person(uow: UowFactory, telegram_id: int = 4242) -> User:
@@ -369,7 +372,7 @@ async def test_a_stuck_read_is_given_up_on(
                 await asyncio.sleep(10)
             return await super().triage(email)
 
-    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", CUT_OFF)
     user = await person(uow)
     mailbox = FakeMailbox(
         {
@@ -412,7 +415,7 @@ class SlowReader(FakeEmailReader):
 async def test_an_email_that_couldnt_be_read_is_tried_again(
     engine: AsyncEngine, uow: UowFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", CUT_OFF)
     user = await person(uow)
     mailbox = FakeMailbox(
         {"slow": fake_email("slow", "Card receipt", GRAB, at=NOW - timedelta(hours=1))}
@@ -436,7 +439,7 @@ async def test_an_email_that_couldnt_be_read_is_tried_again(
 async def test_after_three_tries_it_waits_for_the_user(
     uow: UowFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", CUT_OFF)
     user = await person(uow)
     alert = "A transaction of SGD 42.10 was made with your card."
     mailbox = FakeMailbox(
@@ -462,7 +465,7 @@ async def test_after_three_tries_it_waits_for_the_user(
 async def test_an_unreadable_email_without_an_amount_takes_the_users(
     uow: UowFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(email_cases, "READ_TIMEOUT", timedelta(milliseconds=50))
+    monkeypatch.setattr(email_cases, "READ_TIMEOUT", CUT_OFF)
     user = await person(uow)
     mailbox = FakeMailbox(
         {"slow": fake_email("slow", "Card receipt", GRAB, at=NOW - timedelta(hours=1))}
