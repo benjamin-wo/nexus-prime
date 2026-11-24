@@ -67,6 +67,10 @@ _DATA_TABLES = (
     "notification_settings",
     "voice_settings",
     "wallets",
+    "routines",
+    "training_plans",
+    "workouts",
+    "workout_sets",
 )
 # What the owner of a shared trip keeps: a change to either is a change to the trip.
 _TRIP_TABLES = ("trips", "trip_bookings", "trip_activity")
@@ -482,6 +486,7 @@ async def run_case(
         lambda: SqlUnitOfWork(engine),
         telegram_id,
         shared=case.shared,
+        gym=case.gym,
         november=case.november,
         budget=case.budget,
     )

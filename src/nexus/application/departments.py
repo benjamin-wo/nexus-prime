@@ -158,8 +158,17 @@ TRAVEL = Department(
 )
 
 
+HEALTH = Department(
+    name="health",
+    label="Health",
+    emoji="💪",
+    skills=("gym",),
+    blurb="Your workouts: log sets, see records, history and what you lifted last time.",
+)
+
+
 def default_registry(kinds: Sequence[RunKind] = ()) -> Departments:
-    return Departments([ACCOUNTING, INVESTMENT, TRAVEL], kinds)
+    return Departments([ACCOUNTING, INVESTMENT, TRAVEL, HEALTH], kinds)
 
 
 class Progress(Protocol):
