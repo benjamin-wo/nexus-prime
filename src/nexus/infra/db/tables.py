@@ -1905,6 +1905,7 @@ meal_items = Table(
     Column("food_id", Text, nullable=False),
     Column("grams", Numeric(8, 2), nullable=False),
     Column("portion_label", Text, nullable=False),
+    Column("display_name", Text),
     Column("estimate_kind", Text, nullable=False),
     Column("cooking", Text),
     Column("extra_uncertainty", Numeric(4, 2), nullable=False, server_default=text("0")),

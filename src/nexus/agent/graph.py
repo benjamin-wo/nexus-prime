@@ -35,7 +35,7 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
-from nexus.agent import kernel, open_items, progress
+from nexus.agent import kernel, meal_photo, open_items, progress
 from nexus.agent.confirmation import combine
 from nexus.agent.image_look import acts
 from nexus.agent.open_items import OpenItem
@@ -49,10 +49,10 @@ from nexus.agent.tools import (
     safe_for_images,
 )
 from nexus.application import departments as department_cases
+from nexus.application import food_entry, mistakes, ops
 from nexus.application import health_safety as safety_cases
 from nexus.application import income as income_cases
 from nexus.application import memory as memory_cases
-from nexus.application import mistakes, ops
 from nexus.application import voice as voice_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
@@ -178,6 +178,11 @@ _ID = re.compile(r"\s*\[id [0-9a-f-]{36}\]")
 WROTE = "nexus_wrote"
 KERNEL = "nexus_kernel"
 RECEIPT = "nexus_receipt"
+# On a meal photo's message: the draft read from it (see ``agent.meal_photo``).
+MEAL = "nexus_meal"
+# On the reply that asks the one question about a meal photo: where the flow stands, so the
+# user's next message is read as the answer.
+MEAL_ASK = "nexus_meal_ask"
 # On a message carrying what was read from images or files: the user's own caption.
 IMAGE = "nexus_image"
 REF = "nexus_ref"
@@ -416,6 +421,8 @@ def _hands_off(state: AgentState) -> bool:
     """Whether this turn is about an image whose caption didn't ask to act on it."""
     messages = state.get("messages", [])
     human = next((m for m in reversed(messages) if isinstance(m, HumanMessage)), None)
+    if human is not None and MEAL in human.additional_kwargs:
+        return True  # a meal photo only ever reaches the confirm-gated food log
     return (
         human is not None
         and IMAGE in human.additional_kwargs
@@ -424,15 +431,30 @@ def _hands_off(state: AgentState) -> bool:
 
 
 def _reply(
-    text: str, *, wrote: bool = False, buttons: list[list[tuple[str, str]]] | None = None
+    text: str,
+    *,
+    wrote: bool = False,
+    buttons: list[list[tuple[str, str]]] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> Command[Any]:
-    """End the turn with ``text``; ``buttons`` are extra (label, data) rows under it."""
-    kwargs: dict[str, Any] = {WROTE: wrote}
+    """End the turn with ``text``; ``buttons`` are extra (label, data) rows under it;
+    ``extra`` is more message metadata."""
+    kwargs: dict[str, Any] = {WROTE: wrote, **(extra or {})}
     if buttons:
         kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]
     return Command(
         goto=END, update={"messages": [AIMessage(content=text, additional_kwargs=kwargs)]}
     )
+
+
+def _meal_waiting(messages: list[Any]) -> dict[str, Any] | None:
+    """The photo meal the last reply asked about, when this message is the one after it."""
+    if len(messages) < 2:
+        return None
+    before = messages[-2]
+    if isinstance(before, AIMessage) and isinstance(before.additional_kwargs.get(MEAL_ASK), dict):
+        return dict(before.additional_kwargs[MEAL_ASK])
+    return None
 
 
 class AgentGraph:
@@ -755,6 +777,8 @@ class AgentGraph:
 
         if RECEIPT in meta:
             return self._receipt(ctx, meta[RECEIPT], meta.get(REF))
+        if MEAL in meta:
+            return await self._meal_step(ctx, meta[MEAL])
         if IMAGE in meta:
             # Text read from an image is data: no shortcut may act on it (a payslip's
             # "salary 4200" is not the user recording income). Memories are recalled
@@ -769,6 +793,9 @@ class AgentGraph:
             shortcut = await self._shortcut(ctx, text, meta)
             if shortcut is not None:
                 return shortcut
+            waiting = _meal_waiting(state["messages"])
+            if waiting is not None and (answered := await self._meal_answer(ctx, waiting, text)):
+                return answered
         update: dict[str, Any] = {
             "steps": 0,
             "snapshot": await money_snapshot(ctx),
@@ -974,6 +1001,46 @@ class AgentGraph:
         }
         message = AIMessage(content="", tool_calls=[call], additional_kwargs={KERNEL: True})
         return Command(goto="confirm", update={"messages": [message]})
+
+    async def _meal_step(self, ctx: ToolContext, pending: dict[str, Any]) -> Command[Any]:
+        """A meal photo, read: ask its one question first; then look each item up in the food
+        database, asking about the first it can't place; then the confirm card, as ``log_food``
+        builds it (source photo, every amount an estimate). Nothing is written before Confirm."""
+        if pending["asked"] is None and pending.get("question"):
+            asked = {**pending, "asked": "question"}
+            return _reply(str(pending["question"]), extra={MEAL_ASK: asked})
+        ids: list[str] = []
+        for index, request in enumerate(meal_photo.food_requests(pending)):
+            try:
+                found = await food_entry.resolve(ctx.uow, [request])
+            except food_entry.NeedsAnswer as problem:
+                if pending["rounds"] >= meal_photo.MAX_ROUNDS:
+                    return _reply(
+                        "I couldn't pin that meal down. Tell me what you ate and how much, "
+                        "like '1 bowl of rice and a fried egg'."
+                    )
+                text, asked = meal_photo.ask_about(index, pending, problem)
+                return _reply(text, extra={MEAL_ASK: asked})
+            ids.append(found.foods[0].id)
+        call = {
+            "name": "log_photo_meal",
+            "id": f"meal-{uuid4()}",
+            "args": {"foods": meal_photo.tool_foods(pending, ids), "meal": pending.get("meal")},
+        }
+        message = AIMessage(content="", tool_calls=[call], additional_kwargs={KERNEL: True})
+        return Command(goto="confirm", update={"messages": [message]})
+
+    async def _meal_answer(
+        self, ctx: ToolContext, pending: dict[str, Any], text: str
+    ) -> Command[Any] | None:
+        """The user's message read as the answer to a meal photo's question; None when it
+        isn't one, and the chat agent takes it as usual."""
+        verdict, new = meal_photo.read_answer(pending, text)
+        if verdict == "unrelated":
+            return None
+        if verdict == "cancel":
+            return _reply("Okay, cancelled. Nothing was changed.")
+        return await self._meal_step(ctx, new)
 
     async def _income(
         self, ctx: ToolContext, income: kernel.IncomeIntent, ref: str | None

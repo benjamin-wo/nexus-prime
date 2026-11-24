@@ -454,7 +454,7 @@ async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
     text = entry_cases.confirm_text(r, MealSlot.LUNCH, hidden=False)
     # 350 g of a 100 kcal food is 350 kcal; an estimate with a modifier is +-45%: 192.5 to 507.5.
     assert text == (
-        f"Log lunch: test feast (a big bowl, about 190{EN_DASH}510 kcal)? I estimated the portion. "
+        f"Log lunch: banquet (a big bowl, about 190{EN_DASH}510 kcal)? I estimated the portion. "
         "Noted: Test Feast: extra (the range is wider for it)."
     )
     assert "I estimated the portion." in text
