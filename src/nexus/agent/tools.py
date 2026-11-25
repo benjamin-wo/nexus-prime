@@ -183,8 +183,6 @@ class ToolContext:
     # What the user said lately (their last few messages), for a tool that must not act on
     # pain or injury. Empty outside a chat turn.
     message: str = ""
-    # The web app's origin, for buttons that open a page there; None when it isn't known.
-    origin: str | None = None
 
     @property
     def tz(self) -> ZoneInfo:

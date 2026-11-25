@@ -123,6 +123,30 @@ describe("Today", () => {
     expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ meal: "lunch", eaten_at: lunch.eaten_at, items: [{ food_id: "rice-1", grams: "350" }] });
   });
 
+  it("puts a deleted AI-estimate meal back with its own figures, not a food id", async () => {
+    let meals = [estimate];
+    const calls = home({
+      "GET /health/day": () => day({ meals }),
+      [`DELETE /health/meals/${estimate.id}`]: () => {
+        meals = [];
+        return null;
+      },
+      "POST /health/meals": () => {
+        meals = [estimate];
+        return estimate;
+      },
+    });
+    renderWithProviders(<HealthHome />);
+    await userEvent.click(await screen.findByRole("button", { name: "Open Dinner" }));
+    const sheet = await screen.findByRole("dialog", { name: "Edit meal" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Delete meal" }));
+    await userEvent.click(within(within(sheet).getByRole("group", { name: "Delete meal" })).getByRole("button", { name: "Delete meal" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/health/meals")).toBe(true));
+    const item = (calls.find((c) => c.method === "POST")?.body as { items: Record<string, unknown>[] }).items[0];
+    expect(item).toMatchObject({ food_id: null, name: "Laksa", grams: "350", estimate: { kcal: "675", protein_g: "10", carbs_g: "50", fat_g: "10" } });
+  });
+
   it("logs a weight from the line, and shows the full trend behind See trend", async () => {
     const calls = home({ "POST /health/samples": () => ({ id: "s", kind: "weight", value: "82.1", unit: "kg", value_kg: "82.10", start_at: "" }) });
     renderWithProviders(<HealthHome />);

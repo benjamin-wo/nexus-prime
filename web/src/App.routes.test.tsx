@@ -147,6 +147,15 @@ describe("Health", () => {
     }
   });
 
+  it("keeps the query when the old Food address sends a link to Today", async () => {
+    withHealth();
+    window.history.pushState({}, "", "/health/food?meal=abc");
+    render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+    expect(await screen.findByRole("heading", { name: "Health", level: 1 })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/health");
+    expect(window.location.search).toBe("?meal=abc");
+  });
+
   it("sends the old Gym addresses to their new place", async () => {
     withHealth();
     window.history.pushState({}, "", "/health/history");

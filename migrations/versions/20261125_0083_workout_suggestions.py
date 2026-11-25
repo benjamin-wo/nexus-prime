@@ -16,7 +16,7 @@ Row-level security is the policy 0056 gave the other user-owned tables (copied h
 a migration keeps meaning what it meant).
 
 Revision ID: 0083
-Revises: 0081
+Revises: 0082
 Create Date: 2026-11-25
 """
 
@@ -27,7 +27,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "0083"
-down_revision: str | None = "0081"
+down_revision: str | None = "0082"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

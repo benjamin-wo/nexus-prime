@@ -48,10 +48,11 @@ export function TodayMeals() {
 
   async function undo() {
     if (!removed) return;
-    const gone = removed;
+    const back = restore(removed);
     setRemoved(null);
+    if (!back) return;
     try {
-      await bodyApi.logMeal(restore(gone));
+      await bodyApi.logMeal(back);
       await client.invalidateQueries({ queryKey: healthKey.all });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't put the meal back");
@@ -93,7 +94,7 @@ export function TodayMeals() {
         </p>
       )}
       {sheet && <MealSheet meal={sheet === "new" ? undefined : sheet} day={null} onClose={close} onDeleted={setRemoved} />}
-      {removed && <Toast message="Meal deleted." action={{ label: "Undo", run: () => void undo() }} onClose={closeToast} />}
+      {removed && <Toast message="Meal deleted." action={restore(removed) ? { label: "Undo", run: () => void undo() } : undefined} onClose={closeToast} />}
     </>
   );
 }

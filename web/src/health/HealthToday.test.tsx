@@ -66,7 +66,7 @@ describe("Health consent", () => {
     });
     renderWithProviders(<HealthToday />);
     expect(await screen.findByText(/not medical advice/i)).toBeInTheDocument();
-    expect(await screen.findByText(/through OpenRouter in United States/)).toBeInTheDocument();
+    expect(await screen.findByText(/through OpenRouter in the United States/)).toBeInTheDocument();
     expect(screen.getByText(consents.wellness_statement)).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(calls.some((c) => c.path === "/health/today")).toBe(false);

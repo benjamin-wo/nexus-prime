@@ -71,7 +71,20 @@ export type MealItem = {
   nutrients: Nutrients | null;
 };
 export type Meal = { id: string; meal: MealSlot; eaten_at: string; source: string; note: string | null; items: MealItem[]; totals: Totals | null };
-export type ItemInput = { food_id: string | null; grams: string; label?: string; kind?: EstimateKind; cooking?: Cooking | null; note?: string | null };
+/** The assistant's guess for an item that is not in the food database (the API checks it). */
+export type EstimateInput = { kcal: string; protein_g: string; carbs_g: string; fat_g: string };
+export type ItemInput = {
+  food_id: string | null;
+  grams: string;
+  label?: string;
+  kind?: EstimateKind;
+  cooking?: Cooking | null;
+  note?: string | null;
+  /** With a null food_id: the figures to keep. */
+  estimate?: EstimateInput | null;
+  /** The user's own word for the food. */
+  name?: string | null;
+};
 export type MealInput = { meal: MealSlot; items: ItemInput[]; eaten_at?: string; note?: string };
 export type Day = {
   date: string;

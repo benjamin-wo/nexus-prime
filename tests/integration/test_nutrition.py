@@ -4,6 +4,7 @@ isolation between users, the intake provider that feeds the energy estimate, the
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -584,6 +585,53 @@ async def test_meals_endpoints_end_to_end(world: World) -> None:
     assert (await owner.get(f"/api/health/meals/{meal['id']}")).status_code == 404
     assert (await owner.send("DELETE", f"/api/health/meals/{meal['id']}")).status_code == 404
     assert (await owner.get("/api/health/meals/nonsense")).status_code == 404
+
+
+async def test_a_deleted_ai_estimate_meal_can_be_posted_back_as_it_was(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await owner.send("POST", "/api/health/consent")
+    figures = {"kcal": "600", "protein_g": "25", "carbs_g": "60", "fat_g": "26"}
+    estimate: dict[str, Any] = {
+        "food_id": None,
+        "grams": "350",
+        "label": "1 bowl",
+        "name": "Laksa",
+        "estimate": figures,
+    }
+    made = await owner.send("POST", "/api/health/meals", {"meal": "dinner", "items": [estimate]})
+    assert made.status_code == 201, made.json()
+    item = made.json()["items"][0]
+    assert item["food_id"] is None and item["name"] == "Laksa" and item["kind"] == "ai_estimate"
+    # What the web's Undo sends after a delete: the item's own figures, read from the meal.
+    back = {
+        "meal": "dinner",
+        "items": [
+            {
+                "food_id": None,
+                "grams": item["grams"],
+                "label": item["label"],
+                "kind": item["kind"],
+                "name": item["name"],
+                "estimate": {
+                    k: item["nutrients"][k] for k in ("kcal", "protein_g", "carbs_g", "fat_g")
+                },
+            }
+        ],
+    }
+    assert (await owner.send("DELETE", f"/api/health/meals/{made.json()['id']}")).status_code == 204
+    again = await owner.send("POST", "/api/health/meals", back)
+    assert again.status_code == 201, again.json()
+    restored = again.json()["items"][0]
+    assert restored["food_id"] is None and restored["kind"] == "ai_estimate"
+    assert restored["nutrients"] == item["nutrients"] and restored["name"] == "Laksa"
+    # A food with neither an id nor an estimate, or an estimate that doesn't add up, is refused.
+    bare = {"meal": "dinner", "items": [{"food_id": None, "grams": "100"}]}
+    assert (await owner.send("POST", "/api/health/meals", bare)).status_code == 422
+    odd = {**estimate, "estimate": {**figures, "kcal": "50"}}
+    assert (
+        await owner.send("POST", "/api/health/meals", {"meal": "dinner", "items": [odd]})
+    ).status_code == 422
 
 
 async def test_numbers_free_mode_shows_foods_but_no_figures(world: World) -> None:

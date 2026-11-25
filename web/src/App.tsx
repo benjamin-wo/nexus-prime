@@ -60,6 +60,12 @@ const pageLoading = <p className="state">Loading…</p>;
 
 /** The routed page, with its own error boundary: a page that crashes shows a notice in its place while
  * the rail, bottom bar and chat around it keep working, and going to another page tries again. */
+/** A redirect that keeps the query string, so a link like /health/food?meal=<id> still opens that meal. */
+function RedirectKeepingQuery({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: to, search }} replace />;
+}
+
 function RoutedPage({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   return (
@@ -244,7 +250,7 @@ function Cockpit({ me }: { me: Me }) {
             <Route path="/travel/research/:id" element={<ResearchPage />} />
             <Route path="/health" element={<HealthHome onOpenChat={() => setChat({})} />} />
             {/* Food and Weight folded into Today. */}
-            <Route path="/health/food" element={<Navigate to="/health" replace />} />
+            <Route path="/health/food" element={<RedirectKeepingQuery to="/health" />} />
             <Route path="/health/weight" element={<Navigate to="/health" replace />} />
             <Route path="/health/gym" element={<HealthGym />}>
               <Route index element={<HealthToday />} />

@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { LoadError } from "../components/LoadError";
-import { Button, Section } from "../components/ui";
+import { Button, Row, RowList, Section } from "../components/ui";
 import { inUnit } from "./bodyFormat";
 import { useWeight, useWeightUnit } from "./bodyHooks";
 import { TrendSheet } from "./WeightTrend";
@@ -31,14 +31,13 @@ export function TodayWeight() {
       ) : !w ? (
         <p className="state">Loading…</p>
       ) : (
-        <p>
-          <span className="health-fig">{line ?? "No weigh-ins yet."}</span>{" "}
-          {line && (
-            <Button size="sm" variant="text" onClick={() => setSheet("trend")}>
-              See trend
-            </Button>
+        <RowList aria-label="Weight">
+          {line ? (
+            <Row title={<span className="health-fig">{line}</span>} trailing="See trend" label="See trend" onClick={() => setSheet("trend")} />
+          ) : (
+            <Row title="No weigh-ins yet." />
           )}
-        </p>
+        </RowList>
       )}
       {sheet === "log" && <WeightSheet unit={unit} hidden={w?.hidden ?? false} onClose={() => setSheet(null)} />}
       {sheet === "trend" && <TrendSheet onClose={() => setSheet(null)} />}

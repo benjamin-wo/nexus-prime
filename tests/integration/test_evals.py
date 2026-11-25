@@ -187,7 +187,9 @@ async def test_the_workout_today_cases_are_graded(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
         "gym-workout-today-answered": lambda: scripted(
             call("suggest_workout", focus="back", minutes=45, place="gym", exercises=exercises),
-            say("Here is your back workout. Tap Start when you are ready."),
+            say(
+                "Here is your back workout. Want me to swap anything?"
+            ),  # a closing question is fine
         ),
         "gym-workout-today-asks": lambda: scripted(
             say("How long do you have, and are you at the gym or at home?")
@@ -208,7 +210,8 @@ async def test_the_workout_today_cases_are_graded(engine: AsyncEngine) -> None:
     wrong: dict[str, Callable[[], BaseChatModel]] = {
         # Asks about things the user already said.
         "gym-workout-today-answered": lambda: scripted(
-            say("How long do you have, and are you at the gym?")
+            call("suggest_workout", focus="back", minutes=45, place="gym", exercises=exercises),
+            say("Here is your workout. How long do you have next time?"),
         ),
         # Three questions, and a plan instead of a workout.
         "gym-workout-today-asks": lambda: scripted(

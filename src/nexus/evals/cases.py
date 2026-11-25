@@ -2931,8 +2931,9 @@ CASES: tuple[Case, ...] = (
         gym=True,
         calls=(Call("suggest_workout", {"place": Has("gym")}),),
         forbid=(*WRITES, "draft_training_plan"),
-        # Time and place are both in the message: nothing is left to ask.
-        never_match=(r"\?",),
+        # Time and place are both in the message: the reply doesn't ask for them again (a
+        # friendly closing question is fine).
+        never_match=(r"how (long|much time)|gym or home",),
     ),
     Case(
         "gym-workout-today-asks",

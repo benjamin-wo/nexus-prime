@@ -47,7 +47,7 @@ function ConsentScreen() {
           <p>Nexus keeps what you log: your food, workouts and weight. It stays on your account.</p>
           <p>
             Nexus's AI reads it to answer you
-            {provider ? `, through ${provider.name} in ${provider.country}` : ""}.
+            {provider ? `, through ${provider.name} in ${inCountry(provider.country)}` : ""}.
           </p>
           <p>It is for general wellness, not medical advice.</p>
           <WellnessStatement />
@@ -67,6 +67,9 @@ function ConsentScreen() {
 }
 
 /** Shows its children once Health is on, else the consent screen. */
+/** "in the United States", "in Germany": names that start with "United" take "the". */
+const inCountry = (country: string) => (country.startsWith("United") ? `the ${country}` : country);
+
 export function HealthGate({ children }: { children: ReactNode }) {
   const consent = useQuery({ queryKey: healthKey.consent, queryFn: healthApi.consent });
   if (consent.isLoading) return <p className="state">Loading…</p>;
