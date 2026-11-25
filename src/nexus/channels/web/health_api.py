@@ -289,10 +289,27 @@ class WorkoutOut(Model):
     started_at: datetime
     finished_at: datetime | None
     note: str | None
+    # The exercises it was started with, from a suggested workout; null for any other.
+    planned_slots: list[SlotOut] | None = None
 
 
 def _workout(w: Workout) -> WorkoutOut:
     return WorkoutOut(
+        planned_slots=(
+            None
+            if w.planned_slots is None
+            else [
+                SlotOut(
+                    exercise_id=s.exercise_id,
+                    sets=s.sets,
+                    reps=s.reps,
+                    seconds=s.seconds,
+                    rest_seconds=s.rest_seconds,
+                    note=s.note,
+                )
+                for s in w.planned_slots
+            ]
+        ),
         id=str(w.id),
         routine_id=str(w.routine_id) if w.routine_id else None,
         started_at=w.started_at,

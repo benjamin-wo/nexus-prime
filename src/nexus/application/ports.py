@@ -18,7 +18,7 @@ from nexus.domain.access import Invite, Session
 from nexus.domain.alerts import AlertKind, MarketAlert
 from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.chat import ChatLine
-from nexus.domain.coach import TrainingProfile
+from nexus.domain.coach import TrainingProfile, WorkoutSuggestion
 from nexus.domain.departments import Run, Usage
 from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.email import (
@@ -1114,6 +1114,13 @@ class GymRepository(Protocol):
         self, user_id: UserId, profile: TrainingProfile, at: datetime
     ) -> None:
         """Insert or replace the user's coach inputs."""
+        ...
+
+    async def add_workout_suggestion(self, suggestion: WorkoutSuggestion) -> None: ...
+    async def get_workout_suggestion(
+        self, user_id: UserId, suggestion_id: UUID, *, since: datetime
+    ) -> WorkoutSuggestion | None:
+        """The user's suggestion, unless it was made before ``since``."""
         ...
 
 

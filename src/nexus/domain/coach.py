@@ -56,47 +56,149 @@ class Focus(StrEnum):
     GENERAL = "general"
 
 
+class Place(StrEnum):
+    GYM = "gym"
+    HOME = "home"
+
+
 @dataclass(frozen=True, slots=True)
 class TrainingProfile:
     """What the coach plans around. Equipment is a list of the catalogue's equipment values;
-    body-weight exercises never need to be listed."""
+    body-weight exercises never need to be listed.
 
-    days_per_week: int
-    session_minutes: int
-    equipment: tuple[Equipment, ...]
-    experience: Experience
-    focus: Focus
+    Every input may be unknown (None): a one-off workout needs only the session length and
+    where the user trains, and remembers just those. A multi-week plan needs all five (see
+    ``required``), and the ``days``, ``minutes``, ``gear``, ``level`` and ``goal`` properties
+    are for code that has checked that."""
+
+    days_per_week: int | None = None
+    session_minutes: int | None = None
+    equipment: tuple[Equipment, ...] | None = None
+    experience: Experience | None = None
+    focus: Focus | None = None
+    place: Place | None = None
 
     def __post_init__(self) -> None:
         for value, low, high, what in (
             (self.days_per_week, MIN_DAYS, MAX_DAYS, "days a week"),
             (self.session_minutes, MIN_SESSION_MINUTES, MAX_SESSION_MINUTES, "session minutes"),
         ):
+            if value is None:
+                continue
             if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
                 raise InvalidInput(f"{what} must be a whole number from {low} to {high}")
-        object.__setattr__(self, "equipment", tuple(dict.fromkeys(self.equipment)))
+        if self.equipment is not None:
+            object.__setattr__(self, "equipment", tuple(dict.fromkeys(self.equipment)))
+
+    def missing(self) -> list[str]:
+        """What a multi-week plan still needs, in words for the model."""
+        return [
+            name
+            for name, value in (
+                ("days per week", self.days_per_week),
+                ("session length in minutes", self.session_minutes),
+                ("equipment (body weight only is fine)", self.equipment),
+                ("experience (beginner, intermediate or advanced)", self.experience),
+                ("focus (strength, hypertrophy or general)", self.focus),
+            )
+            if value is None
+        ]
+
+    def required(self) -> tuple[int, int, tuple[Equipment, ...], Experience, Focus]:
+        """The five inputs of a plan; ``InvalidInput`` naming the missing ones."""
+        if (
+            self.days_per_week is None
+            or self.session_minutes is None
+            or self.equipment is None
+            or self.experience is None
+            or self.focus is None
+        ):
+            raise InvalidInput("the training profile lacks: " + "; ".join(self.missing()))
+        return (
+            self.days_per_week,
+            self.session_minutes,
+            self.equipment,
+            self.experience,
+            self.focus,
+        )
+
+    @property
+    def days(self) -> int:
+        return self.required()[0]
+
+    @property
+    def minutes(self) -> int:
+        return self.required()[1]
+
+    @property
+    def gear(self) -> tuple[Equipment, ...]:
+        return self.required()[2]
+
+    @property
+    def level(self) -> Experience:
+        return self.required()[3]
+
+    @property
+    def goal(self) -> Focus:
+        return self.required()[4]
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "days_per_week": self.days_per_week,
             "session_minutes": self.session_minutes,
-            "equipment": [e.value for e in self.equipment],
-            "experience": self.experience.value,
-            "focus": self.focus.value,
+            "equipment": None if self.equipment is None else [e.value for e in self.equipment],
+            "experience": None if self.experience is None else self.experience.value,
+            "focus": None if self.focus is None else self.focus.value,
+            "place": None if self.place is None else self.place.value,
         }
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "TrainingProfile":
         try:
+            equipment = data.get("equipment")
+            experience = data.get("experience")
+            focus = data.get("focus")
+            place = data.get("place")
             return cls(
-                days_per_week=data["days_per_week"],
-                session_minutes=data["session_minutes"],
-                equipment=tuple(Equipment(e) for e in data["equipment"]),
-                experience=Experience(data["experience"]),
-                focus=Focus(data["focus"]),
+                days_per_week=data.get("days_per_week"),
+                session_minutes=data.get("session_minutes"),
+                equipment=None if equipment is None else tuple(Equipment(e) for e in equipment),
+                experience=None if experience is None else Experience(experience),
+                focus=None if focus is None else Focus(focus),
+                place=None if place is None else Place(place),
             )
-        except (KeyError, TypeError, ValueError) as exc:
+        except (TypeError, ValueError) as exc:
             raise InvalidInput(f"bad training profile: {exc}") from exc
+
+
+# --- a workout for today ---------------------------------------------------------------------
+
+SUGGESTION_TTL = timedelta(hours=24)  # how long a suggestion's Start button works
+DEFAULT_EXPERIENCE = Experience.INTERMEDIATE  # when the user hasn't said
+
+
+@dataclass(frozen=True, slots=True)
+class WorkoutSuggestion:
+    """A workout the agent suggested for today, kept for its Start button."""
+
+    id: UUID
+    user_id: UUID
+    focus: str
+    slots: tuple[Slot, ...]
+    minutes: int
+    created_at: datetime
+
+    def expired(self, now: datetime) -> bool:
+        return now - self.created_at > SUGGESTION_TTL
+
+
+def suggestion_equipment(place: Place, saved: Sequence[Equipment] | None) -> tuple[Equipment, ...]:
+    """What a one-off workout may use: all equipment at a gym; at home body weight, plus
+    dumbbells if the profile says the user has them."""
+    if place is Place.GYM:
+        return tuple(Equipment)
+    have = set(saved or ())
+    return (Equipment.DUMBBELL,) if Equipment.DUMBBELL in have else ()
 
 
 # --- plan limits ----------------------------------------------------------------------------
@@ -159,10 +261,15 @@ class PlannedSchedule:
     rotation: tuple[str, ...] = ()
 
 
-def session_minutes(routine: PlannedRoutine) -> int:
-    """The routine's estimated length: sets x (work + rest), rounded up to whole minutes."""
-    seconds = sum(s.sets * s.seconds_per_set() for s in routine.slots)
+def slots_minutes(slots: Sequence[PlannedSlot]) -> int:
+    """A session's estimated length: sets x (work + rest), rounded up to whole minutes."""
+    seconds = sum(s.sets * s.seconds_per_set() for s in slots)
     return math.ceil(seconds / 60)
+
+
+def session_minutes(routine: PlannedRoutine) -> int:
+    """The routine's estimated length (see ``slots_minutes``)."""
+    return slots_minutes(routine.slots)
 
 
 def _sessions_a_week(schedule: PlannedSchedule, profile: TrainingProfile) -> dict[str, Fraction]:
@@ -171,7 +278,7 @@ def _sessions_a_week(schedule: PlannedSchedule, profile: TrainingProfile) -> dic
     for _, name in schedule.weekly:
         sessions[name.casefold()] += 1
     if schedule.rotation:
-        each = Fraction(profile.days_per_week, len(schedule.rotation))
+        each = Fraction(profile.days, len(schedule.rotation))
         for name in schedule.rotation:
             sessions[name.casefold()] += each
     return sessions
@@ -201,6 +308,51 @@ def _shown(value: Fraction) -> str:
     return str(int(value)) if value.denominator == 1 else f"{float(value):.1f}"
 
 
+def validate_session(
+    slots: Sequence[PlannedSlot],
+    *,
+    minutes: int,
+    equipment: Iterable[Equipment],
+    label: str = "the workout",
+) -> list[str]:
+    """Everything wrong with one session's exercises, in words for the model; empty when it is
+    fine. Checked: not empty and not too long, each slot's numbers inside ``Slot``'s bounds,
+    equipment the user has (body weight always counts), no exercise twice, and the estimated
+    length within ``minutes`` + 15%."""
+    if not slots:
+        return [f"{label} has no exercises"]
+    problems: list[str] = []
+    if len(slots) > MAX_SLOTS_PER_ROUTINE:
+        problems.append(f"{label} has more than {MAX_SLOTS_PER_ROUTINE} exercises")
+    listed = tuple(equipment)
+    have = set(listed) | {Equipment.BODY_ONLY}
+    have_text = ", ".join(e.value for e in listed) or "body weight only"
+    seen: set[str] = set()
+    for slot in slots:
+        name = slot.exercise.name
+        if slot.exercise.id in seen:
+            problems.append(f"{label} has {name} twice")
+        seen.add(slot.exercise.id)
+        try:
+            slot.slot()
+        except InvalidInput as exc:
+            problems.append(f"{label}, {name}: {exc}")
+        needed = slot.exercise.equipment
+        if needed is not None and needed not in have:
+            problems.append(
+                f"{label}, {name} needs {needed.value}, which the user doesn't have "
+                f"(they have: {have_text})"
+            )
+    limit = math.floor(minutes * SESSION_SLACK)
+    estimate = slots_minutes(slots)
+    if estimate > limit:
+        problems.append(
+            f"{label} would take about {estimate} minutes, over the {limit} minutes allowed "
+            f"for a {minutes}-minute session: fewer sets or exercises, or shorter rests"
+        )
+    return problems
+
+
 def validate_plan(
     routines: Sequence[PlannedRoutine], schedule: PlannedSchedule, profile: TrainingProfile
 ) -> list[str]:
@@ -222,39 +374,13 @@ def validate_plan(
     for name in {n for n in names if names.count(n) > 1}:
         problems.append(f"two routines are called {name!r}: give each its own name")
 
-    have = set(profile.equipment) | {Equipment.BODY_ONLY}
-    have_text = ", ".join(e.value for e in profile.equipment) or "body weight only"
     for routine in routines:
-        label = f"routine {routine.name!r}"
-        if not routine.slots:
-            problems.append(f"{label} has no exercises")
-            continue
-        if len(routine.slots) > MAX_SLOTS_PER_ROUTINE:
-            problems.append(f"{label} has more than {MAX_SLOTS_PER_ROUTINE} exercises")
-        seen: set[str] = set()
-        for slot in routine.slots:
-            name = slot.exercise.name
-            if slot.exercise.id in seen:
-                problems.append(f"{label} has {name} twice")
-            seen.add(slot.exercise.id)
-            try:
-                slot.slot()
-            except InvalidInput as exc:
-                problems.append(f"{label}, {name}: {exc}")
-            equipment = slot.exercise.equipment
-            if equipment is not None and equipment not in have:
-                problems.append(
-                    f"{label}, {name} needs {equipment.value}, which the user doesn't have "
-                    f"(they have: {have_text})"
-                )
-        limit = math.floor(profile.session_minutes * SESSION_SLACK)
-        minutes = session_minutes(routine)
-        if minutes > limit:
-            problems.append(
-                f"{label} would take about {minutes} minutes, over the {limit} minutes allowed "
-                f"for a {profile.session_minutes}-minute session: fewer sets or exercises, or "
-                "shorter rests"
-            )
+        problems += validate_session(
+            routine.slots,
+            minutes=profile.minutes,
+            equipment=profile.gear,
+            label=f"routine {routine.name!r}",
+        )
 
     problems += _schedule_problems(routines, schedule, profile)
     if schedule.weekly or schedule.rotation:
@@ -284,10 +410,10 @@ def _schedule_problems(
     days = [d for d, _ in schedule.weekly]
     if len(set(days)) != len(days):
         problems.append("a weekday appears twice in the schedule")
-    if len(set(days)) > profile.days_per_week:
+    if len(set(days)) > profile.days:
         problems.append(
             f"the schedule trains on {len(set(days))} days, but the user trains "
-            f"{profile.days_per_week} days a week"
+            f"{profile.days} days a week"
         )
     named = [n for _, n in schedule.weekly] + list(schedule.rotation)
     for name in dict.fromkeys(named):
@@ -646,6 +772,21 @@ def _reps_text(slot: PlannedSlot) -> str:
     return f"{slot.sets} x {target}, rest {slot.rest_seconds} s"
 
 
+def workout_title(focus: str) -> str:
+    """'Back workout' for 'back' or 'back workout'."""
+    said = re.sub(r"\s*\bwork\s?outs?\b\s*$", "", focus.strip(), flags=re.I).strip() or "Today's"
+    return f"{said[0].upper()}{said[1:]} workout"
+
+
+def suggestion_card(focus: str, slots: Sequence[PlannedSlot]) -> str:
+    """The suggested workout in words. Every figure is worked out here, not by the model."""
+    lines = [f"{workout_title(focus)}, about {slots_minutes(slots)} min:"]
+    for n, s in enumerate(slots, 1):
+        target = f"{s.reps}" if s.reps is not None else f"{s.seconds} s"
+        lines.append(f"{n}. {s.exercise.name}, {s.sets} \u00d7 {target}, rest {s.rest_seconds} s")
+    return "\n".join(lines)
+
+
 def draft_card(
     routines: Sequence[PlannedRoutine], schedule: PlannedSchedule, profile: TrainingProfile
 ) -> str:
@@ -664,7 +805,7 @@ def draft_card(
     trained = sorted(direct, key=lambda m: m.value)
     lines.append("Sets a week: " + ", ".join(f"{m.value} {_shown(totals[m])}" for m in trained))
     lines.append(
-        f"Built for {profile.days_per_week} days a week, {profile.session_minutes}-minute "
-        f"sessions, {profile.experience.value}, focus {profile.focus.value}."
+        f"Built for {profile.days} days a week, {profile.minutes}-minute "
+        f"sessions, {profile.level.value}, focus {profile.goal.value}."
     )
     return "\n".join(lines)

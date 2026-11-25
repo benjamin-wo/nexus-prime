@@ -416,6 +416,15 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             updated_at=now,
         )
         await add(
+            t["workout_suggestions"],
+            id=uid(),
+            user_id=user,
+            focus="back",
+            slots=[{"exercise_id": "Pullups", "sets": 3, "reps": 6, "rest_seconds": 90}],
+            minutes=45,
+            created_at=now,
+        )
+        await add(
             t["health_profiles"],
             user_id=user,
             sex_for_equations="unspecified",

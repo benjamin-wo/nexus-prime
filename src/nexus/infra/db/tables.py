@@ -1689,14 +1689,16 @@ training_profiles = Table(
     "training_profiles",
     metadata,
     _user_fk(),
-    Column("days_per_week", Integer, nullable=False),
-    Column("session_minutes", Integer, nullable=False),
-    Column("equipment", JSONB, nullable=False),
-    Column("experience", Text, nullable=False),
-    Column("focus", Text, nullable=False),
+    Column("days_per_week", Integer),
+    Column("session_minutes", Integer),
+    Column("equipment", JSONB),
+    Column("experience", Text),
+    Column("focus", Text),
     Column("updated_at", TZ, nullable=False),
+    Column("place", Text),
     PrimaryKeyConstraint("user_id"),
     ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("place IS NULL OR place IN ('gym', 'home')", name="place"),
     CheckConstraint("days_per_week BETWEEN 1 AND 7", name="days_per_week"),
     CheckConstraint("session_minutes BETWEEN 10 AND 240", name="session_minutes"),
     CheckConstraint("experience IN ('beginner', 'intermediate', 'advanced')", name="experience"),
@@ -1712,6 +1714,7 @@ workouts = Table(
     Column("started_at", TZ, nullable=False),
     Column("finished_at", TZ),
     Column("note", Text),
+    Column("planned_slots", JSONB),  # the suggestion it started from (migration 0083)
     ForeignKeyConstraint(["user_id"], ["users.id"]),
     ForeignKeyConstraint(
         ["routine_id", "user_id"],
@@ -1721,6 +1724,21 @@ workouts = Table(
     UniqueConstraint("id", "user_id"),
     CheckConstraint("finished_at IS NULL OR finished_at >= started_at", name="finish_after_start"),
     Index("ix_workouts_user_id_started_at", "user_id", "started_at"),
+)
+
+# A workout the agent suggested, kept for its Start button; reads ignore one over a day old
+# (migration 0083).
+workout_suggestions = Table(
+    "workout_suggestions",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("focus", Text, nullable=False),
+    Column("slots", JSONB, nullable=False),
+    Column("minutes", Integer, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    Index("ix_workout_suggestions_user_id_created_at", "user_id", "created_at"),
 )
 
 # A weight is stored with its unit, to two places; ``rpe`` is 1 to 10 in steps of 0.5.

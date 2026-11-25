@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql.elements import ColumnElement
 
-from nexus.domain.coach import TrainingProfile
+from nexus.domain.coach import TrainingProfile, WorkoutSuggestion
 from nexus.domain.gym import (
     Category,
     Equipment,
@@ -40,6 +40,7 @@ from nexus.infra.db.tables import (
     training_profiles,
     users,
     workout_sets,
+    workout_suggestions,
     workouts,
 )
 
@@ -104,6 +105,11 @@ def _workout(row: Row[Any]) -> Workout:
         started_at=row.started_at,
         finished_at=row.finished_at,
         note=row.note,
+        planned_slots=(
+            None
+            if row.planned_slots is None
+            else tuple(Slot.from_dict(s) for s in row.planned_slots)
+        ),
     )
 
 
@@ -331,7 +337,47 @@ class SqlGymRepository:
                 started_at=workout.started_at,
                 finished_at=workout.finished_at,
                 note=workout.note,
+                planned_slots=(
+                    None
+                    if workout.planned_slots is None
+                    else [s.as_dict() for s in workout.planned_slots]
+                ),
             )
+        )
+
+    async def add_workout_suggestion(self, suggestion: WorkoutSuggestion) -> None:
+        await self._connection.execute(
+            workout_suggestions.insert().values(
+                id=suggestion.id,
+                user_id=suggestion.user_id,
+                focus=suggestion.focus,
+                slots=[s.as_dict() for s in suggestion.slots],
+                minutes=suggestion.minutes,
+                created_at=suggestion.created_at,
+            )
+        )
+
+    async def get_workout_suggestion(
+        self, user_id: UserId, suggestion_id: UUID, *, since: datetime
+    ) -> WorkoutSuggestion | None:
+        row = (
+            await self._connection.execute(
+                select(workout_suggestions).where(
+                    workout_suggestions.c.id == suggestion_id,
+                    workout_suggestions.c.user_id == user_id,
+                    workout_suggestions.c.created_at >= since,
+                )
+            )
+        ).first()
+        if row is None:
+            return None
+        return WorkoutSuggestion(
+            id=row.id,
+            user_id=row.user_id,
+            focus=row.focus,
+            slots=tuple(Slot.from_dict(s) for s in row.slots),
+            minutes=row.minutes,
+            created_at=row.created_at,
         )
 
     async def get_workout(self, user_id: UserId, workout_id: UUID) -> Workout | None:
