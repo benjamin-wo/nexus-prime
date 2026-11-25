@@ -26,9 +26,9 @@ from nexus.application.demo import Use
 from nexus.application.places import Places, PlacesError
 from nexus.application.routes import Routes
 from nexus.application.weather import WeatherError
-from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.investments_api import MAX_IMAGE_CHARS
 from nexus.channels.web.security import Auth, Runtime, TripAuth, WebRuntime, demo_use, limit
+from nexus.channels.web.shapes import MoneyOut, money
 from nexus.domain import itinerary
 from nexus.domain.bookings import Booking
 from nexus.domain.currencies import currency_of

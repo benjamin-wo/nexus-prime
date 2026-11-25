@@ -11,7 +11,8 @@ from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from nexus.agent.tools import ToolContext, _rates
+from nexus.agent.tools import ToolContext
+from nexus.agent.tools.fx import rates
 from nexus.application import budgets as budget_cases
 from nexus.application import cashflow as cashflow_cases
 from nexus.application import email as email_cases
@@ -91,7 +92,7 @@ async def _month(ctx: ToolContext) -> str:
     today = ctx.now.astimezone(ctx.tz).date()
     start = datetime.combine(today.replace(day=1), time(), tzinfo=ctx.tz)
     end = datetime.combine(today + timedelta(days=1), time(), tzinfo=ctx.tz)
-    summary = await tx_cases.summarize_in_home(ctx.uow(), _rates(ctx), ctx.user, start, end)
+    summary = await tx_cases.summarize_in_home(ctx.uow(), rates(ctx), ctx.user, start, end)
     totals = {t.direction: t for t in summary.totals}
     spent, received = totals[Direction.OUT], totals[Direction.IN]
     line = (
@@ -133,7 +134,7 @@ async def _history(ctx: ToolContext) -> str:
     for month in reversed(months):
         start = datetime.combine(month, time(), tzinfo=ctx.tz)
         end = datetime.combine(next_month_start(month), time(), tzinfo=ctx.tz)
-        summary = await tx_cases.summarize_in_home(ctx.uow(), _rates(ctx), ctx.user, start, end)
+        summary = await tx_cases.summarize_in_home(ctx.uow(), rates(ctx), ctx.user, start, end)
         net = summary.income.total - summary.out.total
         # A month with nothing logged is a gap in the ledger, not a month that saved nothing
         # (money_history says the same).
@@ -157,7 +158,7 @@ async def _month_end(ctx: ToolContext) -> str:
     today = ctx.today()
     last = next_month_start(today) - timedelta(days=1)
     found = await cashflow_cases.expected_between(
-        ctx.uow, _rates(ctx), ctx.user, today, last, now=ctx.now
+        ctx.uow, rates(ctx), ctx.user, today, last, now=ctx.now
     )
     items = outlook_cases.items_of(found)
     if not items:
@@ -219,7 +220,7 @@ async def _wallets(ctx: ToolContext) -> str:
     usual_id = ctx.user.usual_card_wallet_id if ctx.user.track_cards else None
     names = ", ".join(f"{w.name} ({', '.join(_wallet_facts(w, w.id == usual_id))})" for w in others)
     line = f"Wallets besides the main account: {names}."
-    figures = await month_figures(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
+    figures = await month_figures(ctx.uow, rates(ctx), ctx.user, now=ctx.now)
     away = f"Saved this month: {_money(figures.put_away)}"
     if figures.saving_rate is not None:
         away += f" ({(figures.saving_rate * 100).quantize(Decimal(1))}% of income)"
@@ -227,7 +228,7 @@ async def _wallets(ctx: ToolContext) -> str:
 
 
 async def _budgets(ctx: ToolContext) -> str:
-    statuses = await budget_cases.budget_statuses(ctx.uow, _rates(ctx), ctx.user, now=ctx.now)
+    statuses = await budget_cases.budget_statuses(ctx.uow, rates(ctx), ctx.user, now=ctx.now)
     if not statuses:
         return ""
     items = [
@@ -244,7 +245,7 @@ async def _budgets(ctx: ToolContext) -> str:
 async def _ahead(ctx: ToolContext) -> str:
     today = ctx.now.astimezone(ctx.tz).date()
     flow = await cashflow_cases.cash_flow(
-        ctx.uow, _rates(ctx), ctx.user, today, today + timedelta(days=AHEAD_DAYS), now=ctx.now
+        ctx.uow, rates(ctx), ctx.user, today, today + timedelta(days=AHEAD_DAYS), now=ctx.now
     )
     items = []
     for day in flow.days:
