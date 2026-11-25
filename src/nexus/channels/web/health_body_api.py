@@ -296,12 +296,15 @@ class TrainingIn(Model):
 async def get_training(auth: Auth, web: Runtime) -> TrainingIn | None:
     """What the Gym coach plans around, or null until it is set."""
     found = await coach_cases.training_profile(web.uow(), auth.user.id)
-    return None if found is None else TrainingIn(**found.as_dict())
+    if found is None or found.missing():  # a partly filled one (from a workout) isn't set yet
+        return None
+    return TrainingIn(**{k: v for k, v in found.as_dict().items() if k != "place"})
 
 
 @router.put("/profile/training")
 async def save_training(body: TrainingIn, auth: Auth, web: Runtime) -> TrainingIn:
     """Replace the coach inputs (needs the Health consent, like every health write)."""
+    before = await coach_cases.training_profile(web.uow(), auth.user.id)
     saved = await coach_cases.save_training_profile(
         web.uow(),
         auth.user.id,
@@ -311,10 +314,11 @@ async def save_training(body: TrainingIn, auth: Auth, web: Runtime) -> TrainingI
             tuple(body.equipment),
             body.experience,
             body.focus,
+            place=before.place if before else None,  # where the user trains is kept
         ),
         now=web.clock(),
     )
-    return TrainingIn(**saved.as_dict())
+    return TrainingIn(**{k: v for k, v in saved.as_dict().items() if k != "place"})
 
 
 # --- consents -------------------------------------------------------------------------------

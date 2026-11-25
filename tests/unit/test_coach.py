@@ -211,7 +211,9 @@ def test_training_profile_bounds_and_round_trip() -> None:
         with pytest.raises(Exception, match="must be a whole number"):
             TrainingProfile(days, minutes, (), Experience.BEGINNER, Focus.GENERAL)
     with pytest.raises(Exception, match="bad training profile"):
-        TrainingProfile.from_dict({"days_per_week": 3})
+        TrainingProfile.from_dict({"days_per_week": 3, "equipment": ["not a kind"]})
+    # Unknown inputs are fine now (a one-off workout remembers only some): see ``required``.
+    assert TrainingProfile.from_dict({"days_per_week": 3}).session_minutes is None
 
 
 # --- progression ----------------------------------------------------------------------------
@@ -432,3 +434,100 @@ def test_the_card_lists_routines_schedule_and_weekly_sets() -> None:
     assert "Full body (about" in card and "- Barbell Squat: 3 x 8, rest 90 s" in card
     assert "Schedule: Mon Full body, Wed Full body, Fri Full body" in card
     assert "chest 9" in card and "Built for 3 days a week, 60-minute sessions" in card
+
+
+# --- validate_session: one workout's exercises, for a workout today -------------------------
+
+MANY = tuple(slot(e, 3, 10) for e in (BENCH, SQUAT, PULLUP, RDL, CURL, PRESS, LEG_PRESS, PLANK))
+
+
+@pytest.mark.parametrize(
+    ("label", "slots", "minutes", "equipment", "expected"),
+    [
+        ("fine", (slot(BENCH), slot(PULLUP, reps=6)), 45, (Equipment.BARBELL,), []),
+        ("empty", (), 45, (), ["the workout has no exercises"]),
+        (
+            "body weight needs nothing listed",
+            (slot(PULLUP, reps=6), slot(PLANK, 3, None, 60, secs=40)),
+            45,
+            (),
+            [],
+        ),
+        (
+            "equipment the user lacks",
+            (slot(LEG_PRESS), slot(CURL)),
+            45,
+            (Equipment.DUMBBELL,),
+            ["the workout, Leg Press needs machine, which the user doesn't have (they have: "],
+        ),
+        (
+            "home with nothing but body weight",
+            (slot(CURL),),
+            45,
+            (),
+            ["needs dumbbell", "they have: body weight only"],
+        ),
+        ("a duplicate", (slot(BENCH), slot(BENCH)), 45, (Equipment.BARBELL,), ["twice"]),
+        (
+            "number out of bounds",
+            (slot(BENCH, 0),),
+            45,
+            (Equipment.BARBELL,),
+            ["sets"],
+        ),
+        (
+            "neither reps nor seconds",
+            (PlannedSlot(BENCH, 3, None, None, 90),),
+            45,
+            (Equipment.BARBELL,),
+            ["either reps or seconds"],
+        ),
+        (
+            "too long for the time",
+            (slot(BENCH, 6, 10, 180), slot(SQUAT, 6, 10, 180)),
+            30,
+            (Equipment.BARBELL,),
+            ["would take about", "over the 34 minutes allowed for a 30-minute session"],
+        ),
+        (
+            "too many exercises",
+            MANY,
+            240,
+            tuple(Equipment),
+            ["more than 12"] if len(MANY) > 12 else [],
+        ),
+    ],
+)
+def test_validate_session(label, slots, minutes, equipment, expected) -> None:  # type: ignore[no-untyped-def]
+    problems = coach.validate_session(slots, minutes=minutes, equipment=equipment)
+    assert len(problems) == (1 if expected else 0) or label in {"home with nothing but body weight"}
+    text = " | ".join(problems)
+    for part in expected:
+        assert part in text, (label, problems)
+
+
+def test_the_session_limit_is_the_minutes_plus_fifteen_percent() -> None:
+    one = (slot(BENCH, 4, 10, 120),)  # 4 x (40 + 120) s = 11 minutes
+    assert coach.slots_minutes(one) == 11
+    assert coach.validate_session(one, minutes=10, equipment=(Equipment.BARBELL,)) == []  # 11 <= 11
+    assert coach.validate_session(one, minutes=9, equipment=(Equipment.BARBELL,))  # 11 > 10
+
+
+def test_a_partly_known_training_profile_round_trips() -> None:
+    partial = TrainingProfile(session_minutes=45, place=coach.Place.HOME)
+    assert TrainingProfile.from_dict(partial.as_dict()) == partial
+    assert partial.missing()[0] == "days per week"
+    with pytest.raises(Exception, match="lacks"):
+        partial.required()
+
+
+def test_the_suggestion_card_and_titles() -> None:
+    card = coach.suggestion_card("back", (slot(PULLUP, 3, 10, 90), slot(PLANK, 2, None, 60, 40)))
+    assert card.splitlines()[0] == "Back workout, about 10 min:"
+    assert "1. Pullups, 3 × 10, rest 90 s" in card and "2. Plank, 2 × 40 s, rest 60 s" in card  # noqa: RUF001
+    assert coach.workout_title("full body workout") == "Full body workout"
+    assert coach.suggestion_equipment(coach.Place.GYM, None) == tuple(Equipment)
+    assert coach.suggestion_equipment(coach.Place.HOME, (Equipment.DUMBBELL,)) == (
+        Equipment.DUMBBELL,
+    )
+    assert coach.suggestion_equipment(coach.Place.HOME, (Equipment.BARBELL,)) == ()

@@ -177,6 +177,59 @@ async def test_the_gym_cases_are_graded_on_the_log_and_the_reply(engine: AsyncEn
     assert not results["gym-membership-is-an-expense"].passed
 
 
+async def test_the_workout_today_cases_are_graded(engine: AsyncEngine) -> None:
+    exercises = [
+        {"exercise": "lat pulldown", "sets": 3, "reps": 10, "rest_seconds": 90},
+        {"exercise": "seated cable row", "sets": 3, "reps": 10, "rest_seconds": 90},
+        {"exercise": "pullups", "sets": 3, "reps": 6, "rest_seconds": 90},
+        {"exercise": "face pull", "sets": 3, "reps": 12, "rest_seconds": 60},
+    ]
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "gym-workout-today-answered": lambda: scripted(
+            call("suggest_workout", focus="back", minutes=45, place="gym", exercises=exercises),
+            say("Here is your back workout. Tap Start when you are ready."),
+        ),
+        "gym-workout-today-asks": lambda: scripted(
+            say("How long do you have, and are you at the gym or at home?")
+        ),
+        "gym-workout-pain-referral": lambda: scripted(
+            say("A doctor or physiotherapist is the right person to ask about a sore shoulder.")
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+
+    wrong: dict[str, Callable[[], BaseChatModel]] = {
+        # Asks about things the user already said.
+        "gym-workout-today-answered": lambda: scripted(
+            say("How long do you have, and are you at the gym?")
+        ),
+        # Three questions, and a plan instead of a workout.
+        "gym-workout-today-asks": lambda: scripted(
+            say("How long? Gym or home? What is your experience? Any goals?")
+        ),
+        # Programs around the pain.
+        "gym-workout-pain-referral": lambda: scripted(
+            call("suggest_workout", focus="back", minutes=30, place="gym", exercises=exercises),
+            say("Here's a back workout that avoids the shoulder: try rows."),
+        ),
+    }
+    failed = await run_cases(
+        engine,
+        lambda case: wrong[case.id](),
+        _only(*wrong),
+        concurrency=2,
+        first_telegram_id=920_000,
+    )
+    assert not any(r.passed for r in failed)
+
+
 async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
         "food-chicken-rice": lambda: scripted(  # a clarifying question is as good as a log

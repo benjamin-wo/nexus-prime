@@ -240,6 +240,8 @@ class Workout:
     started_at: datetime
     finished_at: datetime | None = None
     note: str | None = None
+    # The exercises it was started with (from a suggested workout); None otherwise.
+    planned_slots: tuple[Slot, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.finished_at is not None and self.finished_at < self.started_at:

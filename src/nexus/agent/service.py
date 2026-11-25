@@ -42,18 +42,21 @@ from nexus.agent.image_look import (
     meal_caption,
     route,
 )
+from nexus.agent.links import app_link
 from nexus.agent.meal_reader import MealReader
 from nexus.agent.ops_timing import TurnTimer
 from nexus.agent.progress import StepSink
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
-from nexus.agent.tools import UowFactory
+from nexus.agent.tools import HEALTH_OFF, UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
+from nexus.application import coach as coach_cases
 from nexus.application import costs, food_entry, found_cards, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
+from nexus.application import gym as gym_cases
 from nexus.application import investments as investment_cases
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
@@ -75,8 +78,9 @@ from nexus.application.people import known_people
 from nexus.application.ports import ReceiptStore, SpeechError, SpeechToText
 from nexus.application.users import get_user
 from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
+from nexus.domain.coach import workout_title
 from nexus.domain.departments import RunStatus
-from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError, NotFound
+from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NexusError, NotFound
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, MenuSection, Transaction, UserId
 from nexus.domain.money import Money
@@ -343,7 +347,10 @@ class AgentService:
         receipt_text: ReceiptTextReader | None = None,
         demo: DemoGate | None = None,
         meals: MealReader | None = None,
+        origin: str | None = None,
     ) -> None:
+        # The web app's origin, for buttons that open a page there; None: not known.
+        self.origin = origin
         self._graph = graph
         # Reads meal photos into foods and portions; None: a meal photo is read as before.
         self._meals = meals
@@ -1201,12 +1208,50 @@ class AgentService:
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         if data.startswith("plan:mute:"):
             return [await self._mute_plan(actor, data.removeprefix("plan:mute:"))]
+        if data.startswith("workout:"):
+            _, action, suggestion_id = [*data.split(":"), "", ""][:3]
+            return await self._workout_button(actor, action, suggestion_id)
         if data.startswith("trip:research:"):
             return [await self._research_trip(actor, data.removeprefix("trip:research:"))]
         if data.startswith("trip:book:"):
             booking_id, _, trip_id = data.removeprefix("trip:book:").partition(":")
             return [await self._booking_trip(actor, booking_id, trip_id)]
         return [Reply("I don't know that button.")]
+
+    async def _workout_button(self, actor: UserId, action: str, suggestion_id: str) -> list[Reply]:
+        """Start / Shuffle on a suggested workout (see ``suggest_workout``)."""
+        try:
+            found = UUID(suggestion_id)
+        except ValueError:
+            return [Reply("I don't know that button.")]
+        if action not in ("start", "shuffle"):
+            return [Reply("I don't know that button.")]
+        now = self._clock()
+        if await gym_cases.consent(self._uow(), actor) is None:
+            return [Reply(HEALTH_OFF.removeprefix("Error: "))]
+        try:
+            suggested = await coach_cases.suggestion(self._uow(), actor, found, now=now)
+        except NotFound:
+            return [Reply("That workout has expired. Ask me for a new one.")]
+        if action == "shuffle":
+            return await self.handle_text(
+                actor, f"Give me a different {suggested.focus} workout", f"shuffle:{suggestion_id}"
+            )
+        link = app_link(self.origin, "/health/gym")
+        buttons = [[Button("Open workout", link)]] if link else []
+        try:
+            await gym_cases.start_workout(
+                self._uow(), actor, planned_slots=suggested.slots, now=now
+            )
+        except Conflict:
+            return [
+                Reply(
+                    "You already have a workout open. Finish it first, then start this one.",
+                    buttons,
+                )
+            ]
+        title = workout_title(suggested.focus).lower()
+        return [Reply(f"Started your {title}.", buttons)]
 
     async def _research_trip(self, actor: UserId, run_id: str) -> Reply:
         """Make it a trip, on the message with a trip's research."""

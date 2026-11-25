@@ -273,16 +273,23 @@ class WorkoutDetail:
 
 
 async def start_workout(
-    uow: UnitOfWork, user_id: UserId, *, routine_id: UUID | None = None, now: datetime
+    uow: UnitOfWork,
+    user_id: UserId,
+    *,
+    routine_id: UUID | None = None,
+    planned_slots: Sequence[Slot] | None = None,
+    now: datetime,
 ) -> Workout:
-    """Begin a workout, from a routine or freestyle. One at a time: finish or discard first."""
+    """Begin a workout, from a routine, a suggested workout's exercises (``planned_slots``) or
+    freestyle. One at a time: finish or discard first."""
     async with uow:
         await _begin_write(uow, user_id)
         if routine_id is not None and await uow.gym.get_routine(user_id, routine_id) is None:
             raise NotFound("no such routine")
         if await uow.gym.open_workout(user_id) is not None:
             raise Conflict("you already have a workout in progress")
-        workout = Workout(uuid4(), user_id, routine_id, now)
+        planned = None if planned_slots is None else tuple(planned_slots)
+        workout = Workout(uuid4(), user_id, routine_id, now, planned_slots=planned)
         await uow.gym.add_workout(workout)
         await note_health_write(uow, user_id)
         await uow.commit()

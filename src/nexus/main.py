@@ -448,6 +448,7 @@ async def _telegram_runtime(
             lookup=lookup,
             prices=prices,
             zones=zones,
+            origin=settings.public_origin,
         )
     )
     graph = agent_graph.compile(checkpointer)
@@ -511,6 +512,7 @@ async def _telegram_runtime(
             receipt_text=receipt_text,
             demo=demo,
             meals=meals,
+            origin=settings.public_origin,
         ),
         client=client,
     )

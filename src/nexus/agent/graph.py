@@ -250,6 +250,8 @@ class AgentDeps:
     prices: PriceLooker | None = None
     # Finds the time zone of a place by name, for set_timezone; None: not set up.
     zones: ZoneFinder | None = None
+    # The web app's origin, for buttons that open a page there; None: not known.
+    origin: str | None = None
 
 
 def tool_order(names: Iterable[str]) -> list[str]:
@@ -521,6 +523,7 @@ class AgentGraph:
             lookup=self.deps.lookup,
             prices=self.deps.prices,
             zones=self.deps.zones,
+            origin=self.deps.origin,
             message=_recent_said(state["messages"]) if state else "",
         )
 

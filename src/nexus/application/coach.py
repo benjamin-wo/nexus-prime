@@ -6,6 +6,7 @@ ask the user first, and each write goes through ``application.gym`` (consent, ow
 import dataclasses
 from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from nexus.application import gym as gym_cases
@@ -13,19 +14,23 @@ from nexus.application.health_menu import note_health_write
 from nexus.application.ports import UnitOfWork
 from nexus.domain.coach import (
     DELOAD_LOOKBACK_DAYS,
+    SUGGESTION_TTL,
+    Place,
     PlannedRoutine,
     PlannedSchedule,
     Proposal,
     ProposalKind,
     SlotRef,
     TrainingProfile,
+    WorkoutSuggestion,
     actionable,
     deloaded_slot,
     plain_kg,
     restored_slot,
     suggest_progression,
 )
-from nexus.domain.errors import ConsentRequired, InvalidInput
+from nexus.domain.errors import ConsentRequired, InvalidInput, NotFound
+from nexus.domain.gym import Equipment
 from nexus.domain.gym_training import PlanKind, Routine, SetEntry, Slot
 from nexus.domain.health_safety import ADULT_AGE, safe_age
 from nexus.domain.ledger import UserId
@@ -49,6 +54,64 @@ async def save_training_profile(
         await note_health_write(uow, user_id)
         await uow.commit()
     return profile
+
+
+async def remember_training(
+    uow: UnitOfWork,
+    user_id: UserId,
+    *,
+    minutes: int | None,
+    place: Place | None,
+    equipment: tuple[Equipment, ...] | None,
+    now: datetime,
+) -> None:
+    """Keep the session length, place and equipment a one-off workout used, but only where
+    the profile doesn't have them yet: what the user set on purpose is never overwritten.
+    Without the Health consent nothing is kept."""
+    async with uow:
+        if await uow.gym.health_consent(user_id) is None:
+            return
+        saved = await uow.gym.get_training_profile(user_id) or TrainingProfile()
+        merged = dataclasses.replace(
+            saved,
+            session_minutes=saved.session_minutes if saved.session_minutes is not None else minutes,
+            place=saved.place or place,
+            equipment=saved.equipment if saved.equipment is not None else equipment,
+        )
+        if merged == saved:
+            return
+        await uow.gym.save_training_profile(user_id, merged, now)
+        await note_health_write(uow, user_id)
+        await uow.commit()
+
+
+async def save_suggestion(
+    uow: UnitOfWork,
+    user_id: UserId,
+    *,
+    focus: str,
+    slots: Sequence[Slot],
+    minutes: int,
+    now: datetime,
+) -> WorkoutSuggestion:
+    suggestion = WorkoutSuggestion(uuid4(), user_id, focus.strip(), tuple(slots), minutes, now)
+    async with uow:
+        await uow.gym.add_workout_suggestion(suggestion)
+        await uow.commit()
+    return suggestion
+
+
+async def suggestion(
+    uow: UnitOfWork, user_id: UserId, suggestion_id: UUID, *, now: datetime
+) -> WorkoutSuggestion:
+    """The user's suggestion if it is under a day old; ``NotFound`` otherwise."""
+    async with uow:
+        found = await uow.gym.get_workout_suggestion(
+            user_id, suggestion_id, since=now - SUGGESTION_TTL
+        )
+    if found is None or found.expired(now):
+        raise NotFound("that workout suggestion has expired")
+    return found
 
 
 async def birth_year(uow: UnitOfWork, user_id: UserId) -> int | None:
