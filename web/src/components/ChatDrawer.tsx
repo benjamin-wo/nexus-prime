@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { api, apiForm, ApiError, type ChatHistory, type Demo, type Reply } from "../api";
 import {
@@ -64,6 +65,16 @@ const SUGGESTIONS = [
 const STILL_WORKING_MS = 10_000;
 
 type Button = { label: string; data: string };
+
+/** The in-app path and query of a link to this web app (same origin), else null: those open in the app, not a new window. */
+export function inAppPath(url: string): string | null {
+  try {
+    const u = new URL(url, window.location.origin);
+    return u.origin === window.location.origin ? `${u.pathname}${u.search}${u.hash}` : null;
+  } catch {
+    return null;
+  }
+}
 const isSource = (b: Button) => b.data.startsWith("src:");
 
 /** The pages a web answer came from (`src:<https url>`): small link chips under the reply,
@@ -204,6 +215,7 @@ export function ChatDrawer({
   const end = useRef<HTMLDivElement>(null);
   // Full screen on a phone (the CSS's 480px breakpoint): the grab bar and header drag the chat down to close.
   const phone = useMediaQuery(PHONE_QUERY);
+  const navigate = useNavigate();
   const handle = useRef<HTMLDivElement>(null);
   // Whether the list is scrolled to the newest message, so it can stay there when the keyboard resizes it.
   const atEnd = useRef(true);
@@ -480,11 +492,16 @@ export function ChatDrawer({
                         variant="primary"
                         key={b.data}
                         href={b.data.slice(4)}
-                        target="_blank"
+                        target={inAppPath(b.data.slice(4)) === null ? "_blank" : undefined}
                         rel="noopener noreferrer"
                         onClick={(e) => {
                           e.preventDefault();
-                          openExternal(b.data.slice(4));
+                          const path = inAppPath(b.data.slice(4));
+                          if (path === null) openExternal(b.data.slice(4));
+                          else {
+                            navigate(path);
+                            if (phone) onClose();
+                          }
                         }}
                       >
                         {b.label}

@@ -4,25 +4,29 @@ import { type ReactNode, useState } from "react";
 import { LoadError } from "../components/LoadError";
 import { Button } from "../components/ui";
 import { healthApi, healthKey } from "./api";
+import { bodyApi, bodyKey } from "./bodyApi";
+import { useConsents } from "./bodyHooks";
 import { WellnessStatement } from "./WellnessStatement";
 
 import "./health.css";
 
-/** What Health stores and what it is not, in plain words. Shown before anything is kept. */
+/** One screen, plain words, one button. The separate switches live in Settings, under Health data. */
 function ConsentScreen() {
   const client = useQueryClient();
+  const consents = useConsents();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const provider = consents.data?.ai_provider;
 
-  async function agree() {
+  async function turnOn() {
     setBusy(true);
     setError(null);
     try {
-      const consent = await healthApi.giveConsent();
-      client.setQueryData(healthKey.consent, consent);
+      const state = await bodyApi.turnOn();
+      client.setQueryData(bodyKey.consents, state);
+      client.setQueryData(healthKey.consent, { consented_at: state.health_consented_at });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't turn on Health");
-    } finally {
       setBusy(false);
     }
   }
@@ -32,7 +36,7 @@ function ConsentScreen() {
       <div className="page-head">
         <div>
           <h1>Health</h1>
-          <p className="muted">Log your workouts and see how you are progressing.</p>
+          <p className="muted">Log food, workouts and weight by chat or here.</p>
         </div>
       </div>
       <section className="block" aria-labelledby="health-consent-title">
@@ -40,22 +44,20 @@ function ConsentScreen() {
           <h2 id="health-consent-title">Before you start</h2>
         </div>
         <div className="card section-body health-prose">
+          <p>Nexus keeps what you log: your food, workouts and weight. It stays on your account.</p>
           <p>
-            Nexus will keep what you log in Health: your workouts, food logs, body weight and other measurements, and your
-            health profile. It is used only to show your own history and progress, and it stays on your account.
+            Nexus's AI reads it to answer you
+            {provider ? `, through ${provider.name} in ${provider.country}` : ""}.
           </p>
-          <p>
-            Health is for general wellness, not medical advice. It does not diagnose, treat or monitor any condition. Talk to a
-            doctor before you change how you train if you have a health concern.
-          </p>
-          <p>You can turn Health off in Settings at any time. What you logged stays until you delete it.</p>
+          <p>It is for general wellness, not medical advice.</p>
           <WellnessStatement />
+          <p className="caption">You can change these choices in Settings, under Health data.</p>
           {error && (
             <p className="error-text" role="alert">
               {error}
             </p>
           )}
-          <Button variant="primary" full disabled={busy} onClick={() => void agree()}>
+          <Button variant="primary" full disabled={busy} onClick={() => void turnOn()}>
             Turn on Health
           </Button>
         </div>
@@ -64,7 +66,7 @@ function ConsentScreen() {
   );
 }
 
-/** Shows its children once the person has agreed to Nexus keeping their health data, else the consent screen. */
+/** Shows its children once Health is on, else the consent screen. */
 export function HealthGate({ children }: { children: ReactNode }) {
   const consent = useQuery({ queryKey: healthKey.consent, queryFn: healthApi.consent });
   if (consent.isLoading) return <p className="state">Loading…</p>;

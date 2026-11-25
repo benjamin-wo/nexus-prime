@@ -58,7 +58,10 @@ export type Nutrients = { kcal: string; protein_g: string; carbs_g: string; fat_
 export type Totals = { point: Nutrients; low: Nutrients; high: Nutrients };
 export type MealItem = {
   id: string | null;
-  food_id: string;
+  /** null for an estimate the assistant made without a database food. */
+  food_id: string | null;
+  /** Where the figures came from; absent before estimates existed. */
+  source_detail?: "db" | "ai_estimate" | null;
   name: string | null;
   grams: string;
   label: string;
@@ -68,7 +71,7 @@ export type MealItem = {
   nutrients: Nutrients | null;
 };
 export type Meal = { id: string; meal: MealSlot; eaten_at: string; source: string; note: string | null; items: MealItem[]; totals: Totals | null };
-export type ItemInput = { food_id: string; grams: string; label?: string; kind?: EstimateKind; cooking?: Cooking | null; note?: string | null };
+export type ItemInput = { food_id: string | null; grams: string; label?: string; kind?: EstimateKind; cooking?: Cooking | null; note?: string | null };
 export type MealInput = { meal: MealSlot; items: ItemInput[]; eaten_at?: string; note?: string };
 export type Day = {
   date: string;
@@ -100,6 +103,8 @@ export const bodyApi = {
   profile: () => api<Profile | null>(`${base}/profile`),
   saveProfile: (body: ProfileInput) => api<Profile>(`${base}/profile`, { method: "PUT", body }),
   consents: () => api<Consents>(`${base}/consents`),
+  /** One tap: the master consent and the AI scope together. */
+  turnOn: () => api<Consents>(`${base}/consent/all`, { method: "POST" }),
   grant: (scope: Scope) => api<ScopeState>(`${base}/consents/${encodeURIComponent(scope)}`, { method: "PUT" }),
   withdraw: (scope: Scope) => api<ScopeState>(`${base}/consents/${encodeURIComponent(scope)}`, { method: "DELETE" }),
 

@@ -351,7 +351,10 @@ def _scope(s: consent_cases.ScopeState) -> ScopeOut:
 
 @router.get("/consents")
 async def get_consents(auth: Auth, web: Runtime) -> ConsentsOut:
-    state = await consent_cases.overview(web.uow(), auth.user.id)
+    return _consents_out(await consent_cases.overview(web.uow(), auth.user.id), web)
+
+
+def _consents_out(state: consent_cases.ConsentOverview, web: Runtime) -> ConsentsOut:
     settings = web.settings
     name, country = provider_disclosure(
         settings.llm_provider.value, settings.ai_provider_name, settings.ai_provider_country
@@ -362,6 +365,13 @@ async def get_consents(auth: Auth, web: Runtime) -> ConsentsOut:
         ai_provider=ProviderOut(name=name, country=country),
         wellness_statement=WELLNESS_STATEMENT,
     )
+
+
+@router.post("/consent/all", status_code=201)
+async def turn_on_health(auth: Auth, web: Runtime) -> ConsentsOut:
+    """One tap: the master consent and ``ai_processing``. Doing it again changes nothing."""
+    state = await consent_cases.turn_on(web.uow(), auth.user.id, now=web.clock())
+    return _consents_out(state, web)
 
 
 def _consent_scope(value: str) -> ConsentScope:

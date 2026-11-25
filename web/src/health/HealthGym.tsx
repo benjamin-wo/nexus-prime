@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 
 import { Tabs } from "../components/ui";
 
@@ -9,12 +9,18 @@ const ITEMS = [
   { to: "/health/gym/history", label: "History" },
 ];
 
-/** Gym: its own pages under one tab of Health. Each page keeps its own heading. */
+/** Gym: the workout is the main view. Routines, Library and History sit behind one More link, and show their own tabs. */
 export function HealthGym() {
+  const main = /^\/health\/gym\/?$/.test(useLocation().pathname);
   return (
     <>
-      <Tabs label="Gym pages" items={ITEMS} />
+      {!main && <Tabs label="Gym pages" items={ITEMS} />}
       <Outlet />
+      {main && (
+        <p className="health-actions">
+          <Link to="/health/gym/routines">More: routines, library, history</Link>
+        </p>
+      )}
     </>
   );
 }

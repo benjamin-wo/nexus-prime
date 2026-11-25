@@ -8,7 +8,7 @@ import { COOKING } from "./bodyFormat";
 import { useDebounced } from "./hooks";
 
 /** One food in a meal, ready to send: the portion or grams chosen, and how it was cooked. */
-export type PickedItem = { food_id: string; name: string; grams: string; label: string; kind: EstimateKind; cooking: Cooking | null; note: string | null };
+export type PickedItem = { food_id: string | null; name: string; grams: string; label: string; kind: EstimateKind; cooking: Cooking | null; note: string | null };
 
 const GRAMS = "grams";
 
