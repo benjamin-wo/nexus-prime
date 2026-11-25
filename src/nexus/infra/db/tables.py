@@ -1921,7 +1921,8 @@ meal_items = Table(
     _user_fk(),
     Column("entry_id", UUID(as_uuid=True), nullable=False),
     Column("position", Integer, nullable=False),
-    Column("food_id", Text, nullable=False),
+    Column("food_id", Text),  # null for an AI estimate (source_detail 'ai_estimate')
+    Column("source_detail", Text, nullable=False, server_default=text("'db'")),
     Column("grams", Numeric(8, 2), nullable=False),
     Column("portion_label", Text, nullable=False),
     Column("display_name", Text),
@@ -1941,7 +1942,14 @@ meal_items = Table(
         ondelete="CASCADE",
     ),
     ForeignKeyConstraint(["food_id"], ["foods.id"]),
-    CheckConstraint("estimate_kind IN ('weighed', 'portion', 'estimated')", name="estimate_kind"),
+    CheckConstraint(
+        "estimate_kind IN ('weighed', 'portion', 'estimated', 'ai_estimate')",
+        name="estimate_kind",
+    ),
+    CheckConstraint("source_detail IN ('db', 'ai_estimate')", name="source_detail"),
+    CheckConstraint(
+        "food_id IS NOT NULL OR source_detail = 'ai_estimate'", name="food_or_estimate"
+    ),
     CheckConstraint(
         "cooking IS NULL OR cooking IN ('fried', 'stir-fried', 'curry/gravy')", name="cooking"
     ),

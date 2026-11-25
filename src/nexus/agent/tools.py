@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from nexus.agent import gym_text, price_text
 from nexus.agent.confirmation import Ask, entry_text
+from nexus.agent.links import app_link
 from nexus.agent.outlook_text import (
     describe_calculation,
     describe_money_history,
@@ -177,6 +178,8 @@ class ToolContext:
     # Shared by everything the tools change in one chat turn, so Undo reverses it together.
     # None outside a turn: each change then stands alone.
     batch: UUID | None = None
+    # The web app's origin, for buttons that open a page; None: no such buttons.
+    origin: str | None = None
     # What the user said lately (their last few messages), for a tool that must not act on
     # pain or injury. Empty outside a chat turn.
     message: str = ""
@@ -204,6 +207,9 @@ class ToolResult:
     buttons: list[list[tuple[str, str]]] | None = None
     # For an expected failure (run_tool): its coarse class, like "NotFound". Never the message.
     error: str | None = None
+    # True when the write has its own Undo among ``buttons``, so the turn needs no shared
+    # Undo for it (which would reverse money or trips instead).
+    own_undo: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -4882,6 +4888,15 @@ class FoodItemArgs(Args):
     modifiers: list[str] = Field(
         default_factory=list, description="'less rice', 'extra gravy': only what the user said"
     )
+    est_kcal: float | None = Field(
+        None,
+        description="Your rough estimate of the kcal in this item as eaten. Used only when the "
+        "food isn't in the database; with est_protein_g, est_carbs_g and est_fat_g, in line "
+        "with each other",
+    )
+    est_protein_g: float | None = Field(None, description="Your estimate of protein, grams")
+    est_carbs_g: float | None = Field(None, description="Your estimate of carbohydrate, grams")
+    est_fat_g: float | None = Field(None, description="Your estimate of fat, grams")
 
 
 class LogFoodArgs(Args):
@@ -4938,6 +4953,7 @@ def _food_requests(
             tuple(f.modifiers),
             photo,
             f.shown if isinstance(f, PhotoItemArgs) else None,
+            food_entry.estimate_from(f.est_kcal, f.est_protein_g, f.est_carbs_g, f.est_fat_g),
         )
         for f in a.foods
     ]
@@ -4952,11 +4968,12 @@ async def _prepared_meal(
     return resolved, meal, at
 
 
-async def _describe_meal(ctx: ToolContext, a: LogFoodArgs | LogPhotoMealArgs, photo: bool) -> str:
-    await _need_consent(ctx)
-    resolved, meal, _ = await _prepared_meal(ctx, a, photo=photo)
-    hidden = await nutrition_cases.numbers_hidden(ctx.uow(), ctx.user.id)
-    return food_entry.confirm_text(resolved, meal, hidden=hidden, photo=photo)
+def _meal_buttons(ctx: ToolContext, meal_id: UUID) -> list[list[tuple[str, str]]]:
+    row = [("Undo", f"meal:undo:{meal_id}")]
+    edit = app_link(ctx.origin, f"/health/food?meal={meal_id}")
+    if edit is not None:
+        row.append(("Edit", edit))
+    return [row]
 
 
 async def _write_meal(
@@ -4969,17 +4986,16 @@ async def _write_meal(
     except food_entry.NeedsAnswer as exc:  # its text is already an "Error: ..." for the model
         return ToolResult(str(exc), error="NeedsAnswer")
     source = EntrySource.PHOTO if photo else EntrySource.CHAT
-    await nutrition_cases.log_meal(
+    entry = await nutrition_cases.log_meal(
         ctx.uow(), ctx.user.id, resolved.inputs, meal, at, source, now=ctx.now
     )
     hidden = await nutrition_cases.numbers_hidden(ctx.uow(), ctx.user.id)
     return ToolResult(
-        food_entry.confirm_text(resolved, meal, hidden=hidden, done=True, photo=photo), wrote=True
+        food_entry.logged_text(resolved, meal, hidden=hidden, photo=photo),
+        wrote=True,
+        buttons=_meal_buttons(ctx, entry.id),
+        own_undo=True,
     )
-
-
-async def _describe_log_food(ctx: ToolContext, a: LogFoodArgs) -> str:
-    return await _describe_meal(ctx, a, False)
 
 
 async def _log_food(ctx: ToolContext, a: LogFoodArgs) -> ToolResult:
@@ -4988,12 +5004,15 @@ async def _log_food(ctx: ToolContext, a: LogFoodArgs) -> ToolResult:
 
 # Only the meal-photo flow (AgentGraph._meal_step) builds this call: the model is never offered
 # it, so only code can set the photo source and the estimated range.
-async def _describe_log_photo_meal(ctx: ToolContext, a: LogPhotoMealArgs) -> str:
-    return await _describe_meal(ctx, a, True)
-
-
 async def _log_photo_meal(ctx: ToolContext, a: LogPhotoMealArgs) -> ToolResult:
     return await _write_meal(ctx, a, True)
+
+
+async def _undo_last_meal(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    gone = await nutrition_cases.undo_latest_meal(ctx.uow(), ctx.user.id, now=ctx.now)
+    if gone is None:
+        return ToolResult("There's no meal logged in the last 30 minutes to remove.")
+    return ToolResult(f"Removed your {gone.meal.value}.", wrote=True, own_undo=True)
 
 
 async def _food_today(ctx: ToolContext, a: FoodTodayArgs) -> ToolResult:
@@ -5041,20 +5060,26 @@ async def _energy_estimate(ctx: ToolContext, _: NoArgs) -> ToolResult:
 FOOD_TOOLS = (
     ToolSpec(
         "log_food",
-        "Log what the user ate, as foods with a serving or a weight. Calories and macros are "
-        "worked out by code from the food database: never state or estimate them yourself. "
-        "If a food isn't found or is unclear it says what to ask the user. Asks the user to "
-        "confirm.",
+        "Log what the user ate, straight away (no confirmation), as foods with a serving or a "
+        "weight. Calories and macros come from the food database. For each item also pass your "
+        "rough estimate (est_kcal, est_protein_g, est_carbs_g, est_fat_g, for the item as "
+        "eaten): it is used only when the food isn't in the database. The reply carries Undo "
+        "and Edit buttons. Quote its text as it is.",
         LogFoodArgs,
         _log_food,
-        confirm=_describe_log_food,
+    ),
+    ToolSpec(
+        "undo_last_meal",
+        "Remove the meal the user just logged (logged in the last 30 minutes), for 'undo that' "
+        "or 'remove that' right after a meal. Not for money or trips (undo_last_change).",
+        NoArgs,
+        _undo_last_meal,
     ),
     ToolSpec(
         "log_photo_meal",
         "Log a meal read from a photo. Used by the photo flow only.",
         LogPhotoMealArgs,
         _log_photo_meal,
-        confirm=_describe_log_photo_meal,
         exposed=False,
     ),
     ToolSpec(

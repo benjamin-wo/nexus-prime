@@ -179,8 +179,23 @@ async def test_the_gym_cases_are_graded_on_the_log_and_the_reply(engine: AsyncEn
 
 async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
-        "food-chicken-rice": lambda: scripted(  # a clarifying question is as good as a log
-            say("Was it steamed or roasted, and a small or a full plate?")
+        "food-chicken-rice": lambda: scripted(  # logged at once, on the model's own estimate
+            call(
+                "log_food",
+                foods=[
+                    {
+                        "food": "zzzz chicken rice",
+                        "grams": "400",
+                        "estimated": True,
+                        "est_kcal": 600,
+                        "est_protein_g": 30,
+                        "est_carbs_g": 70,
+                        "est_fat_g": 20,
+                    }
+                ],
+                meal="lunch",
+            ),
+            say("Logged lunch: chicken rice. A rough guide."),
         ),
         "food-eggs-and-toast": lambda: scripted(
             call(
@@ -211,7 +226,10 @@ async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: Asyn
     }
     for good in scripts:
         assert results[good].passed, (good, results[good].failures, results[good].error)
-    assert results["food-eggs-and-toast"].turns[0].confirmations == 1
+    assert results["food-eggs-and-toast"].turns[0].confirmations == 0
+    # The reply's own figures are accepted when the tool's text states them (the estimate's
+    # range here), and the figure the model only passed as an argument is not.
+    assert "360" in results["food-chicken-rice"].turns[0].results[0]
 
 
 async def test_the_health_routing_cases_pick_the_right_domain(engine: AsyncEngine) -> None:
@@ -221,7 +239,21 @@ async def test_the_health_routing_cases_pick_the_right_domain(engine: AsyncEngin
             say("Logged 12.00 for chicken rice."),
         ),
         "health-route-had-chicken-rice": lambda: scripted(
-            say("Was it steamed or roasted, and a small or a full plate?")
+            call(
+                "log_food",
+                foods=[
+                    {
+                        "food": "zzzz chicken rice",
+                        "grams": "400",
+                        "estimated": True,
+                        "est_kcal": 600,
+                        "est_protein_g": 30,
+                        "est_carbs_g": 70,
+                        "est_fat_g": 20,
+                    }
+                ],
+            ),
+            say("Logged your lunch. A rough guide."),
         ),
         "health-route-bench-sets": lambda: scripted(
             call("log_sets", exercise="bench", sets=[{"reps": 5, "weight": "80", "count": 3}]),

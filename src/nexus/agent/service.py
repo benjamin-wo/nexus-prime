@@ -23,6 +23,7 @@ from nexus.agent.graph import (
     IMAGE,
     MEAL,
     MENU_ADDED,
+    OWN_UNDO,
     RECEIPT,
     REF,
     SENT_AT,
@@ -55,6 +56,7 @@ from nexus.application import costs, food_entry, found_cards, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import investments as investment_cases
+from nexus.application import nutrition as nutrition_cases
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -343,8 +345,11 @@ class AgentService:
         receipt_text: ReceiptTextReader | None = None,
         demo: DemoGate | None = None,
         meals: MealReader | None = None,
+        origin: str | None = None,
     ) -> None:
         self._graph = graph
+        # The web app's origin, for buttons that open a page; None: no such buttons.
+        self.origin = origin
         # Reads meal photos into foods and portions; None: a meal photo is read as before.
         self._meals = meals
         # Public-demo accounts' allowances and spend cap; None: not counted (tests, evals).
@@ -439,8 +444,13 @@ class AgentService:
             buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
             return [Reply(_with_notes(summary, notes), buttons)]
         self._condense_soon(actor)
+        # The shared Undo reverses money and trips: a turn whose only writes have an Undo of
+        # their own (a meal) doesn't get it.
         wrote = any(
-            isinstance(m, AIMessage | ToolMessage) and m.additional_kwargs.get(WROTE) for m in new
+            isinstance(m, AIMessage | ToolMessage)
+            and m.additional_kwargs.get(WROTE)
+            and not m.additional_kwargs.get(OWN_UNDO)
+            for m in new
         )
         final = next(
             (m for m in reversed(new) if isinstance(m, AIMessage) and not m.tool_calls), None
@@ -1173,6 +1183,10 @@ class AgentService:
             replies = await self.resolve(actor, confirmation_id, choice == "y")
             await self._keep(actor, "Confirm" if choice == "y" else "Cancel", replies, None)
             return replies
+        if data.startswith("meal:undo:"):
+            replies = [await self._meal_undo(actor, data.removeprefix("meal:undo:"))]
+            await self._keep(actor, "Undo", replies, None)
+            return replies
         if data == "act:undo":
             replies = await self.quick_action(actor, "undo")
             await self._keep(actor, "Undo", replies, None)
@@ -1207,6 +1221,18 @@ class AgentService:
             booking_id, _, trip_id = data.removeprefix("trip:book:").partition(":")
             return [await self._booking_trip(actor, booking_id, trip_id)]
         return [Reply("I don't know that button.")]
+
+    async def _meal_undo(self, actor: UserId, meal_id: str) -> Reply:
+        """Remove the one meal a meal's Undo button names, and nothing else."""
+        try:
+            found = UUID(meal_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            await nutrition_cases.delete_meal(self._uow(), actor, found)
+        except NotFound:
+            return Reply("That meal is already gone.")
+        return Reply("Removed.")
 
     async def _research_trip(self, actor: UserId, run_id: str) -> Reply:
         """Make it a trip, on the message with a trip's research."""

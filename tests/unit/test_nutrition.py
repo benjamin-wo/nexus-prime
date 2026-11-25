@@ -15,6 +15,7 @@ from nexus.domain.nutrition import (
     COOKING_UPLIFT_GRAVY,
     EN_DASH,
     MODIFIER_WIDEN,
+    UNCERTAINTY_AI_ESTIMATE,
     UNCERTAINTY_ESTIMATED,
     UNCERTAINTY_PORTION,
     UNCERTAINTY_WEIGHED,
@@ -28,9 +29,11 @@ from nexus.domain.nutrition import (
     MealSlot,
     Nutrients,
     Portion,
+    check_ai_estimate,
     daily_totals,
     item_totals,
     kcal_range_words,
+    make_estimated_item,
     make_item,
     meal_totals,
     modifier_scale,
@@ -254,3 +257,43 @@ def test_food_from_dict_validates() -> None:
     for bad in bads:
         with pytest.raises(InvalidInput):
             Food.from_dict({**data, **bad})
+
+
+def test_an_ai_estimate_inside_the_bounds_is_kept_and_has_the_widest_range() -> None:
+    n = check_ai_estimate(D(600), D(25), D(70), D(25))  # 100 + 280 + 225 = 605 kcal
+    assert n.kcal == D(600)
+    item = make_estimated_item(n, "1 bowl", name="laksa")
+    assert item.food_id is None and item.source_detail == "ai_estimate"
+    assert item.kind is EstimateKind.AI_ESTIMATE
+    t = item_totals(item)
+    assert UNCERTAINTY_AI_ESTIMATE > UNCERTAINTY_ESTIMATED
+    assert (t.low.kcal, t.high.kcal) == (D(360), D(840))  # plus or minus 40%
+
+
+@pytest.mark.parametrize(
+    "figures",
+    [
+        (0, 0, 0, 0),  # no energy
+        (-100, 10, 10, 10),
+        (2501, 100, 300, 130),  # over 2,500 kcal for one item
+        (600, -1, 100, 25),  # a negative macro
+        (600, 5, 5, 5),  # the macros give 85 kcal, not 600
+        (600, 100, 100, 100),  # the macros give 1,700 kcal
+    ],
+)
+def test_an_ai_estimate_out_of_bounds_is_rejected(figures: tuple[int, int, int, int]) -> None:
+    with pytest.raises(InvalidInput):
+        check_ai_estimate(*(D(f) for f in figures))
+
+
+def test_the_energy_check_allows_a_quarter_either_way() -> None:
+    check_ai_estimate(D(500), D(25), D(50), D(25))  # 525 kcal: 5% over
+    check_ai_estimate(D(500), D(25), D(50), D(12))  # 408 kcal: 18% under
+    with pytest.raises(InvalidInput):
+        check_ai_estimate(D(500), D(25), D(50), D(0))  # 300 kcal: 40% under
+
+
+def test_an_item_without_a_food_must_say_it_is_an_estimate() -> None:
+    item = make_estimated_item(Nutrients(D(100), D(5), D(15), D(2), None), "1 serving")
+    with pytest.raises(InvalidInput):
+        FoodItem(None, D(1), "x", item.nutrients, source_detail="db")

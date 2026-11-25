@@ -36,6 +36,15 @@ MAX_GRAMS = D(5000)  # one item; beyond this it is a typo
 UNCERTAINTY_WEIGHED = D("0.05")  # weighed on a scale, in grams
 UNCERTAINTY_PORTION = D("0.15")  # a standard portion from the database ("1 cup")
 UNCERTAINTY_ESTIMATED = D("0.30")  # the model's estimate of a vague portion ("a plate")
+# Design choice: when a dish isn't in the database, the model's own guess of its nutrients is
+# used (a hawker dish from a photo). Both the portion and the recipe are unknown, so the range
+# is wider than any database-backed kind.
+UNCERTAINTY_AI_ESTIMATE = D("0.40")
+# Bounds on that guess, checked in code (``check_ai_estimate``): a guess outside them is thrown
+# away and the user asked what it was. Design figures.
+AI_MAX_KCAL = D(2500)  # one item
+AI_ENERGY_TOLERANCE = D("0.25")  # 4p + 4c + 9f may differ from the kcal by this share
+AI_UNKNOWN_GRAMS = D(1)  # an item's weight when only its nutrients were guessed (grams > 0)
 # Added to an item's half-width when the user gave a modifier we can't apply to a
 # single-component food ("less rice" on a food that has no rice component).
 MODIFIER_WIDEN = D("0.15")
@@ -84,6 +93,7 @@ class EstimateKind(StrEnum):
     WEIGHED = "weighed"
     PORTION = "portion"
     ESTIMATED = "estimated"
+    AI_ESTIMATE = "ai_estimate"  # nutrients guessed by the model: not in the database
 
 
 class Cooking(StrEnum):
@@ -96,6 +106,7 @@ UNCERTAINTY: Mapping[EstimateKind, Decimal] = {
     EstimateKind.WEIGHED: UNCERTAINTY_WEIGHED,
     EstimateKind.PORTION: UNCERTAINTY_PORTION,
     EstimateKind.ESTIMATED: UNCERTAINTY_ESTIMATED,
+    EstimateKind.AI_ESTIMATE: UNCERTAINTY_AI_ESTIMATE,
 }
 COOKING_UPLIFT: Mapping[Cooking, Decimal] = {
     Cooking.FRIED: COOKING_UPLIFT_FRIED,
@@ -215,13 +226,17 @@ def nutrients_for(food: Food, grams: Decimal) -> Nutrients:
     return food.per_100g.scaled(grams / HUNDRED).quantized()
 
 
+SOURCE_DB = "db"
+SOURCE_AI = "ai_estimate"
+
+
 @dataclass(frozen=True, slots=True)
 class FoodItem:
     """One food in a meal. ``nutrients`` is a snapshot taken when it was logged, so a later
     database update never rewrites history. ``extra_uncertainty`` is added to the kind's
     half-width (a modifier we couldn't apply). ``note`` carries the user's own words."""
 
-    food_id: str
+    food_id: str | None  # None for an ``ai_estimate`` item: it has no row in the database
     grams: Decimal
     label: str  # how it was said or matched: "1 plate", "350 g"
     nutrients: Nutrients
@@ -231,12 +246,15 @@ class FoodItem:
     note: str | None = None
     name: str | None = None  # what to call it when shown: the user's own word, else the food's
     id: UUID | None = None
+    source_detail: str = SOURCE_DB  # where the nutrients came from: SOURCE_DB or SOURCE_AI
 
     def __post_init__(self) -> None:
         if not 0 < self.grams <= MAX_GRAMS:
             raise InvalidInput(f"grams must be above 0 and at most {MAX_GRAMS}")
         if self.extra_uncertainty < 0:
             raise InvalidInput("extra uncertainty can't be negative")
+        if (self.food_id is None) != (self.source_detail == SOURCE_AI):
+            raise InvalidInput("only an AI estimate has no food in the database")
 
 
 def make_item(
@@ -261,6 +279,48 @@ def make_item(
         extra_uncertainty,
         note,
         name,
+    )
+
+
+def check_ai_estimate(
+    kcal: Decimal, protein_g: Decimal, carbs_g: Decimal, fat_g: Decimal
+) -> Nutrients:
+    """The model's guess for one item, if it is believable, else ``InvalidInput``: kcal above 0
+    and at most ``AI_MAX_KCAL``, no negative macro, and 4p + 4c + 9f within
+    ``AI_ENERGY_TOLERANCE`` of the kcal."""
+    if not 0 < kcal <= AI_MAX_KCAL:
+        raise InvalidInput(f"an item's kcal must be above 0 and at most {AI_MAX_KCAL}")
+    if min(protein_g, carbs_g, fat_g) < 0:
+        raise InvalidInput("a macro can't be negative")
+    energy = 4 * protein_g + 4 * carbs_g + 9 * fat_g
+    if abs(energy - kcal) > AI_ENERGY_TOLERANCE * kcal:
+        raise InvalidInput("the macros don't add up to the kcal")
+    return Nutrients(kcal, protein_g, carbs_g, fat_g, None).quantized()
+
+
+def make_estimated_item(
+    nutrients: Nutrients,
+    label: str,
+    *,
+    grams: Decimal | None = None,
+    extra_uncertainty: Decimal = NONE,
+    note: str | None = None,
+    name: str | None = None,
+) -> FoodItem:
+    """An item whose ``nutrients`` are the model's guess (already through
+    ``check_ai_estimate``) for a food not in the database. No cooking uplift: the guess is of
+    the dish as eaten."""
+    return FoodItem(
+        None,
+        grams or AI_UNKNOWN_GRAMS,
+        label,
+        nutrients,
+        EstimateKind.AI_ESTIMATE,
+        None,
+        extra_uncertainty,
+        note,
+        name,
+        source_detail=SOURCE_AI,
     )
 
 

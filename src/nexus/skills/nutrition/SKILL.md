@@ -1,34 +1,31 @@
 ---
 name: nutrition
-description: "Nutrition (Health department): log what the user ate by chat (\"had chicken rice for lunch\", \"2 eggs and toast for breakfast\") and answer what they ate today, with calories and protein worked out by code. Wellness tracking only: no medical or diet advice."
-tools: [log_food, food_today, energy_estimate]
+description: "Nutrition (Health department): log what the user ate by chat (\"had chicken rice for lunch\", \"2 eggs and toast for breakfast\") and answer what they ate today, with calories and protein as a rough guide. Wellness tracking only: no medical or diet advice."
+tools: [log_food, undo_last_meal, food_today, energy_estimate]
 ---
 # Nutrition
 
-This is a food log, not medicine. Every calorie and macro figure comes from a tool: never
-state, add up, convert or estimate one yourself, and never work out a portion's calories "to
-help". Quote the numbers as the tools give them, ranges included.
+This is a food log, not medicine, and its figures are a rough guide. Calories and macros come
+from the tools (the food database, or the item estimates you pass). Never add up, convert or
+restate them yourself: quote the tool's reply text as it is, ranges included.
 
 - "had chicken rice for lunch", "2 eggs and a slice of toast for breakfast", "ate a banana":
-  `log_food`. One entry per food, named as the user said it ("egg", "toast"), with the portion
-  or the weight they gave ("2 eggs" is food "egg", portion "2"; "a slice" is portion "1
-  slice"). Set `meal` when they say it ("for lunch"); otherwise leave it out. It asks the user
-  to confirm first.
-- If the user gave no amount, pick the usual single serving as `grams` with `estimated` true,
-  so the confirm says the portion was estimated. Don't ask about the amount for ordinary
-  foods ("a banana", "2 eggs").
-- For oily or hawker dishes (fried rice, noodles, curry, anything fried or in gravy) ask ONE
-  short clarifying question when it changes the answer: fried or not, a small or large
-  plate, how much gravy or rice. Then log. Don't ask more than one question.
-- If a tool says a food could be several: when the options are only variants of the one food
-  the user named (a banana, raw or overripe; an egg, whole), call again with the plain whole
-  food's id (as eaten: cooked for eggs and rice, raw for fruit). When they differ in a way that
-  matters (a dish against a packaged product, fried against boiled), ask the user which, with
-  the names it lists, then call again with that food's id.
-- Hawker dishes may be missing until the Singapore database is loaded. When `log_food`
-  says a dish was not found, ask the user what it is made of (for example rice and chicken)
-  and how much, or its weight in grams, and log those parts. Never estimate calories in your
-  reply, and never log a made-up dish.
+  `log_food`, straight away. It logs at once, with no confirm card, and its reply carries Undo
+  and Edit buttons. One entry per food, named as the user said it ("egg", "toast"), with the
+  portion or the weight they gave ("2 eggs" is food "egg", portion "2"; "a slice" is portion
+  "1 slice"). Set `meal` when they say it ("for lunch"); otherwise leave it out.
+- Never ask a clarifying question about a portion, oil, gravy or which food. If the user gave
+  no amount, pick the usual single serving as `grams` with `estimated` true. A hawker or oily
+  dish is logged like any other.
+- For each item also pass your best estimate of it as eaten: `est_kcal`, `est_protein_g`,
+  `est_carbs_g`, `est_fat_g`, in line with each other (kcal is about 4 per g of protein or
+  carbs plus 9 per g of fat). They are used only when the food isn't in the database, and
+  the tool checks them. If it says no usable estimate was given, correct the numbers and
+  call again, or ask what the dish is made of.
+- After it logs, say what the tool's reply says in its words, with its figures, and call it
+  a rough guide. Don't add figures of your own.
+- "undo that", "remove that", "delete that" right after logging a meal: `undo_last_meal`. For
+  money or trips the same words mean `undo_last_change`, so check which was logged last.
 - "what have I eaten today", "how much protein have I had today", "how many calories so far",
   "what did I eat yesterday": `food_today`, and quote its figures.
 - "what are my maintenance calories", "how much should I eat", "my TDEE": `energy_estimate`.

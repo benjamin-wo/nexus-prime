@@ -25,13 +25,13 @@ def test_a_draft_keeps_items_portions_and_the_question() -> None:
                 },
                 {"name": "fried egg", "grams_estimate": "about 50 g", "cooking": "stir-fried"},
             ],
-            "question": "Is the egg fried in a lot of oil?",
+            "question": "dropped: the reader asks nothing now",
         }
     )
     assert [i.name for i in draft.items] == ["white rice", "fried egg"]
     assert draft.items[0].grams_estimate == 180 and draft.items[1].grams_estimate == 50
     assert draft.items[1].cooking is CookingHint.STIR_FRIED
-    assert draft.question == "Is the egg fried in a lot of oil?"
+    assert not hasattr(draft, "question")
 
 
 def test_nutrition_numbers_from_the_model_are_dropped() -> None:
@@ -45,18 +45,22 @@ def test_nutrition_numbers_from_the_model_are_dropped() -> None:
                     "kcal": 600,
                     "protein_g": 25,
                     "calories": "600",
+                    "est_kcal": "about 600",
+                    "est_protein_g": 25,
+                    "est_carbs_g": "x",
+                    "est_fat_g": True,
                 }
             ],
-            "question": "Is it roasted? That's roughly 550 calories.",
             "kcal": 900,
         }
     )
     (item,) = draft.items
     assert item.name == "chicken rice" and item.portion_text == "1 plate"
-    assert draft.question == "Is it roasted? That's."
-    dumped = str(draft.model_dump())
-    assert "600" not in dumped and "kcal" not in dumped and "protein_g" not in dumped
-    assert "calories" not in dumped.replace("calories?", "")
+    # The figures stay out of the text, and only the est_* numbers are kept (bounds are checked
+    # later, in code); a kcal or protein_g the reader was never asked for is dropped.
+    assert (item.est_kcal, item.est_protein_g) == (600.0, 25.0)
+    assert item.est_carbs_g is None and item.est_fat_g is None
+    assert "600" not in item.name + item.portion_text and "kcal" not in item.name
 
 
 def test_nonsense_values_fall_back_safely() -> None:
@@ -115,33 +119,37 @@ def pending() -> dict[str, object]:
                 {"name": "noodles", "portion_text": "1 plate", "grams_estimate": 300},
                 {"name": "egg", "grams_estimate": 50},
             ],
-            "question": "Are the noodles fried?",
         }
     )
     return pending_from(draft, "my lunch")
 
 
-def test_requests_are_photo_estimates_and_tool_args_carry_ids() -> None:
+def test_requests_are_photo_estimates_and_tool_args_carry_names_and_estimates() -> None:
     p = pending()
     first = food_requests(p)[0]
     assert first.photo and first.estimated and first.grams == 300
-    foods = tool_foods(p, ["usda:1", "usda:2"])
+    foods = tool_foods(p)
     assert foods[0] == {
-        "food": "usda:1",
+        "food": "noodles",
         "shown": "noodles",
         "portion": "1 plate",
         "grams": "300",
         "estimated": True,
         "cooking": None,
+        "est_kcal": None,
+        "est_protein_g": None,
+        "est_carbs_g": None,
+        "est_fat_g": None,
     }
 
 
-def test_the_answer_sets_the_cooking_of_the_main_item_or_proceeds_or_cancels() -> None:
-    verdict, new = read_answer(pending(), "yes, stir fried")
-    assert verdict == "go" and new["items"][0]["cooking"] == "stir_fried"
-    assert new["items"][1]["cooking"] == "none" and new["question"] is None
-    assert read_answer(pending(), "not fried, it's steamed")[1]["items"][0]["cooking"] == "none"
-    assert read_answer(pending(), "ok")[0] == "go"
-    assert read_answer(pending(), "cancel")[0] == "cancel"
-    assert read_answer(pending(), "what is the weather")[0] == "unrelated"
-    assert read_answer(pending(), "half")[1]["items"][0]["grams"] == 150
+def test_an_answer_names_the_food_or_the_amount_or_cancels() -> None:
+    asked = {**pending(), "asked": "food", "index": 0}
+    verdict, new = read_answer(asked, "hokkien mee")
+    assert verdict == "go" and new["items"][0]["name"] == "hokkien mee" and new["asked"] is None
+    portion = {**pending(), "asked": "portion", "index": 1}
+    verdict, new = read_answer(portion, "about 60 g")
+    assert verdict == "go" and new["items"][1]["grams"] == 60
+    assert read_answer(asked, "cancel")[0] == "cancel"
+    assert read_answer(asked, "what is the weather?")[0] == "unrelated"
+    assert read_answer(pending(), "ok")[0] == "unrelated"  # nothing was asked

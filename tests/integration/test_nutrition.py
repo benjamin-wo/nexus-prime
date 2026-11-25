@@ -428,10 +428,9 @@ async def test_resolve_picks_matches_portions_and_asks_when_unsure(
 
     with pytest.raises(entry_cases.NeedsAnswer, match="no food matching"):
         await entry_cases.resolve(uow, [req("zzzz qqqq", grams=D(5))])
-    with pytest.raises(entry_cases.NeedsAnswer) as ambiguous:
-        await entry_cases.resolve(uow, [req("chicken", grams=D(100))])
-    text = str(ambiguous.value)
-    assert text.startswith("Error:") and "several foods" in text and text.count("(id usda:") == 5
+    # Several matches: the top-ranked one is taken, nothing is asked.
+    best = await entry_cases.resolve(uow, [req("chicken", grams=D(100))])
+    assert best.foods[0] is not None and best.foods[0].id.startswith("usda:")
     with pytest.raises(entry_cases.NeedsAnswer, match="How much of Test Feast"):
         await entry_cases.resolve(uow, [req("banquet")])
     with pytest.raises(entry_cases.NeedsAnswer, match="not a portion I know") as unknown:
@@ -439,7 +438,7 @@ async def test_resolve_picks_matches_portions_and_asks_when_unsure(
     assert "1 plate" in str(unknown.value)
 
 
-async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
+async def test_logged_text_is_built_from_code_and_hides_numbers_when_asked(
     uow: UowFactory, alice: UserId
 ) -> None:
     await stocked(uow)
@@ -451,15 +450,15 @@ async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
             )
         ],
     )
-    text = entry_cases.confirm_text(r, MealSlot.LUNCH, hidden=False)
+    text = entry_cases.logged_text(r, MealSlot.LUNCH, hidden=False)
     # 350 g of a 100 kcal food is 350 kcal; an estimate with a modifier is +-45%: 192.5 to 507.5.
-    assert text == (
-        f"Log lunch: banquet (a big bowl, about 190{EN_DASH}510 kcal)? I estimated the portion. "
-        "Noted: Test Feast: extra (the range is wider for it)."
+    assert text.startswith(f"Logged lunch: banquet, about 190{EN_DASH}510 kcal \u00b7 ~")
+    assert text.endswith("A rough guide. Noted: Test Feast: extra (the range is wider for it).")
+    assert "from your photo" in entry_cases.logged_text(r, MealSlot.LUNCH, hidden=False, photo=True)
+    quiet = entry_cases.logged_text(r, MealSlot.LUNCH, hidden=True)
+    assert quiet.startswith("Logged lunch: banquet.") and not any(
+        ch.isdigit() for ch in quiet.replace("a big bowl", "")
     )
-    assert "I estimated the portion." in text
-    quiet = entry_cases.confirm_text(r, MealSlot.LUNCH, hidden=True)
-    assert "kcal" not in quiet and not any(ch.isdigit() for ch in quiet.replace("a big bowl", ""))
     two = await entry_cases.resolve(
         uow,
         [
@@ -467,7 +466,8 @@ async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
             entry_cases.FoodRequest("banquet", grams=D(100)),
         ],
     )
-    assert "in all" in entry_cases.confirm_text(two, MealSlot.SNACK, hidden=False)
+    many = entry_cases.logged_text(two, MealSlot.SNACK, hidden=False)
+    assert many.startswith("Logged snack:\n- ") and "\nTotal: about " in many
 
 
 async def test_the_ai_gate_and_the_day_text(uow: UowFactory, alice: UserId) -> None:
