@@ -17,8 +17,8 @@ from nexus.application import plans as plan_cases
 from nexus.application import quotes as quote_cases
 from nexus.application import research as research_cases
 from nexus.application.demo import Use
-from nexus.channels.web.api import MoneyOut, money
 from nexus.channels.web.security import Auth, Runtime, demo_use, limit
+from nexus.channels.web.shapes import MoneyOut, money
 from nexus.domain.errors import InvalidInput, NotFound
 from nexus.domain.history import describe as describe_history
 from nexus.domain.investments import (

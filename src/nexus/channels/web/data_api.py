@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict
 
 from nexus.agent.graph import thread_id
 from nexus.application import erasure, export
-from nexus.channels.web.api import ledger_csv
+from nexus.channels.web.ledger_api import ledger_csv
 from nexus.channels.web.security import Auth, Runtime, clear_session_cookie, limit
 
 router = APIRouter(prefix="/api/me")
