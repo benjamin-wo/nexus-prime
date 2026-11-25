@@ -15,7 +15,6 @@ LARGE_FILES: dict[str, int] = {
     "src/nexus/application/ports.py": 1253,
     "src/nexus/application/travel_research.py": 974,
     "src/nexus/application/trips.py": 971,
-    "src/nexus/channels/web/api.py": 3061,
     "src/nexus/channels/web/investments_api.py": 835,
     "src/nexus/channels/web/travel_api.py": 2427,
     "src/nexus/evals/cases.py": 2806,
