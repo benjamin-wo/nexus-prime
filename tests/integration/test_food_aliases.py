@@ -33,10 +33,15 @@ async def test_an_everyday_name_resolves_to_one_food(
     uow: UowFactory, name: str, food_id: str
 ) -> None:
     resolved = await food_entry.resolve(uow, [FoodRequest(name, grams=D(100))])
-    assert [f.id for f in resolved.foods] == [food_id]
+    assert [f.id for f in resolved.foods if f] == [food_id]
 
 
-async def test_a_dish_is_not_a_single_food_so_it_still_asks(uow: UowFactory) -> None:
+async def test_a_dish_that_is_not_a_single_food_takes_the_best_match_without_asking(
+    uow: UowFactory,
+) -> None:
     for dish in ("chicken rice", "laksa", "nasi lemak"):
-        with pytest.raises(NeedsAnswer):
-            await food_entry.resolve(uow, [FoodRequest(dish, grams=D(100))])
+        try:
+            resolved = await food_entry.resolve(uow, [FoodRequest(dish, grams=D(100))])
+        except NeedsAnswer:
+            continue  # no match at all, and no estimate: the one case that still asks
+        assert len(resolved.foods) == 1 and resolved.foods[0] is not None

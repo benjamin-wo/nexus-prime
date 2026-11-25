@@ -59,8 +59,10 @@ pytestmark = pytest.mark.integration
 # the text below, its one index line (410 characters) being the only difference.
 # Then the nutrition skill's tools gained energy_estimate: 131622c6... (16699) became the text
 # below, those 17 characters (", energy_estimate" in its index line) being the only difference.
-DEFAULT_PREFIX_SHA256 = "c0a4af1eac38ec21d4d4d20725a60916e16e6bfed739be3f134387cd486cb95a"
-DEFAULT_PREFIX_LENGTH = 16716
+# Then the nutrition skill gained undo_last_meal (", undo_last_meal" in its index line) and its
+# description now says "as a rough guide" in place of "worked out by code": 16716 became 16730.
+DEFAULT_PREFIX_SHA256 = "8acad1e66833b6ef8b3919eb0f52089a9dc34939176c5ae85da3e48cc44f2891"
+DEFAULT_PREFIX_LENGTH = 16730
 
 
 def prefix_of(prompt: str) -> str:

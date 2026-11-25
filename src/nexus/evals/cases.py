@@ -89,6 +89,7 @@ WRITES = (
     "finish_workout",
     "undo_last_set",
     "log_food",
+    "undo_last_meal",
     "draft_training_plan",
     "apply_adjustments",
 )
@@ -142,6 +143,8 @@ class Case:
     asks: bool = False  # the last reply is a question, and nothing changed
     unchanged: bool = False  # nothing changed
     confirms: bool | None = None  # the last turn asked (or didn't ask) to confirm
+    # Prefixes of the data of buttons the last reply must carry, one button for each ("meal:undo:").
+    has_buttons: tuple[str, ...] = ()
     reply: tuple[str | tuple[str, ...], ...] = ()  # in the last reply; a tuple: any of
     never_say: tuple[str, ...] = ()  # in no reply at all
     max_reply: int | None = None  # the last reply's length at most
@@ -2934,9 +2937,11 @@ CASES: tuple[Case, ...] = (
         "food",
         _t("had chicken rice for lunch"),
         food=True,
-        # USDA has no chicken rice, so asking what is in it or how much is as good as a log.
+        # Logged straight away, with the model's own estimate (USDA has no chicken rice), no
+        # question and no confirm card; the meal's Undo is on the reply.
         calls=(Call("log_food"),),
-        or_asks=True,
+        confirms=False,
+        has_buttons=("meal:undo:",),
         forbid=("log_expense",),
     ),
     Case(
@@ -2945,7 +2950,8 @@ CASES: tuple[Case, ...] = (
         _t("2 eggs and a slice of toast for breakfast"),
         food=True,
         calls=(Call("log_food", {"meal": "breakfast"}),),
-        confirms=True,
+        confirms=False,
+        has_buttons=("meal:undo:",),
         forbid=("log_expense",),
     ),
     Case(
@@ -3007,7 +3013,8 @@ CASES: tuple[Case, ...] = (
         gym=True,
         food=True,
         calls=(Call("log_food"),),
-        or_asks=True,
+        confirms=False,
+        has_buttons=("meal:undo:",),
         forbid=("log_expense", "log_sets"),
     ),
     Case(

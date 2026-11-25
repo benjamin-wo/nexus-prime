@@ -176,6 +176,9 @@ NEUTRAL_STYLE_EMOJI = "Emoji only as the voice block allows, and none in questio
 _ID = re.compile(r"\s*\[id [0-9a-f-]{36}\]")
 
 WROTE = "nexus_wrote"
+# On a tool result (and the reply made from it) whose write has its own Undo button: the
+# shared Undo, which reverses money and trips, is not added for it.
+OWN_UNDO = "nexus_own_undo"
 KERNEL = "nexus_kernel"
 RECEIPT = "nexus_receipt"
 # On a meal photo's message: the draft read from it (see ``agent.meal_photo``).
@@ -250,6 +253,8 @@ class AgentDeps:
     prices: PriceLooker | None = None
     # Finds the time zone of a place by name, for set_timezone; None: not set up.
     zones: ZoneFinder | None = None
+    # The web app's origin, for buttons that open a page; None: no such buttons.
+    origin: str | None = None
 
 
 def tool_order(names: Iterable[str]) -> list[str]:
@@ -521,6 +526,7 @@ class AgentGraph:
             lookup=self.deps.lookup,
             prices=self.deps.prices,
             zones=self.deps.zones,
+            origin=self.deps.origin,
             message=_recent_said(state["messages"]) if state else "",
         )
 
@@ -1014,16 +1020,13 @@ class AgentGraph:
         return Command(goto="confirm", update={"messages": [message]})
 
     async def _meal_step(self, ctx: ToolContext, pending: dict[str, Any]) -> Command[Any]:
-        """A meal photo, read: ask its one question first; then look each item up in the food
-        database, asking about the first it can't place; then the confirm card, as ``log_food``
-        builds it (source photo, every amount an estimate). Nothing is written before Confirm."""
-        if pending["asked"] is None and pending.get("question"):
-            asked = {**pending, "asked": "question"}
-            return _reply(str(pending["question"]), extra={MEAL_ASK: asked})
-        ids: list[str] = []
+        """A meal photo, read: look each item up in the food database (the best match wins),
+        or use the reader's own estimate for a dish that isn't there, asking only about an item
+        with neither; then log it straight away as ``log_photo_meal`` (source photo, every
+        amount an estimate), with Undo and Edit buttons."""
         for index, request in enumerate(meal_photo.food_requests(pending)):
             try:
-                found = await food_entry.resolve(ctx.uow, [request])
+                await food_entry.resolve(ctx.uow, [request])
             except food_entry.NeedsAnswer as problem:
                 if pending["rounds"] >= meal_photo.MAX_ROUNDS:
                     return _reply(
@@ -1032,20 +1035,19 @@ class AgentGraph:
                     )
                 text, asked = meal_photo.ask_about(index, pending, problem)
                 return _reply(text, extra={MEAL_ASK: asked})
-            ids.append(found.foods[0].id)
         call = {
             "name": "log_photo_meal",
             "id": f"meal-{uuid4()}",
-            "args": {"foods": meal_photo.tool_foods(pending, ids), "meal": pending.get("meal")},
+            "args": {"foods": meal_photo.tool_foods(pending), "meal": pending.get("meal")},
         }
         message = AIMessage(content="", tool_calls=[call], additional_kwargs={KERNEL: True})
-        return Command(goto="confirm", update={"messages": [message]})
+        return Command(goto="tools", update={"messages": [message]})
 
     async def _meal_answer(
         self, ctx: ToolContext, pending: dict[str, Any], text: str
     ) -> Command[Any] | None:
-        """The user's message read as the answer to a meal photo's question; None when it
-        isn't one, and the chat agent takes it as usual."""
+        """The user's message read as the answer to a meal photo's question (what the food is,
+        or how much); None when it isn't one, and the chat agent takes it as usual."""
         verdict, new = meal_photo.read_answer(pending, text)
         if verdict == "unrelated":
             return None
@@ -1195,6 +1197,7 @@ class AgentGraph:
         for call in request.tool_calls:
             spec = self.deps.tools.get(call["name"])
             buttons: list[list[tuple[str, str]]] | None = None
+            own_undo = False
             menu_added: MenuSection | None = None
             if spec is None or not (spec.exposed or from_kernel):
                 offered = self.offered(state)
@@ -1215,6 +1218,7 @@ class AgentGraph:
                 try:
                     result = await run_tool(spec, ctx, dict(call["args"]))
                     content, wrote, buttons = result.text, result.wrote, result.buttons
+                    own_undo = result.own_undo
                     skill = str(call["args"].get("name", "")).strip().lower()
                     if call["name"] == "load_skill" and not content.startswith("Error:"):
                         loaded[skill] = SKILL_TURNS
@@ -1250,6 +1254,8 @@ class AgentGraph:
                     content, wrote = "Error: something went wrong running that.", False
                 await progress.report(call["name"], "done")
             kwargs: dict[str, Any] = {WROTE: wrote}
+            if wrote and own_undo:
+                kwargs[OWN_UNDO] = True
             if buttons:
                 kwargs[BUTTONS] = [[list(b) for b in row] for row in buttons]
             if menu_added is not None:
@@ -1289,7 +1295,10 @@ class AgentGraph:
         if text.startswith("Error: ") and "already recorded" in text:
             text = "That receipt was already recorded."
         wrote = bool(result.additional_kwargs.get(WROTE))
-        return {"messages": [AIMessage(content=text, additional_kwargs={WROTE: wrote})]}
+        kwargs: dict[str, Any] = {WROTE: wrote}
+        if result.additional_kwargs.get(OWN_UNDO):
+            kwargs[OWN_UNDO] = True
+        return {"messages": [AIMessage(content=text, additional_kwargs=kwargs)]}
 
     def compile(
         self, checkpointer: BaseCheckpointSaver[Any]

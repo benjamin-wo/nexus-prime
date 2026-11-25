@@ -1139,6 +1139,10 @@ class FoodRepository(Protocol):
 
     async def delete_meal(self, user_id: UserId, meal_id: UUID) -> bool: ...
     async def get_meal(self, user_id: UserId, meal_id: UUID) -> MealEntry | None: ...
+    async def latest_meal_since(self, user_id: UserId, since: datetime) -> MealEntry | None:
+        """The meal the user logged (``created_at``) most recently, if at or after ``since``."""
+        ...
+
     async def list_meals(
         self, user_id: UserId, *, start: datetime, end: datetime, limit: int
     ) -> list[MealEntry]:

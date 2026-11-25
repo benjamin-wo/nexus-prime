@@ -75,6 +75,7 @@ def _item(row: Row[Any]) -> FoodItem:
         note=row.note,
         name=row.display_name,
         id=row.id,
+        source_detail=row.source_detail,
     )
 
 
@@ -86,6 +87,7 @@ def _item_values(user_id: UserId, entry_id: UUID, position: int, item: FoodItem)
         "entry_id": entry_id,
         "position": position,
         "food_id": item.food_id,
+        "source_detail": item.source_detail,
         "grams": item.grams,
         "portion_label": item.label,
         "display_name": item.name,
@@ -251,6 +253,17 @@ class SqlFoodRepository:
                 select(meal_entries).where(
                     meal_entries.c.id == meal_id, meal_entries.c.user_id == user_id
                 )
+            )
+        ).first()
+        return (await self._with_items(user_id, [row]))[0] if row else None
+
+    async def latest_meal_since(self, user_id: UserId, since: datetime) -> MealEntry | None:
+        row = (
+            await self._connection.execute(
+                select(meal_entries)
+                .where(meal_entries.c.user_id == user_id, meal_entries.c.created_at >= since)
+                .order_by(meal_entries.c.created_at.desc(), meal_entries.c.id)
+                .limit(1)
             )
         ).first()
         return (await self._with_items(user_id, [row]))[0] if row else None

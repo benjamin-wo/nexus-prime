@@ -133,7 +133,7 @@ class TotalsOut(Model):
 
 class ItemOut(Model):
     id: str | None
-    food_id: str
+    food_id: str | None  # None for an AI estimate: no row in the food database
     name: str | None
     grams: str
     label: str
@@ -207,7 +207,7 @@ def _meal(entry: MealEntry, names: dict[str, str], hidden: bool) -> MealOut:
             ItemOut(
                 id=None if i.id is None else str(i.id),
                 food_id=i.food_id,
-                name=names.get(i.food_id),
+                name=names.get(i.food_id or "") or i.name,
                 grams=str(i.grams.normalize()),
                 label=i.label,
                 kind=i.kind,
