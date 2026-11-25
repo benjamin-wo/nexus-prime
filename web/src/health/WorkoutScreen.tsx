@@ -22,7 +22,7 @@ export function WorkoutScreen({ workout }: { workout: WorkoutDetail }) {
   const routine = useQuery({
     queryKey: [...healthKey.all, "routine", workout.routine_id],
     queryFn: () => healthApi.routine(workout.routine_id as string),
-    enabled: !!workout.routine_id,
+    enabled: !!workout.routine_id && !workout.planned_slots?.length,
   });
   const [added, setAdded] = useState<string[]>([]);
   const [picking, setPicking] = useState(false);
@@ -35,8 +35,12 @@ export function WorkoutScreen({ workout }: { workout: WorkoutDetail }) {
   const [error, setError] = useState<string | null>(null);
   const closeToast = useCallback(() => setToast(null), []);
 
-  // The exercises: the routine's, then any that have sets, then the ones added by hand.
-  const slots = routine.data?.slots ?? [];
+  // The exercises: the ones planned for this workout (else the routine's), then any that have sets, then the ones added by hand.
+  const planned = workout.planned_slots;
+  const slots = useMemo<Slot[]>(
+    () => (planned?.length ? planned.map((p) => ({ ...p, note: null })) : (routine.data?.slots ?? [])),
+    [planned, routine.data],
+  );
   const order = useMemo(() => {
     const ids = [...slots.map((s) => s.exercise_id), ...workout.sets.map((s) => s.exercise_id), ...added];
     return [...new Set(ids)];
@@ -111,7 +115,7 @@ export function WorkoutScreen({ workout }: { workout: WorkoutDetail }) {
     <>
       <div className="page-head">
         <div>
-          <h1>{routine.data?.name ?? "Workout"}</h1>
+          <h1>{planned?.length ? "Workout" : (routine.data?.name ?? "Workout")}</h1>
           <p className="muted">
             {started < 60 ? "Just started" : `Started ${formatDuration(started)} ago`} · {doneSets} {doneSets === 1 ? "set" : "sets"} logged
           </p>

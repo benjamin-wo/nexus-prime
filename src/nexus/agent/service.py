@@ -51,9 +51,10 @@ from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import costs, food_entry, found_cards, ops
+from nexus.application import costs, food_entry, found_cards, health_menu, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
+from nexus.application import health_consent as health_consent_cases
 from nexus.application import investments as investment_cases
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
@@ -1197,6 +1198,8 @@ class AgentService:
         if data.startswith("hold:"):
             _, action, draft_id = [*data.split(":"), "", ""][:3]
             return [await self._holdings_button(actor, action, draft_id)]
+        if data == health_menu.HEALTH_ON_DATA:
+            return [await self._health_on(actor)]
         if data.startswith("run:cancel:"):
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         if data.startswith("plan:mute:"):
@@ -1207,6 +1210,11 @@ class AgentService:
             booking_id, _, trip_id = data.removeprefix("trip:book:").partition(":")
             return [await self._booking_trip(actor, booking_id, trip_id)]
         return [Reply("I don't know that button.")]
+
+    async def _health_on(self, actor: UserId) -> Reply:
+        """The Turn on Health button: the master consent and ai_processing in one tap."""
+        await health_consent_cases.turn_on(self._uow(), actor, now=self._clock())
+        return Reply("Health is on. Send me a food photo or ask for a workout.")
 
     async def _research_trip(self, actor: UserId, run_id: str) -> Reply:
         """Make it a trip, on the message with a trip's research."""

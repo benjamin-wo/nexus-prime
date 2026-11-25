@@ -42,12 +42,15 @@ export type RoutineInput = { name: string; slots: Slot[] };
 export type Plan = { kind: "weekly" | "rotation"; weekly: Record<string, string>; rotation: string[] };
 export type PlanInput = { kind: "weekly" | "rotation"; weekly: Record<number, string>; rotation: string[] };
 
+/** An exercise the assistant planned for one workout (the field arrives with `suggest_workout`; absent before). */
+export type PlannedSlot = { exercise_id: string; sets: number; reps: number | null; seconds: number | null; rest_seconds: number };
 export type Workout = {
   id: string;
   routine_id: string | null;
   started_at: string;
   finished_at: string | null;
   note: string | null;
+  planned_slots?: PlannedSlot[] | null;
 };
 export type SetEntry = {
   id: string;

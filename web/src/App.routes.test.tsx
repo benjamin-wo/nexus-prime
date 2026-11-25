@@ -109,18 +109,18 @@ describe("Health", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const path = new URL(String(input), "http://localhost").pathname.replace(/^\/api/, "");
       const body =
-        path === "/me" ? me : path === "/health/consent" ? { consented_at: "2026-11-20T08:00:00Z" } : path === "/health/today" ? { routine: null, in_progress: null } : path === "/health/day" ? { date: "2026-11-24", hidden: false, meals: [], totals: null, targets_kcal: null, remaining: null, safety: { suspended: false, signposts: [], new_signals: [], check_in: null } } : path === "/health/weight" ? { hidden: false, trend_words: "steady", points: [], trend_kg: null, rate_kg_per_week: null, rate_pct_per_week: null, rate_text: null, last_weigh_in: null } : path === "/health/preferences" ? { unit: "kg" } : path === "/health/volume" ? { week_start: "2026-11-23", muscles: [] } : [];
+        path === "/me" ? me : path === "/health/consent" ? { consented_at: "2026-11-20T08:00:00Z" } : path === "/health/today" ? { routine: null, in_progress: null } : path === "/health/day" ? { date: "2026-11-24", hidden: false, meals: [], totals: null, targets_kcal: null, remaining: null, safety: { suspended: false, signposts: [], new_signals: [], check_in: null } } : path === "/health/weight" ? { hidden: false, trend_words: "steady", points: [], trend_kg: null, rate_kg_per_week: null, rate_pct_per_week: null, rate_text: null, last_weigh_in: null } : path === "/health/consents" ? { health_consented_at: null, scopes: [], ai_provider: { name: "X", country: "Y" }, wellness_statement: "" } : path === "/health/preferences" ? { unit: "kg" } : path === "/health/volume" ? { week_start: "2026-11-23", muscles: [] } : [];
       return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
     });
   }
 
-  it("opens each page under Health, with its four tabs, and the menu has Health when it is on", async () => {
+  it("opens each page under Health, with its two tabs, and the menu has Health when it is on", async () => {
     withHealth();
     window.history.pushState({}, "", "/health/gym/library");
     render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
     expect(await screen.findByRole("heading", { name: "Library", level: 1 })).toBeInTheDocument();
     const tabs = screen.getByRole("navigation", { name: "Health pages" });
-    expect(within(tabs).getAllByRole("link").map((l) => l.textContent)).toEqual(["Today", "Food", "Weight", "Gym"]);
+    expect(within(tabs).getAllByRole("link").map((l) => l.textContent)).toEqual(["Today", "Gym"]);
     expect(within(tabs).getByRole("link", { name: "Gym" })).toHaveAttribute("aria-current", "page");
     expect(within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Health" })).toHaveAttribute("aria-current", "page");
     expect(within(screen.getByRole("navigation", { name: "Main (mobile)" })).getByRole("link", { name: "Health" })).toBeInTheDocument();
@@ -132,12 +132,19 @@ describe("Health", () => {
     expect(await screen.findByRole("heading", { name: "Routines", level: 1 })).toBeInTheDocument();
     fireEvent.click(within(gym).getByRole("link", { name: "Workout" }));
     expect(await screen.findByRole("button", { name: "Start an empty workout" })).toBeInTheDocument();
-    fireEvent.click(within(tabs).getByRole("link", { name: "Food" }));
-    expect(await screen.findByRole("heading", { name: "Food", level: 1 })).toBeInTheDocument();
-    fireEvent.click(within(tabs).getByRole("link", { name: "Weight" }));
-    expect(await screen.findByRole("heading", { name: "Weight", level: 1 })).toBeInTheDocument();
     fireEvent.click(within(tabs).getByRole("link", { name: "Today" }));
     expect(await screen.findByRole("heading", { name: "Health", level: 1 })).toBeInTheDocument();
+  });
+
+  it("sends the old Food and Weight addresses to Today", async () => {
+    withHealth();
+    for (const old of ["/health/food", "/health/weight"]) {
+      window.history.pushState({}, "", old);
+      const view = render(<App client={new QueryClient({ defaultOptions: { queries: { retry: false } } })} />);
+      expect(await screen.findByRole("heading", { name: "Health", level: 1 })).toBeInTheDocument();
+      expect(window.location.pathname).toBe("/health");
+      view.unmount();
+    }
   });
 
   it("sends the old Gym addresses to their new place", async () => {

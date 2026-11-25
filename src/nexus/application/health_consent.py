@@ -80,3 +80,19 @@ async def withdraw(
         await uow.commit()
         granted, withdrawn = (await uow.health.scope_states(user_id)).get(scope, (None, None))
     return ScopeState(scope, granted, withdrawn)
+
+
+async def turn_on(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> ConsentOverview:
+    """One tap: the master consent and ``ai_processing`` together, in one unit of work. Each
+    keeps its first date when it was already given; the other scopes stay as they were."""
+    async with uow:
+        if await uow.gym.health_consent(user_id) is None:
+            await uow.gym.set_health_consent(user_id, now)
+        await uow.health.grant_scope(user_id, ConsentScope.AI_PROCESSING, now)
+        await uow.commit()
+        states = await uow.health.scope_states(user_id)
+        master = await uow.gym.health_consent(user_id)
+    return ConsentOverview(
+        master,
+        tuple(ScopeState(scope, *(states.get(scope) or (None, None))) for scope in ConsentScope),
+    )
