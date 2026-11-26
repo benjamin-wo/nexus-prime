@@ -994,3 +994,22 @@ async def test_live_records_match_the_summary_at_the_end(world: World) -> None:
         for r in f:
             live.setdefault(r["exercise_id"], set()).add(r["kind"])
     assert summary["prs"] and live == {e: set(k) for e, k in summary["prs"].items()}
+
+
+async def test_a_first_ever_workout_flags_no_records_live_or_in_the_summary(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await owner.send("POST", "/api/health/consent")
+    world.clock.now = NOW - timedelta(days=1)
+    workout = (await owner.send("POST", "/api/health/workouts", {})).json()
+    for weight in ("60", "80", "100"):  # each heavier than the last, with nothing before them
+        world.clock.now += timedelta(minutes=3)
+        made = await owner.send(
+            "POST",
+            f"/api/health/workouts/{workout['id']}/sets",
+            {"exercise_id": BENCH, "reps": 5, "weight": weight},
+        )
+        assert made.status_code == 201 and made.json()["records"] == []
+    world.clock.now += timedelta(minutes=3)
+    done = await owner.send("POST", f"/api/health/workouts/{workout['id']}/finish", {})
+    assert done.json()["prs"] == {}

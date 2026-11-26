@@ -254,6 +254,16 @@ def test_best_set_compares_pounds_and_kilograms() -> None:
 # --- records ------------------------------------------------------------------------------------
 
 
+def test_the_very_first_workout_of_an_exercise_flags_nothing_live_or_at_the_end() -> None:
+    first = a_set(reps=5, weight="60")
+    second = a_set(reps=5, weight="80")  # heavier, but there is no history to beat
+    third = a_set(reps=8, weight="80")
+    assert records_of_set(first, [], []) == []
+    assert records_of_set(second, [first], []) == []
+    assert records_of_set(third, [first, second], []) == []
+    assert detect_prs([first, second, third], []) == {}
+
+
 def test_a_first_time_exercise_has_no_records_yet() -> None:
     assert detect_prs([a_set(weight="100")], []) == {}
     assert detect_prs([a_set("squat", weight="100")], [a_set("bench", weight="50")]) == {}

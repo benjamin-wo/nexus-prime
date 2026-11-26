@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 
 from nexus.agent.tools.core import ToolContext, ToolResult
 from nexus.agent.tools.helpers import parse_day
+from nexus.application import food_entry
 from nexus.application import gym as gym_cases
 from nexus.domain.errors import ConsentRequired, InvalidInput
 
@@ -31,6 +32,14 @@ async def need_consent(ctx: ToolContext) -> None:
     """For a confirm card: no card for a write that will be refused."""
     if not await has_consent(ctx):
         raise ConsentRequired(HEALTH_OFF)
+
+
+async def ai_blocked(ctx: ToolContext) -> ToolResult | None:
+    """The reply for a tool that puts the user's past health data in front of the model, when
+    they haven't allowed it (Health consent plus the AI processing scope)."""
+    if await food_entry.ai_may_read(ctx.uow(), ctx.user.id):
+        return None
+    return ToolResult(food_entry.AI_OFF, error="ConsentRequired")
 
 
 def local_day(ctx: ToolContext, at: datetime) -> date:

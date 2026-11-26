@@ -156,6 +156,13 @@ async def expenditure(
     return energy
 
 
+async def energy_state(
+    uow: UnitOfWork, user_id: UserId, *, now: datetime, intake_provider: IntakeProvider = no_intake
+) -> tuple[EnergyOverview, HealthProfile | None, list[TrendPoint]]:
+    """The energy overview with the profile and the weight trend behind it."""
+    return await _energy(uow, user_id, now, intake_provider)
+
+
 async def _energy(
     uow: UnitOfWork, user_id: UserId, now: datetime, intake_provider: IntakeProvider
 ) -> tuple[EnergyOverview, HealthProfile | None, list[TrendPoint]]:

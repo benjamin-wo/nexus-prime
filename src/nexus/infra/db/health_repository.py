@@ -3,7 +3,7 @@ Every query filters on user_id."""
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import Row, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -22,7 +22,12 @@ from nexus.domain.health import (
     UnitSystem,
 )
 from nexus.domain.ledger import UserId
-from nexus.infra.db.tables import health_consents, health_profiles, health_samples
+from nexus.infra.db.tables import (
+    health_consents,
+    health_profiles,
+    health_safety_events,
+    health_samples,
+)
 
 
 def _sample(row: Row[Any]) -> Sample:
@@ -255,4 +260,24 @@ class SqlHealthRepository:
         insert = pg_insert(health_profiles).values(user_id=profile.user_id, **values)
         await self._connection.execute(
             insert.on_conflict_do_update(index_elements=["user_id"], set_=values)
+        )
+
+    # --- safety events -------------------------------------------------------------------
+
+    async def last_safety_event(self, user_id: UserId, kind: str) -> datetime | None:
+        last: datetime | None = (
+            await self._connection.execute(
+                select(func.max(health_safety_events.c.created_at)).where(
+                    health_safety_events.c.user_id == user_id,
+                    health_safety_events.c.kind == kind,
+                )
+            )
+        ).scalar_one()
+        return last
+
+    async def add_safety_event(self, user_id: UserId, kind: str, at: datetime) -> None:
+        await self._connection.execute(
+            health_safety_events.insert().values(
+                id=uuid4(), user_id=user_id, kind=kind, created_at=at
+            )
         )

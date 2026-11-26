@@ -8,21 +8,15 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
 from nexus.application import energy as energy_cases
-from nexus.application import nutrition as nutrition_cases
+from nexus.application import health_targets as targets_cases
 from nexus.channels.web.security import Auth, Runtime
-from nexus.domain.energy import SafeTargets, TargetProposal
+from nexus.domain.health_texts import TEXT_CHECK_IN, Signpost
 
 router = APIRouter(prefix="/api/health")
 
 
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-def _safety_pending_h2(proposal: TargetProposal) -> SafeTargets:
-    """A pass-through until the safety layer (H2: calorie floors, rate caps, gates) is wired
-    in. TODO(H2): replace this one function with the real safety step."""
-    return SafeTargets(proposal.kcal, proposal.rate_pct_per_week)
 
 
 class TrendPointOut(Model):
@@ -57,6 +51,36 @@ class TargetsOut(Model):
     notes: list[str]
 
 
+class SignpostOut(Model):
+    name: str
+    contact: str
+    note: str
+
+
+class SafetyNoteOut(Model):
+    """Shared by the energy and day reads. ``suspended``: calorie targets are off, so there are
+    none, and ``signposts`` say where to get help. ``new_signals`` lists signals first recorded
+    by this read (a soft check-in is due, with ``check_in`` as its text)."""
+
+    suspended: bool
+    signposts: list[SignpostOut]
+    new_signals: list[str]
+    check_in: str | None
+
+
+def safety_note(found: targets_cases.SafeOverview) -> SafetyNoteOut:
+    return SafetyNoteOut(
+        suspended=found.suspended,
+        signposts=[signpost(s) for s in found.signposts],
+        new_signals=[s.value for s in found.new_signals],
+        check_in=TEXT_CHECK_IN if found.check_in else None,
+    )
+
+
+def signpost(s: Signpost) -> SignpostOut:
+    return SignpostOut(name=s.name, contact=s.contact, note=s.note)
+
+
 class EnergyOut(Model):
     hidden: bool
     trend_words: str
@@ -69,6 +93,7 @@ class EnergyOut(Model):
     confidence: str | None
     days_used: int | None
     targets: TargetsOut | None
+    safety: SafetyNoteOut
 
 
 @router.get("/weight")
@@ -103,20 +128,15 @@ async def weight(
 
 @router.get("/energy")
 async def energy(auth: Auth, web: Runtime) -> EnergyOut:
-    t = await energy_cases.current_targets(
-        web.uow(),
-        auth.user.id,
-        now=web.clock(),
-        intake_provider=nutrition_cases.intake_provider(web.uow),
-        apply_safety=_safety_pending_h2,
-    )
+    found = await targets_cases.safe_targets(web.uow, auth.user.id, now=web.clock())
+    t, note = found.overview, safety_note(found)
     e = t.energy
     est = e.estimate
     if t.hidden or est is None:
         return EnergyOut(
             hidden=t.hidden, trend_words=e.trend_words, available=est is not None and not t.hidden,
             label=None if t.hidden else e.label, paused_reason=None, kcal=None, kcal_low=None,
-            kcal_high=None, confidence=None, days_used=None, targets=None,
+            kcal_high=None, confidence=None, days_used=None, targets=None, safety=note,
         )  # fmt: skip
     goal = t.targets
     return EnergyOut(
@@ -130,6 +150,7 @@ async def energy(auth: Auth, web: Runtime) -> EnergyOut:
         kcal_high=str(est.kcal_range[1]),
         confidence=str(est.confidence.quantize(energy_cases.CONFIDENCE_STEP)),
         days_used=est.days_used,
+        safety=note,
         targets=None
         if goal is None
         else TargetsOut(

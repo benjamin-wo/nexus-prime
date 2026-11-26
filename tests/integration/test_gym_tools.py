@@ -9,8 +9,10 @@ import pytest
 
 from nexus.agent.tools import ToolContext, build_tools, run_tool
 from nexus.application import gym as gym_cases
+from nexus.application import health_consent as consent_cases
 from nexus.application.users import get_user
 from nexus.domain.gym_training import PlanKind, Slot
+from nexus.domain.health import ConsentScope
 from nexus.domain.ledger import UserId
 from nexus.infra.exercises import load_catalogue
 from tests.fakes import NOW, call, say, scripted
@@ -36,6 +38,7 @@ async def run(uow: UowFactory, user: UserId, tool: str, **args: Any) -> tuple[st
 
 async def agree(uow: UowFactory, user: UserId) -> UserId:
     await gym_cases.give_consent(uow(), user, now=NOW)
+    await consent_cases.grant(uow(), user, ConsentScope.AI_PROCESSING, now=NOW)
     return user
 
 
@@ -198,3 +201,25 @@ async def test_finding_exercises(uow: UowFactory, alice: UserId) -> None:
     assert text.splitlines()[1].startswith(f"• Barbell Bench Press - Medium Grip [{BENCH}]")
     text, error = await run(uow, alice, "find_exercise", muscle="wings")
     assert error == "InvalidInput" and "chest" in text
+
+
+async def test_the_read_tools_need_ai_processing_not_just_health(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await gym_cases.give_consent(uow(), alice, now=NOW)  # Health is on; AI processing is not
+    await lifted(uow, alice, SQUAT, 5, "100")
+    for tool, args in (
+        ("last_time", {"exercise": "squat"}),
+        ("personal_records", {}),
+        ("workout_history", {"range": "this month"}),
+        ("weekly_volume", {}),
+        ("todays_workout", {}),
+    ):
+        text, error = await run(uow, alice, tool, **args)
+        assert error == "ConsentRequired" and "AI access to health data is off" in text
+        assert "100" not in text
+    await consent_cases.grant(uow(), alice, ConsentScope.AI_PROCESSING, now=NOW)
+    text, error = await run(uow, alice, "last_time", exercise="squat")
+    assert error is None and "100" in text
+    await consent_cases.withdraw(uow(), alice, ConsentScope.AI_PROCESSING, now=NOW)
+    assert (await run(uow, alice, "last_time", exercise="squat"))[1] == "ConsentRequired"

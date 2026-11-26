@@ -96,6 +96,7 @@ The shared language for code, tests and docs. The product and the code share one
   - **Media turn**: a photo is treated as a receipt first.
   - **Income write**: plain phrasings are parsed and saved deterministically; anything else goes to the model's `record_income` tool, which always asks the user to confirm, and the income skill tells it to ask rather than guess.
   - **Guardrail policy**: payments, transfers and cancellations are refused honestly and logged as a **capability gap**.
+  - **Health red flag**: an emergency, a symptom, a medication question or eating-disorder language in any message gets a fixed referral text with no model and no tool (`application/health_safety.precheck_message`).
   - **Self-diagnosis**: "is this broken?" is answered from the app's own health checks.
 - **HITL (human in the loop)**: a confirmation step, using LangGraph `interrupt()` and resume, before consequential or ambiguous writes. Telegram shows buttons; the web shows a dialog.
 

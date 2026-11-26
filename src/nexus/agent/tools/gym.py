@@ -14,6 +14,7 @@ from pydantic import Field
 from nexus.agent import gym_text
 from nexus.agent.tools.core import Args, NoArgs, ToolContext, ToolResult, ToolSpec
 from nexus.agent.tools.health import (
+    ai_blocked,
     decimal,
     has_consent,
     health_off,
@@ -102,6 +103,8 @@ async def _find_exercise(ctx: ToolContext, a: FindExerciseArgs) -> ToolResult:
 
 
 async def _todays_workout(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
     today = await gym_cases.todays_workout(ctx.uow(), ctx.user.id, now=ctx.now)
     lines: list[str] = []
     if today.in_progress is not None:
@@ -136,6 +139,8 @@ class ExerciseArgs(Args):
 
 
 async def _last_time(ctx: ToolContext, a: ExerciseArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
     found = await resolve_exercise(ctx, a.exercise)
     sets = await gym_cases.last_sets(ctx.uow(), ctx.user.id, found.id)
     if not sets:
@@ -179,6 +184,8 @@ class OptionalExerciseArgs(Args):
 
 
 async def _personal_records(ctx: ToolContext, a: OptionalExerciseArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
     note = " (Estimated one-rep maxes use the Epley formula and are in kg.)"
     if a.exercise:
         found = await resolve_exercise(ctx, a.exercise)
@@ -200,6 +207,8 @@ class HistoryArgs(Args):
 
 
 async def _workout_history(ctx: ToolContext, a: HistoryArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
     first, after = gym_entry.parse_range(a.range, ctx.today())
     found = await gym_cases.workouts(ctx.uow(), ctx.user.id, start=first, end=after)
     span = f"{gym_text.day_text(first, ctx.today())} to " + gym_text.day_text(
@@ -243,6 +252,8 @@ class WeekArgs(Args):
 
 
 async def _weekly_volume(ctx: ToolContext, a: WeekArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
     monday = gym_entry.parse_week(a.week, ctx.today())
     span = f"{gym_text.day_text(monday, ctx.today())} to " + gym_text.day_text(
         monday + timedelta(days=6), ctx.today()
