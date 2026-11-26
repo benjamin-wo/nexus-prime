@@ -3,7 +3,7 @@ import { type ReactNode, Suspense, useCallback, useEffect, useState } from "reac
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { api, ApiError, type EditedTransaction, type Me, type RuleSuggestion, setCsrf, type Transaction } from "./api";
-import { ChatDrawer } from "./components/ChatDrawer";
+import { ChatDrawer, type OpenView } from "./components/ChatDrawer";
 import { ErrorBoundary, pageFallback } from "./components/ErrorBoundary";
 import { EntrySheet } from "./components/EntrySheet";
 import { Shell } from "./components/Shell";
@@ -20,6 +20,7 @@ import { lazyNamed } from "./lazyPage";
 import { formatMoney, txName } from "./format";
 import { initData, miniApp, tripInviteIn } from "./telegram";
 import { useReportTimeZone } from "./timezone";
+import { BackToChat } from "./views/BackToChat";
 
 // Every page but Home and the sign-in page is fetched when its route is first opened.
 const CashFlowPage = lazyNamed(() => import("./pages/CashFlow"), "CashFlowPage");
@@ -163,7 +164,24 @@ function Cockpit({ me }: { me: Me }) {
   // Tells Nexus where this browser is, once per page load, without holding anything up.
   useReportTimeZone(me.user);
   // The chat drawer, opened empty or with a question asked on Home.
-  const [chat, setChat] = useState<{ ask?: string } | null>(null);
+  const [chat, setChat] = useState<{ ask?: string; restoreScroll?: number } | null>(null);
+  // On a phone a card's Open closes the chat and goes to its page: this is where the chat was scrolled to,
+  // for the bar on that page that opens it again.
+  const [cameFromChat, setCameFromChat] = useState<{ scroll: number } | null>(null);
+  const navigate = useNavigate();
+  const openView = useCallback<OpenView>(
+    (path, { phone, scroll }) => {
+      navigate(path);
+      if (phone) {
+        setCameFromChat({ scroll });
+        setChat(null);
+      }
+    },
+    [navigate],
+  );
+  useEffect(() => {
+    if (chat) setCameFromChat(null);
+  }, [chat]);
   const [sheet, setSheet] = useState<{ editing?: Transaction } | null>(null);
   // After a save: say so ("Logged SGD 5.50 · Kopi Stall", with Undo for a new entry), and after a
   // category correction offer a rule in the same line, changing nothing unless accepted.
@@ -176,7 +194,7 @@ function Cockpit({ me }: { me: Me }) {
   const closeSaved = useCallback(() => setSaved(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan", "wallets", "health"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan", "wallets", "health", "view"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   // After a chat reply: the pages may have changed, and in the demo the messages left have.
   const changed = useCallback(() => {
@@ -228,6 +246,7 @@ function Cockpit({ me }: { me: Me }) {
       onRefresh={pullRefresh}
       offlineWaiting={online ? 0 : waiting}
     >
+      {cameFromChat && !chat && <BackToChat onBack={() => setChat({ restoreScroll: cameFromChat.scroll })} />}
       <RoutedPage>
         <EditTransactionProvider onEdit={editTx}>
           <Routes>
@@ -314,7 +333,7 @@ function Cockpit({ me }: { me: Me }) {
           }}
         />
       )}
-      {chat && <ChatDrawer ask={chat.ask} demo={me.demo} onClose={closeChat} onChanged={changed} />}
+      {chat && <ChatDrawer ask={chat.ask} restoreScroll={chat.restoreScroll} onOpenView={openView} demo={me.demo} onClose={closeChat} onChanged={changed} />}
       {saved && (
         <Toast
           message={savedMessage(saved.tx, saved.fresh)}

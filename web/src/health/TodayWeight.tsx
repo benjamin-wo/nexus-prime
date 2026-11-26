@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { LoadError } from "../components/LoadError";
 import { Button, Row, RowList, Section } from "../components/ui";
@@ -13,7 +14,9 @@ const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export function TodayWeight() {
   const weight = useWeight();
   const unit = useWeightUnit();
-  const [sheet, setSheet] = useState<"log" | "trend" | null>(null);
+  // `?weight=trend` (a card's Open sends it) opens the trend.
+  const [params] = useSearchParams();
+  const [sheet, setSheet] = useState<"log" | "trend" | null>(params.get("weight") === "trend" ? "trend" : null);
   const w = weight.data;
   const line = !w ? null : w.hidden ? upper(w.trend_words) : w.trend_kg ? `${inUnit(w.trend_kg, unit)} ${unit}, ${w.trend_words}` : null;
   return (

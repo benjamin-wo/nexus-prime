@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, Fragment, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api, apiForm, ApiError, type ChatHistory, type Demo, type Reply } from "../api";
@@ -12,7 +12,10 @@ import {
   type ChatStep,
 } from "../chatStream";
 import { messagesLeft } from "../demo";
+import { lazyNamed } from "../lazyPage";
 import { openExternal } from "../telegram";
+import { orderViews, useViewsEnabled } from "../views/hooks";
+import type { CardView } from "../views/types";
 import { clock, MAX_VOICE_SECONDS, NO_MIC_HINT, canRecord, useVoiceRecorder, type Recorded } from "../useVoiceRecorder";
 import { Icon } from "./Icon";
 import { NexusMark } from "./NexusMark";
@@ -20,13 +23,23 @@ import { PHONE_QUERY, useMediaQuery } from "./overlay/breakpoints";
 import { Overlay } from "./overlay/Overlay";
 import { Button, ButtonLink, Chip, ChipGroup } from "./ui";
 
+// The cards under a line are fetched when first needed: they bring their charts and figures with them.
+const ViewCards = lazyNamed(() => import("../views/ViewCard"), "ViewCards");
+
 type Message = {
   from: "user" | "bot";
   text: string;
   buttons: Reply["buttons"];
   telegram?: boolean;
   at?: string;
+  /** The views shown with this line (ADR 0005). From the history they carry only kind, params and focus. */
+  views?: CardView[];
+  /** The line came from the history: its cards load as they are scrolled to. */
+  stored?: boolean;
 };
+
+/** How the page behind the chat is told to open a card's page. */
+export type OpenView = (path: string, how: { phone: boolean; scroll: number }) => void;
 
 function fromHistory(history: ChatHistory): Message[] {
   return history.lines.map((line) => ({
@@ -35,6 +48,8 @@ function fromHistory(history: ChatHistory): Message[] {
     buttons: [],
     telegram: line.channel === "telegram",
     at: line.at,
+    views: line.views?.map((v) => ({ kind: v.kind, params: v.params, focus: v.focus })),
+    stored: true,
   }));
 }
 
@@ -184,15 +199,24 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
 export function ChatDrawer({
   ask,
   demo,
+  restoreScroll,
+  onOpenView,
   onClose,
   onChanged,
 }: {
   ask?: string; // a question asked on Home, sent as soon as the chat opens
   demo?: Demo | null; // in the public demo: how many messages are left
+  restoreScroll?: number; // coming back from a card's page: the list scrolls to where it was
+  onOpenView?: OpenView; // a card's Open; without it the chat navigates itself
   onClose: () => void;
   onChanged: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
+  // The views of the turn running now, as they arrive (before its replies).
+  const [shown, setShown] = useState<CardView[]>([]);
+  const viewsOn = useViewsEnabled();
+  const list = useRef<HTMLDivElement>(null);
+  const restoring = useRef(restoreScroll !== undefined);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   // What the running turn has done so far, Stop was pressed on it, and its stream broke (so its reply
@@ -225,9 +249,15 @@ export function ChatDrawer({
   // Effects use braces so nothing is returned: React would call a returned value as a
   // cleanup, and newer browsers return a promise from scrollIntoView().
   useEffect(() => {
-    if (stick.current) end.current?.scrollIntoView?.({ block: "end" });
+    if (stick.current && !restoring.current) end.current?.scrollIntoView?.({ block: "end" });
     stick.current = true;
   }, [messages]);
+  // Back from a card's page: once the history is in, the list goes back to where it was.
+  useEffect(() => {
+    if (!loaded || !restoring.current) return;
+    restoring.current = false;
+    if (list.current) list.current.scrollTop = restoreScroll ?? 0;
+  }, [loaded, restoreScroll]);
   useEffect(() => {
     if (busy) end.current?.scrollIntoView?.({ block: "end" });
   }, [busy]);
@@ -286,14 +316,19 @@ export function ChatDrawer({
   }
   async function run(call: Promise<Reply[]>, failed?: (e: unknown) => void) {
     setBusy(true);
+    setShown([]);
+    const streamed: CardView[] = [];
+    streaming.current = streamed;
     try {
       const replies = await call;
       setMessages((m) => [
         ...m,
-        ...replies.map((r) => ({
+        ...replies.map((r, i) => ({
           from: "bot" as const,
           text: r.text,
           buttons: r.buttons,
+          // The server puts a turn's views on its last reply; ones seen on the stream stand in if it sent none.
+          views: r.views?.length ? r.views : i === replies.length - 1 && streamed.length ? streamed : undefined,
         })),
       ]);
       onChanged();
@@ -309,12 +344,19 @@ export function ChatDrawer({
       ]);
     } finally {
       setBusy(false);
+      setShown([]);
       setSteps([]);
       setStopping(false);
       setRecovering(false);
     }
   }
 
+  // The views the running turn has shown, kept for the replies; `shown` is the same list for the screen.
+  const streaming = useRef<CardView[]>([]);
+  const onView = (view: CardView) => {
+    streaming.current.push(view);
+    setShown((now) => [...now, view]);
+  };
   const onStep = (step: ChatStep) =>
     setSteps((now) => (step.state === "running" ? [...now, { label: step.label, done: false }] : finish(now, step.label)));
 
@@ -335,7 +377,7 @@ export function ChatDrawer({
    * could not start (so nothing was sent twice). */
   async function turn(text: string): Promise<Reply[]> {
     try {
-      return await streamChat(text, onStep);
+      return await streamChat(text, onStep, onView);
     } catch (e) {
       if (e instanceof StreamNotStarted) return api<Reply[]>("/chat", { method: "POST", body: { message: text } });
       if (e instanceof StreamInterrupted) return recover(text, e.startedAt);
@@ -419,6 +461,16 @@ export function ChatDrawer({
     void run(api<Reply[]>("/chat/press", { method: "POST", body: { data } }));
   }
 
+  /** A card's Open: the page behind the chat goes to the card's page. On a phone the chat closes (the page
+   * offers a way back); on a wide screen it stays. */
+  function openView(path: string) {
+    if (onOpenView) onOpenView(path, { phone, scroll: list.current?.scrollTop ?? 0 });
+    else {
+      navigate(path);
+      if (phone) onClose();
+    }
+  }
+
   // In the body, not in the page: the page's pull-to-refresh listens on (and slides) everything inside
   // it, and a drag in the chat must neither refresh the page nor move the chat.
   return (
@@ -442,6 +494,7 @@ export function ChatDrawer({
       </header>
       </div>
       <div
+        ref={list}
         className="messages"
         aria-live="polite"
         onScroll={(e) => {
@@ -474,8 +527,8 @@ export function ChatDrawer({
           </ChipGroup>
         )}
         {messages.map((m, i) => (
+          <Fragment key={i}>
           <div
-            key={i}
             className={`msg msg-${m.from}`}
             title={m.at ? WHEN.format(new Date(m.at)) : undefined}
           >
@@ -522,7 +575,18 @@ export function ChatDrawer({
               </>
             )}
           </div>
+          {viewsOn && m.from === "bot" && m.views && m.views.length > 0 && (
+            <Suspense fallback={null}>
+              <ViewCards views={orderViews(m.views)} lazy={m.stored} onOpen={openView} />
+            </Suspense>
+          )}
+          </Fragment>
         ))}
+        {busy && viewsOn && shown.length > 0 && (
+          <Suspense fallback={null}>
+            <ViewCards views={orderViews(shown)} onOpen={openView} />
+          </Suspense>
+        )}
         {busy && (recovering ? <Typing note={STILL_WORKING_NOTE} /> : steps.length > 0 ? <Steps steps={steps} /> : <Typing />)}
         <div ref={end} />
       </div>
