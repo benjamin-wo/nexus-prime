@@ -23,8 +23,7 @@ from nexus.application import bookings as booking_cases
 from nexus.application import trip_access as access_cases
 from nexus.application import trips as trip_cases
 from nexus.application.users import RegisterUser, register_user
-from nexus.channels.web import api as web_api
-from nexus.channels.web import email_api, investments_api, ops_api, travel_api
+from nexus.channels.web.routers import ROUTERS
 from nexus.channels.web.security import authenticated, signed_in
 from nexus.channels.web.telegram_login import sign_for_tests, sign_webapp_for_tests
 from nexus.domain.access import token_hash
@@ -904,14 +903,7 @@ def _guards(route: APIRoute) -> set[str]:
 def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
     open_to_guests: set[tuple[str, str]] = set()
     unguarded: set[tuple[str, str]] = set()
-    for router in (
-        web_api.router,
-        travel_api.router,
-        travel_api.shared_router,
-        email_api.router,
-        investments_api.router,
-        ops_api.router,
-    ):
+    for router in ROUTERS:
         for route in router.routes:
             assert isinstance(route, APIRoute)
             guards = _guards(route)
@@ -972,6 +964,8 @@ def test_only_the_routes_a_guest_needs_let_a_guest_in() -> None:
         # Signing in from the iOS app: before there is a session (application/device_signin.py).
         "/api/auth/device",
         "/api/auth/device/{poll_id}",
+        # The page link the bot's sign-in message carries (outside /api).
+        "/login/link/{token}",
         "/api/shared/trips/{token}",
         "/api/shared/trips/{token}/photo",
         "/api/email/link",

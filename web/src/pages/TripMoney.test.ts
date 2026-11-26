@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Balance, BalancePart, Money, SettleResult, ToSplit, TripDetail } from "../api";
-import { balanceWords, joinNames, partsTotal, plannedAhead, setAsideText, settleConfirmText, settledText, splitAskText, splitConfirmText, sumByCurrency, toSplitSub, totalOf } from "./TripMoney";
+import { balanceWords, joinNames, partsTotal, plannedAhead, setAsideText, settleConfirmText, settledText, splitAskText, splitConfirmText, sumByCurrency, toSplitSub, totalOf } from "./tripMoneyText";
 import { balanceAmount } from "./TripStage";
 
 // Made-up people and amounts only. Intl puts a no-break space after the currency code.
