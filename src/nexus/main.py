@@ -158,6 +158,18 @@ class Overrides:
     speech: SpeechToText | None = None
 
 
+def _warn_ai_provider_unnamed(settings: Settings) -> None:
+    """The consent screen tells users who receives their health data; in production that
+    should be said on purpose, not guessed from LLM_PROVIDER."""
+    if settings.environment is Environment.PROD and not (
+        settings.ai_provider_name and settings.ai_provider_country
+    ):
+        log.warning(
+            "AI_PROVIDER_NAME and AI_PROVIDER_COUNTRY are not both set; the health consent "
+            "screen names the provider from LLM_PROVIDER instead"
+        )
+
+
 def _receipt_store(settings: Settings, overrides: Overrides) -> ReceiptStore | None:
     if overrides.receipt_store is not None:
         return overrides.receipt_store
@@ -749,6 +761,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
             stack.push_async_callback(engine.dispose)
             await assert_schema_at_head(engine)
             await gym_cases.sync_catalogue(SqlUnitOfWork(engine), load_catalogue())
+            _warn_ai_provider_unnamed(resolved)
             app.state.engine = engine
             app.state.ops = await _ops_store(resolved, engine, stack)
             app.state.costs = await _cost_store(engine, stack)

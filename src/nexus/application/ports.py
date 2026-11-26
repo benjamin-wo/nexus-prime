@@ -29,6 +29,7 @@ from nexus.domain.email import (
 )
 from nexus.domain.gym import Equipment, Exercise, Level, Muscle
 from nexus.domain.gym_training import Routine, SetEntry, TrainingPlan, Workout
+from nexus.domain.health import ConsentScope, HealthProfile, Sample, SampleKind
 from nexus.domain.identity import Identity, Provider
 from nexus.domain.investments import (
     Dividend,
@@ -1099,6 +1100,70 @@ class GymRepository(Protocol):
         ...
 
 
+class HealthRepository(Protocol):
+    """Health foundation: one user's samples, profile and consent scopes. Every query filters
+    on ``user_id``. The master consent (``users.health_consent_at``) is on ``GymRepository``."""
+
+    async def active_scopes(self, user_id: UserId) -> frozenset[ConsentScope]:
+        """The scopes granted and not withdrawn."""
+        ...
+
+    async def scope_states(
+        self, user_id: UserId
+    ) -> dict[ConsentScope, tuple[datetime, datetime | None]]:
+        """Each scope ever granted: when, and when withdrawn (None while active)."""
+        ...
+
+    async def grant_scope(self, user_id: UserId, scope: ConsentScope, at: datetime) -> None:
+        """Grant it, or grant it again after withdrawing (a scope already active is kept)."""
+        ...
+
+    async def withdraw_scope(self, user_id: UserId, scope: ConsentScope, at: datetime) -> None:
+        """Mark it withdrawn; nothing happens for a scope that isn't active."""
+        ...
+
+    async def get_sample(self, user_id: UserId, sample_id: UUID) -> Sample | None: ...
+    async def find_manual(
+        self, user_id: UserId, kind: SampleKind, start_at: datetime
+    ) -> Sample | None:
+        """The typed or chat entry of this kind at exactly this start."""
+        ...
+
+    async def add_sample(self, sample: Sample) -> None: ...
+    async def upsert_imported(self, sample: Sample) -> Sample:
+        """Insert, or update the value, unit and times of the sample with the same user, source
+        and external id; returns what is stored (keeping the first id and created_at)."""
+        ...
+
+    async def update_sample(self, sample: Sample) -> bool:
+        """Change value, unit and times."""
+        ...
+
+    async def delete_sample(self, user_id: UserId, sample_id: UUID) -> bool: ...
+    async def list_samples(
+        self,
+        user_id: UserId,
+        *,
+        kind: SampleKind | None,
+        start: datetime,
+        end: datetime,
+        limit: int,
+    ) -> list[Sample]:
+        """Those starting in ``[start, end)``, newest first."""
+        ...
+
+    async def latest_sample(
+        self, user_id: UserId, kind: SampleKind, *, until: datetime
+    ) -> Sample | None:
+        """The one with the latest start at or before ``until``."""
+        ...
+
+    async def get_profile(self, user_id: UserId) -> HealthProfile | None: ...
+    async def save_profile(self, profile: HealthProfile) -> None:
+        """Insert or replace the user's one profile."""
+        ...
+
+
 class InvestmentRepository(Protocol):
     async def list_holdings(self, user_id: UserId) -> list[Holding]: ...
     async def save_position(self, user_id: UserId, position: Position, at: datetime) -> None:
@@ -1342,6 +1407,8 @@ class UnitOfWork(Protocol):
     def runs(self) -> RunRepository: ...
     @property
     def gym(self) -> GymRepository: ...
+    @property
+    def health(self) -> HealthRepository: ...
     @property
     def investments(self) -> InvestmentRepository: ...
     @property

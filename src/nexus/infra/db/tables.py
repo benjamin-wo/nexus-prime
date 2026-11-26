@@ -1714,6 +1714,106 @@ workout_sets = Table(
 )
 
 
+# Health foundation (migration 0076). A sample's value is stored as entered, with its unit.
+# Imported samples are unique per (user, source, source name, external id); typed and chat
+# entries have no external id, so they are unique per (user, kind, start) instead: a second
+# entry for the same moment replaces the first.
+health_samples = Table(
+    "health_samples",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("kind", Text, nullable=False),
+    Column("value", Numeric(12, 3), nullable=False),
+    Column("unit", Text, nullable=False),
+    Column("start_at", TZ, nullable=False),
+    Column("end_at", TZ, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("source_name", Text),
+    Column("external_id", Text),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint(
+        "kind IN ('weight', 'body_fat', 'steps', 'active_energy', 'resting_heart_rate', "
+        "'hrv', 'sleep', 'workout')",
+        name="kind",
+    ),
+    CheckConstraint(
+        "unit IN ('kg', 'lb', 'percent', 'count', 'kcal', 'bpm', 'ms', 'min')", name="unit"
+    ),
+    CheckConstraint(
+        "source IN ('manual', 'chat', 'health_connect', 'healthkit', 'oauth')", name="source"
+    ),
+    CheckConstraint("value >= 0", name="value_not_negative"),
+    CheckConstraint("end_at >= start_at", name="end_after_start"),
+    CheckConstraint("(source = 'oauth') = (source_name IS NOT NULL)", name="source_name"),
+    Index("ix_health_samples_user_id_kind_start_at", "user_id", "kind", "start_at"),
+    Index(
+        "uq_health_samples_user_id_source_external_id",
+        "user_id",
+        "source",
+        text("coalesce(source_name, '')"),
+        "external_id",
+        unique=True,
+        postgresql_where=text("external_id IS NOT NULL"),
+    ),
+    Index(
+        "uq_health_samples_manual_user_id_kind_start_at",
+        "user_id",
+        "kind",
+        "start_at",
+        unique=True,
+        postgresql_where=text("source IN ('manual', 'chat') AND external_id IS NULL"),
+    ),
+)
+
+# One per user. ``sex_for_equations`` is used only for energy equations.
+health_profiles = Table(
+    "health_profiles",
+    metadata,
+    _user_fk(),
+    Column("sex_for_equations", Text, nullable=False),
+    Column("birth_year", Integer),
+    Column("height_cm", Numeric(4, 1)),
+    Column("activity_level", Text),
+    Column("goal", Text, nullable=False),
+    Column("target_rate_pct_per_week", Numeric(4, 2)),
+    Column("numbers_free", Boolean, nullable=False, server_default=text("false")),
+    Column("ed_history", Boolean, nullable=False, server_default=text("false")),
+    Column("unit_system", Text, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    PrimaryKeyConstraint("user_id"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("sex_for_equations IN ('female', 'male', 'unspecified')", name="sex"),
+    CheckConstraint(
+        "activity_level IS NULL OR activity_level IN "
+        "('sedentary', 'light', 'moderate', 'active', 'very_active')",
+        name="activity_level",
+    ),
+    CheckConstraint("goal IN ('lose', 'maintain', 'gain', 'performance')", name="goal"),
+    CheckConstraint("unit_system IN ('metric', 'imperial')", name="unit_system"),
+)
+
+# Separate, withdrawable consents beside ``users.health_consent_at`` (the master one). A row
+# is kept when withdrawn, so the user can see when they agreed and when they took it back.
+health_consents = Table(
+    "health_consents",
+    metadata,
+    _user_fk(),
+    Column("scope", Text, nullable=False),
+    Column("granted_at", TZ, nullable=False),
+    Column("withdrawn_at", TZ),
+    PrimaryKeyConstraint("user_id", "scope"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint(
+        "scope IN ('ai_processing', 'source:health_connect', 'source:healthkit', "
+        "'source:oauth', 'model_improvement')",
+        name="scope",
+    ),
+    CheckConstraint("withdrawn_at IS NULL OR withdrawn_at >= granted_at", name="withdrawn_after"),
+)
+
+
 def not_demo(user_id: ColumnElement[Any]) -> ColumnElement[bool]:
     """For the sweeps that message people or reach outside services on a schedule: true when
     the row's user is not a public-demo account, which they skip."""

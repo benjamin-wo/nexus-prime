@@ -392,6 +392,37 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             unit="kg",
             done_at=now,
         )
+        # Health foundation: a sample, the profile and a consent scope.
+        await add(
+            t["health_samples"],
+            id=uid(),
+            user_id=user,
+            kind="weight",
+            value=Decimal("80.500"),
+            unit="kg",
+            start_at=now,
+            end_at=now,
+            source="manual",
+            created_at=now,
+        )
+        await add(
+            t["health_profiles"],
+            user_id=user,
+            sex_for_equations="unspecified",
+            birth_year=1990,
+            height_cm=Decimal("175.0"),
+            goal="maintain",
+            numbers_free=False,
+            ed_history=False,
+            unit_system="metric",
+            updated_at=now,
+        )
+        await add(
+            t["health_consents"],
+            user_id=user,
+            scope="ai_processing",
+            granted_at=now,
+        )
         await add(
             t["market_alerts"],
             id=uid(),
