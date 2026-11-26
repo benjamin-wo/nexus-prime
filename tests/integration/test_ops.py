@@ -41,8 +41,9 @@ async def test_a_chat_turn_leaves_events_and_nothing_that_was_said(world: World)
     trace = response.headers["x-trace-id"]
     await world.app.state.ops.flush()
     found = await rows(world.engine)
-    assert "Kopi" not in json.dumps(found, default=str)
-    assert "4.20" not in json.dumps(found, default=str)
+    # Without the timestamps, whose microseconds can spell "4.20" by chance.
+    logged = json.dumps([{k: v for k, v in r.items() if k != "at"} for r in found], default=str)
+    assert "Kopi" not in logged and "4.20" not in logged
     kinds = {(r["kind"], r["name"]) for r in found if r["trace"] == trace}
     assert {("turn", "web"), ("tool", "log_expense"), ("request", "POST /api/chat")} <= kinds
     turn = next(r for r in found if r["kind"] == "turn")

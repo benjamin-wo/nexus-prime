@@ -12,6 +12,7 @@ POST /api/demo
 POST /api/me/timezone
 POST /api/me/timezone/home
 POST /api/invites
+GET /login/link/{token}
 GET /api/transactions
 GET /api/transactions/suggestions
 GET /api/transactions/{transaction_id}
@@ -47,6 +48,12 @@ GET /api/category-rules
 PUT /api/category-rules
 POST /api/category-rules/accept
 DELETE /api/category-rules/{rule_id}
+GET /api/memories
+DELETE /api/memories/{memory_id}
+DELETE /api/memories
+GET /api/transactions/{transaction_id}/category-explanation
+GET /api/ious
+POST /api/ious/{split_id}/repaid
 POST /api/imports/preview
 POST /api/imports/pdf
 POST /api/imports
@@ -54,12 +61,6 @@ GET /api/imports
 POST /api/imports/{import_id}/undo
 GET /api/imports/layouts
 DELETE /api/imports/layouts/{layout_id}
-GET /api/memories
-DELETE /api/memories/{memory_id}
-DELETE /api/memories
-GET /api/transactions/{transaction_id}/category-explanation
-GET /api/ious
-POST /api/ious/{split_id}/repaid
 GET /api/budgets
 GET /api/budgets/month
 PUT /api/budgets
@@ -101,7 +102,6 @@ POST /api/chat/stream
 POST /api/chat/stop
 POST /api/chat/voice
 POST /api/chat/press
-GET /login/link/{token}
 GET /api/me/export
 POST /api/me/delete
 POST /api/email/link
@@ -135,6 +135,8 @@ POST /api/investments/plans/{plan_id}/alerts
 PUT /api/investments/plans/{plan_id}/keep-fresh
 GET /api/investments/plans
 GET /api/investments/plans/{plan_id}
+GET /api/health/exercises
+GET /api/health/exercises/{exercise_id}
 GET /api/travel/trips
 POST /api/travel/trips
 GET /api/travel/next

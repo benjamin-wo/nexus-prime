@@ -604,6 +604,32 @@
   "methods": [
    "GET"
   ],
+  "path": "/api/health/exercises",
+  "endpoint": "exercises",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}",
+  "endpoint": "exercise",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ExerciseOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
   "path": "/api/home",
   "endpoint": "home",
   "dependencies": [
