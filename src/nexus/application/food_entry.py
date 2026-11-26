@@ -36,6 +36,7 @@ from nexus.domain.nutrition import (
     kcal_range_words,
     meal_totals,
     portion_grams,
+    strong_match,
     words,
 )
 
@@ -109,14 +110,17 @@ def shown_name(request: FoodRequest) -> str | None:
 
 async def _pick(uow: UowFactory, request: FoodRequest) -> Food | None:
     """The food for a request: the top-ranked match (it is an estimate anyway, so no question
-    about which). None when there is no match but the request has a usable estimate."""
+    about which). With a usable estimate from the model, a database food wins only when the
+    words name it outright (its name or an everyday name); a weaker match ("chicken rice"
+    finding some other dish with chicken and rice) would be a worse guess than the estimate,
+    so None is returned and the estimate is used."""
     name = request.food.strip()
     if not words(name):
         raise NeedsAnswer("Error: a food needs a name. Ask the user what they ate.")
     if name.startswith(ID_PREFIXES):
         return await nutrition_cases.food(uow(), name)
     found = await nutrition_cases.find_foods(uow(), name, limit=MAX_CANDIDATES + 1)
-    if found:
+    if found and (request.estimate is None or strong_match(found[0], name)):
         return found[0]
     if request.estimate is not None:
         return None

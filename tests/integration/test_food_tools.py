@@ -249,6 +249,26 @@ async def test_the_database_wins_over_the_estimate_and_the_best_match_is_taken(
     assert str(first.totals.point.kcal) == "400.000" and second.items[0].source_detail == "db"
 
 
+async def test_a_weak_database_match_loses_to_the_estimate(uow: UowFactory, alice: UserId) -> None:
+    """ "chicken rice" once became "Babyfood, dinner, chicken and rice" at 140-270 kcal: a match
+    that doesn't name the food outright must not beat the model's estimate of the dish."""
+    await agree(uow, alice)
+    dish = {
+        "food": "chicken rice",
+        "portion": "1 plate",
+        "est_kcal": 600,
+        "est_protein_g": 30,
+        "est_carbs_g": 75,
+        "est_fat_g": 20,
+    }
+    text, error = await run(uow, alice, "log_food", foods=[dish], meal="lunch")
+    assert error is None and text.startswith("Logged ")
+    (meal,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    item = meal.items[0]
+    assert item.source_detail == "ai_estimate" and item.food_id is None
+    assert "babyfood" not in text.casefold()
+
+
 @pytest.mark.parametrize(
     "bad",
     [

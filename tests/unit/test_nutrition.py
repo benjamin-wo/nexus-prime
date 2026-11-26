@@ -297,3 +297,20 @@ def test_an_item_without_a_food_must_say_it_is_an_estimate() -> None:
     item = make_estimated_item(Nutrients(D(100), D(5), D(15), D(2), None), "1 serving")
     with pytest.raises(InvalidInput):
         FoodItem(None, D(1), "x", item.nutrients, source_detail="db")
+
+
+def test_search_leaves_out_baby_food_unless_asked() -> None:
+    from nexus.domain.nutrition import search
+
+    baby = food("Babyfood, dinner, chicken and rice")
+    assert search([baby, RICE], "chicken rice") == []
+    assert search([baby, RICE], "baby chicken rice") == [baby]
+
+
+def test_strong_match_is_the_name_or_an_everyday_name_word_for_word() -> None:
+    from nexus.domain.nutrition import strong_match
+
+    egg = food("Egg, whole, cooked, hard-boiled", aliases=("egg", "boiled egg"))
+    assert strong_match(egg, "Egg")
+    assert strong_match(egg, "boiled egg")
+    assert not strong_match(egg, "egg fried rice")
