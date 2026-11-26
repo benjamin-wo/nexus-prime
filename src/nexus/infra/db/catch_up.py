@@ -81,6 +81,7 @@ EXCLUDED_TABLES: dict[str, str] = {
     "web_sessions": "login sessions: the new server issues its own, never revive old ones",
     "login_links": "one-time login links: never revive old ones",
     "exercises": "the shared exercise catalogue, reloaded from catalogue.json at startup",
+    "foods": "the shared food database, reloaded from infra/foods/*.json at startup",
 }
 
 # The timestamp columns that say "this row was written or changed", per merged table. A row's
@@ -142,6 +143,8 @@ CHANGE_COLUMNS: dict[str, tuple[str, ...]] = {
     "health_samples": ("created_at",),
     "health_profiles": ("updated_at",),
     "health_consents": ("granted_at", "withdrawn_at"),
+    "meal_entries": ("created_at", "updated_at"),
+    "meal_items": (),
     "trips": ("created_at", "updated_at", "photo_tried_at", "activity_digest_at"),
     "users": ("created_at", "web_access_granted_at", "setup_dismissed_at", "timezone_set_at"),
     "voice_settings": ("updated_at",),

@@ -682,6 +682,19 @@
   "methods": [
    "GET"
   ],
+  "path": "/api/health/day",
+  "endpoint": "day",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "DayOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
   "path": "/api/health/energy",
   "endpoint": "energy",
   "dependencies": [
@@ -741,6 +754,97 @@
    "runtime"
   ],
   "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/foods",
+  "endpoint": "list_foods",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/foods/{food_id}",
+  "endpoint": "get_food",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "FoodOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/meals",
+  "endpoint": "list_meals",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/meals",
+  "endpoint": "log_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "delete_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "get_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "edit_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
   "status_code": null
  },
  {

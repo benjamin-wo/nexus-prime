@@ -62,6 +62,7 @@ from nexus.domain.memory import Memory, MemoryKind
 from nexus.domain.money import Money
 from nexus.domain.news import EarningsDate, NewsItem
 from nexus.domain.notifications import Notification, NotificationSettings, Status
+from nexus.domain.nutrition import Food, MealEntry
 from nexus.domain.packing import PackItem
 from nexus.domain.planning import Bill, BillOccurrence, Budget, SalarySchedule
 from nexus.domain.plans import Followed, SavedPlan
@@ -1100,6 +1101,35 @@ class GymRepository(Protocol):
         ...
 
 
+class FoodRepository(Protocol):
+    """Food logging: the shared food database and one user's meals. Every meal query filters
+    on ``user_id``."""
+
+    async def get_food(self, food_id: str) -> Food | None: ...
+    async def get_foods(self, ids: Sequence[str]) -> dict[str, Food]: ...
+    async def find_foods(self, text: str, *, limit: int) -> list[Food]:
+        """Foods whose name or an alias contains every word of ``text``, unranked, at most
+        ``limit`` of them (the shortest names first). The caller ranks them."""
+        ...
+
+    async def upsert_foods(self, foods: Sequence[Food]) -> int:
+        """Insert new and update changed foods, never delete; returns rows written."""
+        ...
+
+    async def add_meal(self, entry: MealEntry) -> None: ...
+    async def replace_meal(self, entry: MealEntry) -> bool:
+        """Overwrite the entry's fields and replace all its items."""
+        ...
+
+    async def delete_meal(self, user_id: UserId, meal_id: UUID) -> bool: ...
+    async def get_meal(self, user_id: UserId, meal_id: UUID) -> MealEntry | None: ...
+    async def list_meals(
+        self, user_id: UserId, *, start: datetime, end: datetime, limit: int
+    ) -> list[MealEntry]:
+        """Meals eaten in ``[start, end)``, oldest first."""
+        ...
+
+
 class HealthRepository(Protocol):
     """Health foundation: one user's samples, profile and consent scopes. Every query filters
     on ``user_id``. The master consent (``users.health_consent_at``) is on ``GymRepository``."""
@@ -1409,6 +1439,8 @@ class UnitOfWork(Protocol):
     def gym(self) -> GymRepository: ...
     @property
     def health(self) -> HealthRepository: ...
+    @property
+    def food(self) -> FoodRepository: ...
     @property
     def investments(self) -> InvestmentRepository: ...
     @property

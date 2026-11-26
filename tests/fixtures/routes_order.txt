@@ -172,6 +172,14 @@ PUT /api/health/consents/{scope}
 DELETE /api/health/consents/{scope}
 GET /api/health/weight
 GET /api/health/energy
+GET /api/health/foods
+GET /api/health/foods/{food_id}
+POST /api/health/meals
+GET /api/health/meals
+GET /api/health/meals/{meal_id}
+PATCH /api/health/meals/{meal_id}
+DELETE /api/health/meals/{meal_id}
+GET /api/health/day
 GET /api/travel/trips
 POST /api/travel/trips
 GET /api/travel/next

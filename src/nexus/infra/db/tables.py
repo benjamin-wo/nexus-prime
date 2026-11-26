@@ -1625,6 +1625,31 @@ exercises = Table(
     Column("images", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
 )
 
+# The shared food database (USDA FoodData Central, later SG FoodID): the same for every user,
+# so no user_id and no row-level security. Loaded from ``infra/foods/*.json`` at startup.
+# Nutrients are per 100 g; ``portions`` is a JSON list of {label, grams}.
+foods = Table(
+    "foods",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("source", Text, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("aliases", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+    Column("kcal_100g", Numeric(7, 2), nullable=False),
+    Column("protein_g_100g", Numeric(6, 2), nullable=False),
+    Column("carbs_g_100g", Numeric(6, 2), nullable=False),
+    Column("fat_g_100g", Numeric(6, 2), nullable=False),
+    Column("fibre_g_100g", Numeric(6, 2)),
+    Column("portions", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    CheckConstraint("source IN ('usda', 'sgfoodid', 'custom')", name="source"),
+    CheckConstraint("jsonb_typeof(portions) = 'array'", name="portions_array"),
+    CheckConstraint(
+        "kcal_100g >= 0 AND protein_g_100g >= 0 AND carbs_g_100g >= 0 AND fat_g_100g >= 0 "
+        "AND (fibre_g_100g IS NULL OR fibre_g_100g >= 0)",
+        name="not_negative",
+    ),
+)
+
 # Health -> Gym (migration 0075). A routine's slots are JSONB: they are only ever read and
 # written with it. The plan names routines by id inside its JSONB, so deleting a routine
 # takes it out of the plan in the same transaction (``application.gym``).
@@ -1827,4 +1852,66 @@ def not_demo(user_id: ColumnElement[Any]) -> ColumnElement[bool]:
 # Tables LangGraph's Postgres checkpointer creates for itself (migration 0003).
 CHECKPOINT_TABLES = frozenset(
     {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}
+)
+
+
+# Food logging (migration 0078). An entry is one eating occasion; its items each keep a
+# snapshot of the nutrients computed when they were logged, so a later update of the shared
+# ``foods`` table never rewrites what the user ate.
+meal_entries = Table(
+    "meal_entries",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("meal", Text, nullable=False),
+    Column("eaten_at", TZ, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("note", Text),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("meal IN ('breakfast', 'lunch', 'dinner', 'snack')", name="meal"),
+    CheckConstraint("source IN ('chat', 'voice', 'manual', 'photo')", name="source"),
+    Index("ix_meal_entries_user_id_eaten_at", "user_id", "eaten_at"),
+)
+
+meal_items = Table(
+    "meal_items",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("entry_id", UUID(as_uuid=True), nullable=False),
+    Column("position", Integer, nullable=False),
+    Column("food_id", Text, nullable=False),
+    Column("grams", Numeric(8, 2), nullable=False),
+    Column("portion_label", Text, nullable=False),
+    Column("estimate_kind", Text, nullable=False),
+    Column("cooking", Text),
+    Column("extra_uncertainty", Numeric(4, 2), nullable=False, server_default=text("0")),
+    Column("note", Text),
+    Column("kcal", Numeric(9, 3), nullable=False),
+    Column("protein_g", Numeric(9, 3), nullable=False),
+    Column("carbs_g", Numeric(9, 3), nullable=False),
+    Column("fat_g", Numeric(9, 3), nullable=False),
+    Column("fibre_g", Numeric(9, 3)),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(
+        ["entry_id", "user_id"],
+        ["meal_entries.id", "meal_entries.user_id"],
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(["food_id"], ["foods.id"]),
+    CheckConstraint("estimate_kind IN ('weighed', 'portion', 'estimated')", name="estimate_kind"),
+    CheckConstraint(
+        "cooking IS NULL OR cooking IN ('fried', 'stir-fried', 'curry/gravy')", name="cooking"
+    ),
+    CheckConstraint("grams > 0", name="grams_positive"),
+    CheckConstraint("extra_uncertainty >= 0", name="extra_uncertainty_not_negative"),
+    CheckConstraint(
+        "kcal >= 0 AND protein_g >= 0 AND carbs_g >= 0 AND fat_g >= 0 "
+        "AND (fibre_g IS NULL OR fibre_g >= 0)",
+        name="not_negative",
+    ),
+    Index("ix_meal_items_entry_id_position", "entry_id", "position"),
 )

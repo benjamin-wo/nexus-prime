@@ -423,6 +423,47 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             scope="ai_processing",
             granted_at=now,
         )
+        # Food: a shared food (made once), then a meal with one item that names it.
+        await db.execute(
+            pg_insert(t["foods"])
+            .values(
+                id="custom:made-up-food",
+                source="custom",
+                name="Made Up Food",
+                kcal_100g=Decimal("100"),
+                protein_g_100g=Decimal("10"),
+                carbs_g_100g=Decimal("10"),
+                fat_g_100g=Decimal("1"),
+            )
+            .on_conflict_do_nothing()
+        )
+        meal = uid()
+        await add(
+            t["meal_entries"],
+            id=meal,
+            user_id=user,
+            meal="lunch",
+            eaten_at=now,
+            source="chat",
+            note=f"ate at the desk {tag}",
+            created_at=now,
+            updated_at=now,
+        )
+        await add(
+            t["meal_items"],
+            id=uid(),
+            user_id=user,
+            entry_id=meal,
+            position=0,
+            food_id="custom:made-up-food",
+            grams=Decimal("150"),
+            portion_label=f"1 bowl {tag}",
+            estimate_kind="portion",
+            kcal=Decimal("150"),
+            protein_g=Decimal("15"),
+            carbs_g=Decimal("15"),
+            fat_g=Decimal("1.5"),
+        )
         await add(
             t["market_alerts"],
             id=uid(),

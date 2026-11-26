@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict
 
 from nexus.application import energy as energy_cases
+from nexus.application import nutrition as nutrition_cases
 from nexus.channels.web.security import Auth, Runtime
 from nexus.domain.energy import SafeTargets, TargetProposal
 
@@ -103,7 +104,11 @@ async def weight(
 @router.get("/energy")
 async def energy(auth: Auth, web: Runtime) -> EnergyOut:
     t = await energy_cases.current_targets(
-        web.uow(), auth.user.id, now=web.clock(), apply_safety=_safety_pending_h2
+        web.uow(),
+        auth.user.id,
+        now=web.clock(),
+        intake_provider=nutrition_cases.intake_provider(web.uow),
+        apply_safety=_safety_pending_h2,
     )
     e = t.energy
     est = e.estimate
