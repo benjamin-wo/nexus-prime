@@ -134,7 +134,7 @@ test("turn on Health in one tap, start an empty workout, log a set and finish", 
   await page.goto("/health");
 
   await expect(page.getByText(/not medical advice/i)).toBeVisible();
-  await expect(page.getByText(/through OpenRouter in United States/)).toBeVisible();
+  await expect(page.getByText(/through OpenRouter in the United States/)).toBeVisible();
   await page.waitForTimeout(500);
   if (SHOTS) {
     await page.setViewportSize({ width: 390, height: 844 });

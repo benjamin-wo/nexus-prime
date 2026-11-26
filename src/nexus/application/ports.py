@@ -1220,6 +1220,21 @@ class HealthRepository(Protocol):
         """Insert or replace the user's one profile."""
         ...
 
+    async def delete_profile(self, user_id: UserId) -> None: ...
+    async def add_profile_undo(
+        self, user_id: UserId, token: str, previous: HealthProfile | None, at: datetime
+    ) -> None:
+        """Keep the profile as it was (None: there was none) under ``token``, for an Undo
+        button. Also clears this user's entries past the 30 minutes they last."""
+        ...
+
+    async def take_profile_undo(
+        self, user_id: UserId, token: str, *, now: datetime
+    ) -> tuple[bool, HealthProfile | None]:
+        """Use up an entry under 30 minutes old: (True, the profile it was, None for none), or
+        (False, None) when it is unknown, used or too old."""
+        ...
+
     async def last_safety_event(self, user_id: UserId, kind: str) -> datetime | None:
         """When a signal of this kind was last recorded."""
         ...

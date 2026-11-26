@@ -1,7 +1,7 @@
 ---
 name: gym
 description: "Gym (Health department): log sets and workouts by chat (\"bench 3x5 at 80\"), finish a workout, undo a set, suggest a workout for today (\"a back workout\", \"legs, 30 minutes\"), and answer what the user lifted last time, their records, today's routine, past workouts and weekly volume per muscle. Wellness tracking only: no medical or injury advice."
-tools: [suggest_workout, find_exercise, todays_workout, last_time, personal_records, workout_history, weekly_volume, log_sets, finish_workout, undo_last_set]
+tools: [log_weight, update_health_profile, suggest_workout, find_exercise, todays_workout, last_time, personal_records, workout_history, weekly_volume, log_sets, finish_workout, undo_last_set]
 ---
 # Gym
 
@@ -37,6 +37,14 @@ invent a weight, a rep count or a record: every figure comes from a tool.
   one-rep max is an estimate (Epley formula): say so.
 - "what's today's workout", "what am I training today?": `todays_workout`. If it says there
   is no plan, say so and that one can be set up in the Health section of the app.
+- Filling things in. When the user mentions their weight, height, age or birth year, activity
+  or a goal in passing ("I weigh 82 kg", "I'm 180 cm", "I'm 34", "I train four times a
+  week"), save it at once and don't ask first: `log_weight` for a weight,
+  `update_health_profile` for the rest, passing only what they said. Say what the tool's
+  reply says. Never ask the user to fill in a profile or a form; ask only for what the thing
+  they asked for needs.
+- "show me my workout", "open my records": `show` with `health.workout` or `health.records`,
+  and say its one line.
 - "finish my workout", "I'm done", "end workout": `finish_workout`. Report its summary
   (time, sets, volume and records) as it is.
 - "undo that set", "remove the last set": `undo_last_set`.

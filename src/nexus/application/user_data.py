@@ -58,7 +58,8 @@ AREAS: tuple[Area, ...] = (
          "Your body and activity samples (weight, steps, sleep and more, from any source), "
          "your health profile, which health consents you gave or withdrew, and when a safety "
          "check-in was first offered (the kind and the time only).",
-         ("health_samples", "health_profiles", "health_consents", "health_safety_events")),
+         ("health_samples", "health_profiles", "health_consents", "health_safety_events",
+          "profile_undo")),
     Area("food.json",
          "The meals you logged, each with its foods, portions, and the calories and macros "
          "worked out when you logged it.",

@@ -62,9 +62,11 @@ pytestmark = pytest.mark.integration
 # Then the nutrition skill gained undo_last_meal (", undo_last_meal" in its index line) and its
 # description now says "as a rough guide" in place of "worked out by code": 16716 became 16730.
 # Then the gym skill gained suggest_workout and the coach skill's description said "multi-week"
-# (the two skill index lines, 96 characters): 16730 became 16826.
-DEFAULT_PREFIX_SHA256 = "37ce5a3c003285d064c5e5a1f1d9aed831bbf5c838238984ada906df55ed822e"
-DEFAULT_PREFIX_LENGTH = 16826
+# (the two skill index lines, 96 characters): 16730 became 16826. Then the nutrition and gym
+# skills gained log_weight and update_health_profile (", log_weight, update_health_profile" in
+# each index line, 35 characters each): 16826 became 16896.
+DEFAULT_PREFIX_SHA256 = "4814b3d68a98f3e9366064f301001f42a2ee334f33105261f805e33f8bf84dd9"
+DEFAULT_PREFIX_LENGTH = 16896
 
 
 def prefix_of(prompt: str) -> str:

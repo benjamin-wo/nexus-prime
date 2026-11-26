@@ -437,6 +437,13 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             updated_at=now,
         )
         await add(
+            t["profile_undo"],
+            token="undo-token",
+            user_id=user,
+            previous=None,
+            created_at=now,
+        )
+        await add(
             t["health_consents"],
             user_id=user,
             scope="ai_processing",

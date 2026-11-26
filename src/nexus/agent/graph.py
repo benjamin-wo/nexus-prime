@@ -122,6 +122,9 @@ CORE_TOOLS = (
     "flight_prices",
     "product_prices",
     "flight_status",
+    # "show me my budgets" and "open my weight trend" are said in passing: one line and an Open
+    # button, read-only.
+    "show",
     "load_skill",
 )
 SKILL_TURNS = 5

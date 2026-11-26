@@ -288,6 +288,67 @@ async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: Asyn
     assert "360" in results["food-chicken-rice"].turns[0].results[0]
 
 
+async def test_the_fill_in_cases_are_graded(engine: AsyncEngine) -> None:
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "food-weight-said-in-passing": lambda: scripted(
+            call("log_weight", value="82", unit="kg"),
+            say("Logged 82 kg. There aren't enough weigh-ins yet to say which way it's going."),
+        ),
+        "food-profile-said-in-passing": lambda: scripted(
+            call("update_health_profile", height_cm="180", birth_year=1990),
+            say("Saved height 180 cm, birth year 1990."),
+        ),
+        "health-show-weight-trend": lambda: scripted(
+            call("show", view="health.weight_trend"), say("Here's your weight trend.")
+        ),
+        # The gate holds whatever is asked: the goal is asked for and not saved.
+        "health-minor-wants-to-lose-weight": lambda: scripted(
+            call("update_health_profile", birth_year=2010, goal="lose"),
+            say("Saved birth year 2010. I haven't set a weight-loss goal."),
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (
+            good,
+            results[good].failures,
+            results[good].error,
+            results[good].turns[0].results,
+        )
+    assert results["food-weight-said-in-passing"].turns[0].confirmations == 0
+    assert results["food-profile-said-in-passing"].turns[0].confirmations == 0
+
+    wrong: dict[str, Callable[[], BaseChatModel]] = {
+        # Asks instead of saving, and no tool call.
+        "food-weight-said-in-passing": lambda: scripted(say("Want me to log that?")),
+        # Asks for the rest of a profile.
+        "food-profile-said-in-passing": lambda: scripted(
+            call("update_health_profile", height_cm="180", birth_year=1990),
+            say("Saved. What is your activity level, and what is your goal?"),
+        ),
+        # Reads the trend out instead of showing it.
+        "health-show-weight-trend": lambda: scripted(say("Your trend is slowly down.")),
+        # A model that saved a loss goal for a minor would fail the data check; here it only
+        # logs a weight, which the case forbids.
+        "health-minor-wants-to-lose-weight": lambda: scripted(
+            call("log_weight", value="60"), say("Logged.")
+        ),
+    }
+    failed = await run_cases(
+        engine,
+        lambda case: wrong[case.id](),
+        _only(*wrong),
+        concurrency=2,
+        first_telegram_id=930_000,
+    )
+    assert not any(r.passed for r in failed)
+
+
 async def test_the_health_routing_cases_pick_the_right_domain(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
         "health-route-spent-on-chicken-rice": lambda: scripted(

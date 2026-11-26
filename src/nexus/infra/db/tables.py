@@ -1741,6 +1741,19 @@ workout_suggestions = Table(
     Index("ix_workout_suggestions_user_id_created_at", "user_id", "created_at"),
 )
 
+# What a profile was before Prime changed it, for the reply's Undo button; rows older than 30
+# minutes are ignored (migration 0084). ``previous`` NULL: there was no profile.
+profile_undo = Table(
+    "profile_undo",
+    metadata,
+    Column("token", Text, primary_key=True),
+    _user_fk(),
+    Column("previous", JSONB),
+    Column("created_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    Index("ix_profile_undo_user_id_created_at", "user_id", "created_at"),
+)
+
 # A weight is stored with its unit, to two places; ``rpe`` is 1 to 10 in steps of 0.5.
 workout_sets = Table(
     "workout_sets",

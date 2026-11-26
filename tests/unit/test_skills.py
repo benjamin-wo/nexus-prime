@@ -23,6 +23,8 @@ def test_bundled_skills_load_and_name_real_tools() -> None:
         "undo_last_meal",
         "food_today",
         "energy_estimate",
+        "log_weight",
+        "update_health_profile",
     }
     nutrition = library.body("nutrition")
     assert (
@@ -31,6 +33,9 @@ def test_bundled_skills_load_and_name_real_tools() -> None:
         and "est_kcal" in nutrition
         and "undo_last_meal" in nutrition
     )
+    assert "update_health_profile" in nutrition and "log_weight" in nutrition
+    assert {"log_weight", "update_health_profile"} <= set(gym)
+    assert "Jarvis" not in nutrition and "Jarvis" not in library.body("gym")
     with pytest.raises(NotFound):
         library.body("nope")
 

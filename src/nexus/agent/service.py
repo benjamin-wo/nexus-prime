@@ -58,6 +58,7 @@ from nexus.application import costs, food_entry, found_cards, health_menu, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import gym as gym_cases
+from nexus.application import health as health_cases
 from nexus.application import health_consent as health_consent_cases
 from nexus.application import investments as investment_cases
 from nexus.application import nutrition as nutrition_cases
@@ -1192,6 +1193,14 @@ class AgentService:
             replies = [await self._meal_undo(actor, data.removeprefix("meal:undo:"))]
             await self._keep(actor, "Undo", replies, None)
             return replies
+        if data.startswith("weight:undo:"):
+            replies = [await self._weight_undo(actor, data.removeprefix("weight:undo:"))]
+            await self._keep(actor, "Undo", replies, None)
+            return replies
+        if data.startswith("profile:undo:"):
+            replies = [await self._profile_undo(actor, data.removeprefix("profile:undo:"))]
+            await self._keep(actor, "Undo", replies, None)
+            return replies
         if data == "act:undo":
             replies = await self.quick_action(actor, "undo")
             await self._keep(actor, "Undo", replies, None)
@@ -1243,6 +1252,24 @@ class AgentService:
         except NotFound:
             return Reply("That meal is already gone.")
         return Reply("Removed.")
+
+    async def _weight_undo(self, actor: UserId, sample_id: str) -> Reply:
+        """Remove the one weigh-in a weight's Undo button names, and nothing else."""
+        try:
+            found = UUID(sample_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            await health_cases.delete_sample(self._uow(), actor, found, now=self._clock())
+        except NotFound:
+            return Reply("That weigh-in is already gone.")
+        return Reply("Removed.")
+
+    async def _profile_undo(self, actor: UserId, token: str) -> Reply:
+        """Put the profile back as it was before the change the button names."""
+        if await health_cases.undo_profile(self._uow(), actor, token, now=self._clock()):
+            return Reply("Put your profile back.")
+        return Reply("That's too old to undo here. You can change your profile in Health.")
 
     async def _workout_button(self, actor: UserId, action: str, suggestion_id: str) -> list[Reply]:
         """Start / Shuffle on a suggested workout (see ``suggest_workout``)."""
