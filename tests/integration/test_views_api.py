@@ -155,6 +155,26 @@ async def test_month_outlook_figures_are_what_the_tool_states(world: World) -> N
     assert body["params"] == {"month": "2026-09"}
 
 
+async def test_an_adjusted_outlook_shows_the_figures_of_the_reply(world: World) -> None:
+    adjustments = [{"amount": "-2000", "label": "the sofa"}]
+    text = await world.tool(OWNER, "month_outlook", month="2026-09", adjustments=adjustments)
+    plain = await world.tool(OWNER, "month_outlook", month="2026-09")
+    response = await get(
+        world,
+        OWNER,
+        "finance.month_outlook",
+        month="2026-09",
+        adjustments=json.dumps(adjustments),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["caption"] == "Your outlook for September 2026, with 2,000 for the sofa"
+    assert body["params"]["adjustments"] == adjustments
+    summary = body["summary"]
+    assert amount(summary["overall"]) in text and amount(summary["overall"]) not in plain
+    assert amount(summary["received"]) in text and amount(summary["spent"]) in text
+
+
 async def test_budgets_figures_are_what_the_tool_states(world: World) -> None:
     text = await world.tool(OWNER, "list_budgets")
     body = (await get(world, OWNER, "finance.budgets", month="2026-09")).json()
@@ -327,7 +347,7 @@ async def test_the_stream_sends_view_show_before_the_replies_and_history_keeps_t
     owner, model, _ = chat
     model.script += [
         call("month_outlook", month="2026-09"),
-        call("present", view="finance.budgets", params={"month": "2026-09"}, focus=True),
+        call("present", view="finance.spending", params={"month": "2026-09"}, focus=True),
         say("Here is your month."),
     ]
     streamed = await owner.send("POST", "/api/chat/stream", {"message": "how is my month"})
@@ -336,17 +356,17 @@ async def test_the_stream_sends_view_show_before_the_replies_and_history_keeps_t
     assert names[-3:] == ["view.show", "view.show", "replies"]
     first, second = (d for e, d in events if e == "view.show")
     assert first["kind"] == "finance.month_outlook" and first["focus"] is False
-    assert second["kind"] == "finance.budgets" and second["focus"] is True  # the latest present
+    assert second["kind"] == "finance.spending" and second["focus"] is True  # the latest present
     assert set(first) == {"view_id", "kind", "params", "focus", "caption", "summary"}
     assert first["caption"] == "Your outlook for September 2026"
     assert first["summary"]["received"]["currency"] == "SGD"
     [reply] = events[-1][1]
-    assert [v["kind"] for v in reply["views"]] == ["finance.month_outlook", "finance.budgets"]
+    assert [v["kind"] for v in reply["views"]] == ["finance.month_outlook", "finance.spending"]
     lines = (await owner.get("/api/chat/history")).json()["lines"]
     assert lines[0]["views"] == []
     assert lines[1]["views"] == [
         {"kind": "finance.month_outlook", "params": {"month": "2026-09"}, "focus": False},
-        {"kind": "finance.budgets", "params": {"month": "2026-09"}, "focus": True},
+        {"kind": "finance.spending", "params": {"month": "2026-09"}, "focus": True},
     ]
     assert "summary" not in json.dumps(lines[1]["views"])  # never figures
 

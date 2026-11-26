@@ -86,6 +86,42 @@ async def test_a_tool_that_answered_opens_its_view_even_when_prime_forgets(
     assert shown(reply) == [("health.workout", True)]
 
 
+async def test_the_safety_net_drops_the_outlook_when_the_budgets_are_there_too(
+    uow: UowFactory, alice: UserId
+) -> None:
+    both = scripted(call("month_outlook"), call("list_budgets"), say("Fine."))
+    assert shown(await turn(uow, alice, both)) == [("finance.budgets", True)]
+    # but a view Prime chose with present stays
+    chosen = scripted(
+        call("month_outlook"),
+        call("present", view="finance.budgets", params=SEP, focus=False),
+        say("Fine."),
+    )
+    kinds = shown(await turn(uow, alice, chosen))
+    assert [k for k, _ in kinds] == ["finance.budgets"] and kinds[0][1] is True
+    explicit = scripted(
+        call("present", view="finance.month_outlook", params=SEP),
+        call("list_budgets"),
+        say("Fine."),
+    )
+    assert [k for k, _ in shown(await turn(uow, alice, explicit))] == [
+        "finance.month_outlook",
+        "finance.budgets",
+    ]
+
+
+async def test_an_adjusted_month_outlook_is_opened_with_its_adjustments(
+    uow: UowFactory, alice: UserId
+) -> None:
+    sofa = [{"amount": "-2000", "label": "the sofa"}]
+    reply = await turn(
+        uow, alice, scripted(call("month_outlook", month="2026-10", adjustments=sofa), say("."))
+    )
+    [view] = reply.views
+    assert view.params == {"month": "2026-10", "adjustments": sofa}
+    assert view.caption == "Your outlook for October 2026, with 2,000 for the sofa"
+
+
 async def test_a_tool_that_failed_or_opens_nothing_shows_nothing(
     uow: UowFactory, alice: UserId
 ) -> None:

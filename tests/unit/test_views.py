@@ -134,7 +134,10 @@ def test_the_show_tool_offers_exactly_the_views_view_links_has() -> None:
 
 def test_params_are_checked_against_the_spec() -> None:
     month = CATALOG[ViewKind.MONTH_OUTLOOK]
-    assert month.validate({"month": "2026-11"}).model_dump() == {"month": "2026-11"}
+    assert month.validate({"month": "2026-11"}).model_dump() == {
+        "month": "2026-11",
+        "adjustments": (),
+    }
     for bad in ({"month": "2026-13"}, {"month": "November"}, {}):
         with pytest.raises(ValidationError):
             month.validate(bad)
@@ -393,18 +396,18 @@ def test_a_turn_dedupes_by_view_id_caps_at_three_and_keeps_one_focus() -> None:
     turn = TurnViews()
     assert turn.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-09"))
     assert turn.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-08"))  # same id: updated in place
-    assert turn.add(_ref(ViewKind.BUDGETS, month="2026-08"))
+    assert turn.add(_ref(ViewKind.SPENDING, month="2026-08"))
     assert turn.add(_ref(ViewKind.PORTFOLIO))
     assert not turn.add(_ref(ViewKind.TODAY))  # a fourth is refused
     assert turn.add(_ref(ViewKind.PORTFOLIO))  # one already in is never refused
     final = turn.final()
     assert [(v.kind, v.focus) for v in final] == [
         (ViewKind.MONTH_OUTLOOK, True),
-        (ViewKind.BUDGETS, False),
+        (ViewKind.SPENDING, False),
         (ViewKind.PORTFOLIO, False),
     ]
     assert final[0].params == {"month": "2026-08"}
-    turn.add(_ref(ViewKind.BUDGETS, focus=True, month="2026-08"), presented=True)
+    turn.add(_ref(ViewKind.SPENDING, focus=True, month="2026-08"), presented=True)
     assert [v.focus for v in turn.final()] == [False, True, False]
 
 
@@ -423,3 +426,67 @@ def test_a_reply_with_views_gets_one_open_in_nexus_button_for_the_focus_view() -
     )
     assert open_in_nexus(views, None) is None
     assert open_in_nexus([], "https://nexus.test") is None
+
+
+# --- supersede rules and adjusted outlooks -------------------------------------------------
+
+
+def test_the_safety_net_drops_a_view_another_one_in_the_turn_supersedes() -> None:
+    from nexus.agent.progress import TurnViews
+
+    turn = TurnViews()
+    turn.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-09"))
+    turn.add(_ref(ViewKind.BUDGETS, month="2026-09"))
+    assert [v.kind for v in turn.final()] == [ViewKind.BUDGETS]  # budgets supersede the outlook
+    assert turn.final()[0].focus is True
+
+    day = TurnViews()
+    day.add(_ref(ViewKind.WORKOUT))
+    day.add(_ref(ViewKind.TODAY))
+    assert [v.kind for v in day.final()] == [ViewKind.TODAY]
+
+    alone = TurnViews()  # nothing supersedes it here
+    alone.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-09"))
+    assert [v.kind for v in alone.final()] == [ViewKind.MONTH_OUTLOOK]
+
+
+def test_a_view_prime_chose_with_present_is_never_dropped() -> None:
+    from nexus.agent.progress import TurnViews
+
+    turn = TurnViews()
+    turn.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-09"), presented=True)
+    turn.add(_ref(ViewKind.BUDGETS, month="2026-09"))
+    assert [v.kind for v in turn.final()] == [ViewKind.MONTH_OUTLOOK, ViewKind.BUDGETS]
+    later = TurnViews()  # presented after the net opened it: now explicit
+    later.add(_ref(ViewKind.WORKOUT))
+    later.add(_ref(ViewKind.TODAY))
+    later.add(_ref(ViewKind.WORKOUT), presented=True)
+    assert {v.kind for v in later.final()} == {ViewKind.TODAY, ViewKind.WORKOUT}
+
+
+def test_the_catalog_declares_what_supersedes_what() -> None:
+    declared = {k: s.supersedes for k, s in CATALOG.items() if s.supersedes}
+    assert declared == {
+        ViewKind.BUDGETS: (ViewKind.MONTH_OUTLOOK,),
+        ViewKind.TODAY: (ViewKind.WORKOUT,),
+    }
+
+
+def test_an_adjusted_outlook_says_so_in_its_caption_and_checks_its_adjustments() -> None:
+    spec = CATALOG[ViewKind.MONTH_OUTLOOK]
+    plain = spec.validate({"month": "2027-03"})
+    assert spec.caption(plain) == "Your outlook for March 2027"
+    adjusted = spec.validate(
+        {"month": "2027-03", "adjustments": [{"amount": "-2000", "label": "the sofa"}]}
+    )
+    assert spec.caption(adjusted) == "Your outlook for March 2027, with 2,000 for the sofa"
+    carried = spec.validate({"month": "2027-03", "adjustments": '[{"amount": "+4,000.50"}]'})
+    assert spec.caption(carried) == "Your outlook for March 2027, with +4,000.50"
+    for bad in (
+        {"month": "2027-03", "adjustments": [{"amount": ""}]},
+        {"month": "2027-03", "adjustments": [{"amount": "1", "user_id": "x"}]},
+        {"month": "2027-03", "adjustments": "not json"},
+        {"month": "2027-03", "adjustments": [{"amount": "1"}] * 21},
+    ):
+        with pytest.raises(ValidationError):
+            spec.validate(bad)

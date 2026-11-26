@@ -26,9 +26,11 @@ from nexus.agent.tools.fx import rates
 from nexus.agent.tools.helpers import parse_day
 from nexus.agent.views import (
     CATALOG,
+    Adjustment,
     DayFacts,
     DayParams,
     MonthParams,
+    OutlookParams,
     RecordsParams,
     SpendingParams,
     TripBudgetParams,
@@ -132,7 +134,12 @@ async def fetch(ctx: ToolContext, kind: ViewKind, p: Any) -> Any:
     match kind:
         case ViewKind.MONTH_OUTLOOK:
             return await outlook_cases.month_outlook(
-                ctx.uow, rates(ctx), ctx.user, now=ctx.now, month=p.month
+                ctx.uow,
+                rates(ctx),
+                ctx.user,
+                now=ctx.now,
+                month=p.month,
+                adjustments=[(a.amount, a.label) for a in p.adjustments],
             )
         case ViewKind.BUDGETS:
             return await budget_cases.budget_statuses(
@@ -170,10 +177,13 @@ async def build(ctx: ToolContext, kind: ViewKind, params: ViewParams, *, focus: 
     if kind in HEALTH_VIEWS and await gym_cases.consent(ctx.uow(), ctx.user.id) is None:
         raise ConsentRequired(HEALTH_OFF)
     result = await fetch(ctx, kind, params)
+    dumped = params.model_dump(mode="json", exclude_none=True)
+    if not dumped.get("adjustments"):
+        dumped.pop("adjustments", None)  # none given: the params are just the month
     return ViewRef(
         kind=kind,
         view_id=spec.view_id(params),
-        params=params.model_dump(mode="json", exclude_none=True),
+        params=dumped,
         focus=focus,
         caption=spec.caption(params),
         summary=spec.summary(result),
@@ -264,7 +274,13 @@ async def _params_for(
     """The params the tool's answer opens its view with, read from what the user asked."""
     match kind:
         case ViewKind.MONTH_OUTLOOK:
-            return MonthParams(month=_month_from(ctx, args.get("month")))
+            return OutlookParams(
+                month=_month_from(ctx, args.get("month")),
+                adjustments=tuple(
+                    Adjustment(amount=str(a["amount"]), label=str(a.get("label", "")))
+                    for a in args.get("adjustments") or []
+                ),
+            )
         case ViewKind.BUDGETS:
             return MonthParams(month=_this_month(ctx))
         case ViewKind.SPENDING:

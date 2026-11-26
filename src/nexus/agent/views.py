@@ -14,6 +14,7 @@ are wellness only: a summary says what the numbers are and which way a trend wen
 what they mean.
 """
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -21,7 +22,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from nexus.application.budgets import BudgetStatus
 from nexus.application.energy import WeightOverview
@@ -43,6 +44,9 @@ SUMMARY_ROWS = 5
 
 # At most this many views a turn, and at most one of them the focus (ADR 0005).
 MAX_PER_TURN = 3
+
+# How many adjustments a month outlook takes (the same limit as the tool).
+MAX_ADJUSTMENTS = 20
 
 # What the prompt says about presenting a view: shown only when views are switched on.
 PRESENT_RULE = (
@@ -134,6 +138,29 @@ Month = Annotated[str, Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$", description="YY
 
 class MonthParams(ViewParams):
     month: Month
+
+
+class Adjustment(ViewParams):
+    """An amount the user mentioned that isn't in their data yet, as ``month_outlook`` takes
+    it: signed, in the home currency, as text ("-2000", "+2,308.42")."""
+
+    amount: Annotated[str, Field(min_length=1, max_length=40)]
+    label: Annotated[str, Field(max_length=80)] = ""
+
+
+class OutlookParams(MonthParams):
+    adjustments: tuple[Adjustment, ...] = Field((), max_length=MAX_ADJUSTMENTS)
+
+    @field_validator("adjustments", mode="before")
+    @classmethod
+    def _from_text(cls, value: Any) -> Any:
+        """Over the web the list arrives as a JSON string (a query parameter)."""
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError as exc:
+                raise ValueError("adjustments must be a JSON list") from exc
+        return value
 
 
 class SpendingParams(ViewParams):
@@ -319,6 +346,26 @@ def month_label(month: str) -> str:
     return f"{date.fromisoformat(month + '-01'):%B %Y}"
 
 
+def _adjusted(a: Adjustment) -> str:
+    """ "2,000 for the sofa" for a purchase (negative), "+4,000 carry-over" for money."""
+    text = a.amount.strip().replace(",", "")
+    try:
+        value = Decimal(text)
+    except ArithmeticError:  # a written sum like "4000 + 798": shown as typed
+        return f"{a.amount.strip()} {a.label}".strip()
+    shown = f"{abs(value):,}"
+    if value < 0:
+        return f"{shown} for {a.label}" if a.label else shown
+    return f"+{shown} {a.label}".strip()
+
+
+def _outlook_caption(p: OutlookParams) -> str:
+    base = f"Your outlook for {month_label(p.month)}"
+    return base + (", with " + " and ".join(_adjusted(a) for a in p.adjustments)) * bool(
+        p.adjustments
+    )
+
+
 def _day_label(day: date | None) -> str:
     return "" if day is None else f", {day.day} {day:%b}"
 
@@ -351,6 +398,9 @@ class ViewSpec:
     status: ViewStatus
     tools: tuple[str, ...] = ()
     show: ShowText | None = None
+    # Views this one makes redundant: when both come from the safety net in one turn, the
+    # superseded one is dropped (a view Prime chose with ``present`` never is).
+    supersedes: tuple[ViewKind, ...] = ()
     key: Callable[[Any], str] = field(default=lambda _: "")
     version: int = VERSION
 
@@ -371,9 +421,9 @@ _SPECS: tuple[ViewSpec, ...] = (
         ViewKind.MONTH_OUTLOOK,
         "The month at a glance: money in and out so far, the bills and pay still to come, "
         "and what should be left at the end. Use it for how a month is going.",
-        MonthParams,
+        OutlookParams,
         "/accounting",
-        lambda p: f"Your outlook for {month_label(p.month)}",
+        _outlook_caption,
         _outlook_summary,
         ViewStatus.LIVE,
         ("month_outlook",),
@@ -390,6 +440,7 @@ _SPECS: tuple[ViewSpec, ...] = (
         ViewStatus.LIVE,
         ("list_budgets",),
         ShowText("Here are your budgets.", "Open budgets", "Finance, under Budgets"),
+        supersedes=(ViewKind.MONTH_OUTLOOK,),
     ),
     ViewSpec(
         ViewKind.SPENDING,
@@ -468,6 +519,7 @@ _SPECS: tuple[ViewSpec, ...] = (
         ViewStatus.LIVE,
         ("food_today", "log_food", "log_photo_meal"),
         ShowText("Here's your day.", "Open Today", "Health, under Today"),
+        supersedes=(ViewKind.WORKOUT,),  # the day already carries the workout
     ),
     ViewSpec(
         ViewKind.WEIGHT_TREND,

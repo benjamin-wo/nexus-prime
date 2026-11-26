@@ -23,7 +23,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
-from nexus.agent.views import MAX_PER_TURN, ViewRef
+from nexus.agent.views import CATALOG, MAX_PER_TURN, ViewRef
 
 log = logging.getLogger(__name__)
 
@@ -169,6 +169,7 @@ class TurnViews:
 
     refs: dict[str, ViewRef] = field(default_factory=dict)
     chosen: str | None = None  # the view id of the latest present with focus true
+    explicit: set[str] = field(default_factory=set)  # view ids Prime chose with present
 
     def add(self, ref: ViewRef, *, presented: bool = False) -> bool:
         """Note a view; False when the turn is full (a view already in is updated, never
@@ -176,16 +177,25 @@ class TurnViews:
         if ref.view_id not in self.refs and len(self.refs) >= MAX_PER_TURN:
             return False
         self.refs[ref.view_id] = ref
+        if presented:
+            self.explicit.add(ref.view_id)
         if presented and ref.focus:
             self.chosen = ref.view_id
         return True
 
     def final(self) -> list[ViewRef]:
-        """The turn's views with exactly one in focus."""
-        if not self.refs:
+        """The turn's views with exactly one in focus. A view only the safety net opened is
+        dropped when another view in the turn supersedes it (the catalog says which)."""
+        kept = {
+            i: r
+            for i, r in self.refs.items()
+            if i in self.explicit
+            or not any(r.kind in CATALOG[o.kind].supersedes for o in self.refs.values())
+        }
+        if not kept:
             return []
-        focus = self.chosen if self.chosen in self.refs else next(iter(self.refs))
-        return [replace(r, focus=r.view_id == focus) for r in self.refs.values()]
+        focus = self.chosen if self.chosen in kept else next(iter(kept))
+        return [replace(r, focus=r.view_id == focus) for r in kept.values()]
 
 
 _sink: ContextVar[StepSink | None] = ContextVar("turn_step_sink", default=None)
