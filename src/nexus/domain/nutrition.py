@@ -444,10 +444,24 @@ def _rank(name: str, query: str, tokens: Sequence[str]) -> int | None:
     return None
 
 
+# Foods for babies are left out of search unless the words ask for them: "chicken rice" must
+# never become "Babyfood, dinner, chicken and rice".
+BABY_WORDS = ("babyfood", "infant")
+ASKS_FOR_BABY = ("baby", "babyfood", "infant", "toddler")
+
+
+def strong_match(food: Food, text: str) -> bool:
+    """Whether ``text`` names this food outright: its name or one of its everyday names,
+    word for word. A weaker match (a prefix, some shared words) is only a guess."""
+    query = " ".join(words(text))
+    return any(" ".join(words(c)) == query for c in (food.name, *food.aliases))
+
+
 def search(foods: Iterable[Food], text: str, *, limit: int = 50) -> list[Food]:
     """Foods whose name or alias matches ``text``, best first: exact, then prefix, then
     word starts, then contained. Among equals, a name with the state the query asks for
-    ("raw" or "cooked") comes first, then the shorter name."""
+    ("raw" or "cooked") comes first, then the shorter name. Foods for babies are left out
+    unless the query asks for them."""
     if not 1 <= limit <= MAX_RESULTS:
         raise InvalidInput(f"limit must be between 1 and {MAX_RESULTS}")
     tokens = words(text)
@@ -455,8 +469,11 @@ def search(foods: Iterable[Food], text: str, *, limit: int = 50) -> list[Food]:
         raise InvalidInput("say what to look for")
     query = " ".join(tokens)
     wanted = [s for s in STATES if s in tokens]
+    for_baby = any(t in ASKS_FOR_BABY for t in tokens)
     ranked: list[tuple[int, int, int, str, str, Food]] = []
     for food in foods:
+        if not for_baby and any(b in words(food.name) for b in BABY_WORDS):
+            continue
         best: int | None = None
         for candidate in (food.name, *food.aliases):
             rank = _rank(" ".join(words(candidate)), query, tokens)
