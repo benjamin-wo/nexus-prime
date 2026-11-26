@@ -183,6 +183,7 @@ class PreferencesIn(Model):
     track_cards: bool | None = None
     show_invest: bool | None = None
     show_travel: bool | None = None
+    show_health: bool | None = None
 
     @model_validator(mode="after")
     def _only_what_is_sent(self) -> Self:
@@ -198,15 +199,17 @@ async def set_preferences(body: PreferencesIn, auth: Auth, web: Runtime) -> Pref
     """Change the preferences sent (only those). ``track_cards``: whether to keep track of
     which card paid; off, the usual card isn't applied to new expenses, emails and imports
     don't name a card, and the assistant doesn't ask; what is stored stays, and turning it on
-    again brings it back. ``show_invest`` and ``show_travel``: whether Invest and Travel show
-    in the menu (the pages and chat work either way); setting one, either way, is the user's
-    choice, so a false is never turned on by itself. Allowed for a demo. Returns them all."""
+    again brings it back. ``show_invest``, ``show_travel`` and ``show_health``: whether
+    Invest, Travel and Health show in the menu (the pages and chat work either way); setting
+    one, either way, is the user's choice, so a false is never turned on by itself.
+    Allowed for a demo. Returns them all."""
     user = await user_cases.set_preferences(
         web.uow(),
         auth.user.id,
         track_cards=body.track_cards,
         show_invest=body.show_invest,
         show_travel=body.show_travel,
+        show_health=body.show_health,
     )
     return preferences_out(user)
 

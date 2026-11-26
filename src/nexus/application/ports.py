@@ -28,6 +28,7 @@ from nexus.domain.email import (
     Screening,
 )
 from nexus.domain.gym import Equipment, Exercise, Level, Muscle
+from nexus.domain.gym_training import Routine, SetEntry, TrainingPlan, Workout
 from nexus.domain.identity import Identity, Provider
 from nexus.domain.investments import (
     Dividend,
@@ -181,7 +182,12 @@ class LedgerRepository(Protocol):
         ...
 
     async def set_menu(
-        self, user_id: UserId, *, invest: bool | None = None, travel: bool | None = None
+        self,
+        user_id: UserId,
+        *,
+        invest: bool | None = None,
+        travel: bool | None = None,
+        health: bool | None = None,
     ) -> None:
         """The user's own choice of which sections show in the menu; a section left None is
         not changed. A False sticks: nothing turns it on by itself afterwards."""
@@ -991,7 +997,7 @@ class TripRepository(Protocol):
 
 
 class GymRepository(Protocol):
-    """The exercise catalogue: shared by every user."""
+    """Gym: the exercise catalogue (shared by every user) and one user's training data."""
 
     async def get_exercise(self, exercise_id: str) -> Exercise | None: ...
     async def find_exercises(
@@ -1007,6 +1013,89 @@ class GymRepository(Protocol):
 
     async def upsert_exercises(self, catalogue: list[Exercise]) -> int:
         """Insert new and update changed exercises, never delete; returns rows written."""
+        ...
+
+    async def get_exercises(self, ids: Sequence[str]) -> dict[str, Exercise]: ...
+
+    # Everything below is one user's: every query filters on ``user_id``.
+
+    async def health_consent(self, user_id: UserId) -> datetime | None:
+        """When they agreed to Nexus keeping their health data; None if not (or withdrawn)."""
+        ...
+
+    async def set_health_consent(self, user_id: UserId, at: datetime | None) -> None: ...
+    async def add_routine(self, routine: Routine) -> None: ...
+    async def update_routine(self, routine: Routine) -> bool: ...
+    async def get_routine(self, user_id: UserId, routine_id: UUID) -> Routine | None: ...
+    async def list_routines(self, user_id: UserId) -> list[Routine]: ...
+    async def routine_ids(self, user_id: UserId, ids: Sequence[UUID]) -> set[UUID]:
+        """Which of ``ids`` are this user's routines."""
+        ...
+
+    async def delete_routine(self, user_id: UserId, routine_id: UUID) -> bool:
+        """Workouts that followed it stay, with no routine."""
+        ...
+
+    async def get_plan(self, user_id: UserId) -> TrainingPlan | None: ...
+    async def save_plan(self, plan: TrainingPlan, at: datetime) -> None:
+        """Insert or replace the user's one plan."""
+        ...
+
+    async def add_workout(self, workout: Workout) -> None: ...
+    async def get_workout(self, user_id: UserId, workout_id: UUID) -> Workout | None: ...
+    async def update_workout(self, workout: Workout) -> bool:
+        """Change its end and note."""
+        ...
+
+    async def delete_workout(self, user_id: UserId, workout_id: UUID) -> bool:
+        """Its sets go with it."""
+        ...
+
+    async def open_workout(self, user_id: UserId) -> Workout | None:
+        """The newest workout not yet finished."""
+        ...
+
+    async def last_routine_workout(self, user_id: UserId) -> Workout | None:
+        """The newest workout that followed a routine."""
+        ...
+
+    async def list_workouts(
+        self, user_id: UserId, *, start: datetime | None = None, end: datetime | None = None
+    ) -> list[Workout]:
+        """Those that started in ``[start, end)``, newest first."""
+        ...
+
+    async def add_set(self, user_id: UserId, entry: SetEntry) -> None: ...
+    async def get_set(self, user_id: UserId, set_id: UUID) -> SetEntry | None: ...
+    async def update_set(self, user_id: UserId, entry: SetEntry) -> bool:
+        """Change everything but its id, workout and position."""
+        ...
+
+    async def delete_set(self, user_id: UserId, set_id: UUID) -> bool: ...
+    async def sets_of_workouts(
+        self, user_id: UserId, workout_ids: Sequence[UUID]
+    ) -> dict[UUID, list[SetEntry]]:
+        """Each workout's sets in the order logged (an empty list for one with none)."""
+        ...
+
+    async def next_position(self, user_id: UserId, workout_id: UUID) -> int: ...
+    async def last_set(self, user_id: UserId, workout_id: UUID) -> SetEntry | None:
+        """The set with the highest position."""
+        ...
+
+    async def sets_of_exercises(
+        self,
+        user_id: UserId,
+        exercise_ids: Sequence[str],
+        *,
+        before: datetime | None = None,
+        exclude_workout: UUID | None = None,
+    ) -> list[SetEntry]:
+        """Oldest first; ``before`` keeps those done earlier than it."""
+        ...
+
+    async def sets_between(self, user_id: UserId, start: datetime, end: datetime) -> list[SetEntry]:
+        """Sets done in ``[start, end)``, oldest first."""
         ...
 
 

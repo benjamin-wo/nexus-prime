@@ -258,15 +258,19 @@ class DemoInfoOut(Model):
 class PreferencesOut(Model):
     # Whether the user keeps track of which card paid (off: simple mode).
     track_cards: bool
-    # Whether Invest and Travel show in the menu. Null: not decided (hidden; it turns on by
+    # Whether Invest, Travel and Health show in the menu. Null: not decided (hidden; it turns on by
     # itself the first time they use it in chat). False: they turned it off.
     show_invest: bool | None
     show_travel: bool | None
+    show_health: bool | None
 
 
 def preferences_out(user: User) -> PreferencesOut:
     return PreferencesOut(
-        track_cards=user.track_cards, show_invest=user.show_invest, show_travel=user.show_travel
+        track_cards=user.track_cards,
+        show_invest=user.show_invest,
+        show_travel=user.show_travel,
+        show_health=user.show_health,
     )
 
 

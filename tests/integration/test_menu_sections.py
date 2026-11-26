@@ -67,24 +67,44 @@ async def test_me_shows_the_menu_choices_and_a_partial_put_changes_only_what_is_
 ) -> None:
     owner = world.browser()
     await owner.login(OWNER)
-    start = {"track_cards": False, "show_invest": None, "show_travel": None}
+    start = {"track_cards": False, "show_invest": None, "show_travel": None, "show_health": None}
     assert (await owner.get("/api/me")).json()["preferences"] == start
 
     on = await owner.send("PUT", "/api/settings/preferences", {"show_invest": True})
     assert on.status_code == 200
-    assert on.json() == {"track_cards": False, "show_invest": True, "show_travel": None}
+    assert on.json() == {
+        "track_cards": False,
+        "show_invest": True,
+        "show_travel": None,
+        "show_health": None,
+    }
 
     both = await owner.send(
         "PUT", "/api/settings/preferences", {"show_travel": False, "track_cards": True}
     )
-    assert both.json() == {"track_cards": True, "show_invest": True, "show_travel": False}
+    assert both.json() == {
+        "track_cards": True,
+        "show_invest": True,
+        "show_travel": False,
+        "show_health": None,
+    }
     assert (await owner.get("/api/me")).json()["preferences"] == both.json()
 
     # The card switch alone leaves the menu as it was, and the other way round.
     cards_off = await owner.send("PUT", "/api/settings/preferences", {"track_cards": False})
-    assert cards_off.json() == {"track_cards": False, "show_invest": True, "show_travel": False}
+    assert cards_off.json() == {
+        "track_cards": False,
+        "show_invest": True,
+        "show_travel": False,
+        "show_health": None,
+    }
     off = await owner.send("PUT", "/api/settings/preferences", {"show_invest": False})
-    assert off.json() == {"track_cards": False, "show_invest": False, "show_travel": False}
+    assert off.json() == {
+        "track_cards": False,
+        "show_invest": False,
+        "show_travel": False,
+        "show_health": None,
+    }
 
 
 async def test_the_menu_choices_are_strict(world: World) -> None:
@@ -93,7 +113,7 @@ async def test_the_menu_choices_are_strict(world: World) -> None:
     bad: tuple[dict[str, object], ...] = (
         {},
         {"show_invest": "maybe"},
-        {"show_travel": None},
+        {"show_travel": None, "show_health": None},
         {"show_invest": True, "x": 1},
     )
     for body in bad:
@@ -103,6 +123,7 @@ async def test_the_menu_choices_are_strict(world: World) -> None:
         "track_cards": False,
         "show_invest": None,
         "show_travel": None,
+        "show_health": None,
     }
 
 

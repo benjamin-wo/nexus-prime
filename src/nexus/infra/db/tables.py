@@ -107,6 +107,10 @@ users = Table(
     # until first used in chat. True: shown. False: switched off, never turned on by itself.
     Column("show_invest", Boolean),
     Column("show_travel", Boolean),
+    # Health (migration 0075): the same, and when they agreed to Nexus keeping their health
+    # data (null: not agreed, or withdrawn).
+    Column("show_health", Boolean),
+    Column("health_consent_at", TZ),
     # Their address, lower-case, when they signed up with email (migration 0073); else null.
     Column("email", Text),
     ForeignKeyConstraint(
@@ -1619,6 +1623,94 @@ exercises = Table(
     Column("secondary_muscles", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     Column("instructions", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     Column("images", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+)
+
+# Health -> Gym (migration 0075). A routine's slots are JSONB: they are only ever read and
+# written with it. The plan names routines by id inside its JSONB, so deleting a routine
+# takes it out of the plan in the same transaction (``application.gym``).
+routines = Table(
+    "routines",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("name", Text, nullable=False),
+    Column("slots", JSONB, nullable=False),
+    Column("created_at", TZ, nullable=False),
+    Column("updated_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("jsonb_typeof(slots) = 'array'", name="slots_array"),
+    Index("ix_routines_user_id_created_at", "user_id", "created_at"),
+)
+
+# One per user: weekly maps a weekday ("0" is Monday) to a routine id, rotation is a list.
+training_plans = Table(
+    "training_plans",
+    metadata,
+    _user_fk(),
+    Column("kind", Text, nullable=False),
+    Column("weekly", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("rotation", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("updated_at", TZ, nullable=False),
+    PrimaryKeyConstraint("user_id"),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    CheckConstraint("kind IN ('weekly', 'rotation')", name="kind"),
+)
+
+workouts = Table(
+    "workouts",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("routine_id", UUID(as_uuid=True)),
+    Column("started_at", TZ, nullable=False),
+    Column("finished_at", TZ),
+    Column("note", Text),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(
+        ["routine_id", "user_id"],
+        ["routines.id", "routines.user_id"],
+        ondelete="SET NULL (routine_id)",
+    ),
+    UniqueConstraint("id", "user_id"),
+    CheckConstraint("finished_at IS NULL OR finished_at >= started_at", name="finish_after_start"),
+    Index("ix_workouts_user_id_started_at", "user_id", "started_at"),
+)
+
+# A weight is stored with its unit, to two places; ``rpe`` is 1 to 10 in steps of 0.5.
+workout_sets = Table(
+    "workout_sets",
+    metadata,
+    _uuid_pk(),
+    _user_fk(),
+    Column("workout_id", UUID(as_uuid=True), nullable=False),
+    Column("exercise_id", Text, nullable=False),
+    Column("position", Integer, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("reps", Integer),
+    Column("weight", Numeric(7, 2)),
+    Column("unit", Text, nullable=False),
+    Column("seconds", Integer),
+    Column("rpe", Numeric(3, 1)),
+    Column("done_at", TZ, nullable=False),
+    ForeignKeyConstraint(["user_id"], ["users.id"]),
+    ForeignKeyConstraint(
+        ["workout_id", "user_id"],
+        ["workouts.id", "workouts.user_id"],
+        ondelete="CASCADE",
+    ),
+    ForeignKeyConstraint(["exercise_id"], ["exercises.id"]),
+    CheckConstraint("kind IN ('warmup', 'working')", name="kind"),
+    CheckConstraint("unit IN ('kg', 'lb')", name="unit"),
+    CheckConstraint("reps IS NOT NULL OR seconds IS NOT NULL", name="reps_or_seconds"),
+    CheckConstraint("reps IS NULL OR reps > 0", name="reps_positive"),
+    CheckConstraint("seconds IS NULL OR seconds > 0", name="seconds_positive"),
+    CheckConstraint("weight IS NULL OR weight >= 0", name="weight_not_negative"),
+    CheckConstraint(
+        "rpe IS NULL OR (rpe BETWEEN 1 AND 10 AND rpe * 2 = round(rpe * 2))", name="rpe"
+    ),
+    Index("ix_workout_sets_user_id_exercise_id_done_at", "user_id", "exercise_id", "done_at"),
+    Index("ix_workout_sets_workout_id_position", "workout_id", "position"),
 )
 
 

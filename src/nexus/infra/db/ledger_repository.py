@@ -123,6 +123,8 @@ def _user(row: Row[Any]) -> User:
         card_tracking_asked=row.card_tracking_asked,
         show_invest=row.show_invest,
         show_travel=row.show_travel,
+        show_health=row.show_health,
+        health_consent_at=row.health_consent_at,
         email=row.email,
     )
 
@@ -432,18 +434,31 @@ class SqlLedgerRepository:
         await self._db.execute(update(users).where(users.c.id == user_id).values(track_cards=on))
 
     async def set_menu(
-        self, user_id: UserId, *, invest: bool | None = None, travel: bool | None = None
+        self,
+        user_id: UserId,
+        *,
+        invest: bool | None = None,
+        travel: bool | None = None,
+        health: bool | None = None,
     ) -> None:
         values = {
             name: on
-            for name, on in (("show_invest", invest), ("show_travel", travel))
+            for name, on in (
+                ("show_invest", invest),
+                ("show_travel", travel),
+                ("show_health", health),
+            )
             if on is not None
         }
         if values:
             await self._db.execute(update(users).where(users.c.id == user_id).values(**values))
 
     async def turn_on_menu(self, user_id: UserId, section: MenuSection) -> bool:
-        column = users.c.show_invest if section is MenuSection.INVEST else users.c.show_travel
+        column = {
+            MenuSection.INVEST: users.c.show_invest,
+            MenuSection.TRAVEL: users.c.show_travel,
+            MenuSection.HEALTH: users.c.show_health,
+        }[section]
         row = await self._db.execute(
             update(users)
             .where(users.c.id == user_id, column.is_(None))

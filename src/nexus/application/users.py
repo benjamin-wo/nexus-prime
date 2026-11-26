@@ -123,6 +123,7 @@ async def set_preferences(
     track_cards: bool | None = None,
     show_invest: bool | None = None,
     show_travel: bool | None = None,
+    show_health: bool | None = None,
 ) -> User:
     """Change the preferences sent, and only those (None: leave it). Choosing a menu section
     either way is the user's own say: a False sticks, and nothing turns it on by itself
@@ -131,7 +132,7 @@ async def set_preferences(
         if track_cards is not None:
             await uow.ledger.set_track_cards(actor, track_cards)
             await uow.ledger.set_card_tracking_asked(actor)
-        await uow.ledger.set_menu(actor, invest=show_invest, travel=show_travel)
+        await uow.ledger.set_menu(actor, invest=show_invest, travel=show_travel, health=show_health)
         user = await uow.ledger.get_user(actor)
         await uow.commit()
     if user is None:
@@ -140,7 +141,7 @@ async def set_preferences(
 
 
 async def turn_on_menu(uow: UnitOfWork, actor: UserId, section: MenuSection) -> bool:
-    """Show Invest or Travel in the menu because the user used it in chat, if they have not
+    """Show Invest, Travel or Health in the menu because the user used it in chat, if they have not
     decided: only a null turns on, so a False (their own choice) stays off. True if it turned
     on now, which is when the reply says so (once)."""
     async with uow:

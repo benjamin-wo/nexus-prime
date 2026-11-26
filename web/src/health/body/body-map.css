@@ -1,0 +1,11 @@
+/* The muscle body map (BodyMap.tsx): a figure whose worked muscles are filled with the one accent. Primary is the
+   solid accent, secondary the same accent at lower strength, the rest a neutral wash on the ground. Tokens only,
+   so it follows light and dark with everything else. Colour is never the only cue: the label names the muscles. */
+.body-map { display: inline-flex; align-items: flex-start; justify-content: center; gap: var(--space-3); max-width: 100%; }
+.body-map-fig { display: block; height: 22rem; width: auto; max-width: 100%; }
+.body-map[data-view="both"] .body-map-fig { max-width: calc(50% - var(--space-2)); }
+
+.body-map-off { fill: var(--bg-raised); stroke: var(--border-edge); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.body-map-primary { fill: var(--accent); stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.body-map-secondary { fill: var(--accent); stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.body-map-secondary-layer { opacity: 0.4; }

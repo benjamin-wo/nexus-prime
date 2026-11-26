@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import Response
 from sqlalchemy import ColumnElement, Table, Text, func, insert, or_, select, text, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
 from nexus.agent.graph import thread_id
@@ -339,6 +340,57 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             positions=[],
             status="waiting",
             created_at=now,
+        )
+        # Gym: a routine, a plan, a workout and a set (the exercise is shared, so made once).
+        await db.execute(
+            pg_insert(t["exercises"])
+            .values(
+                id="Made_Up_Press",
+                name="Made Up Press",
+                category="strength",
+                level="beginner",
+                primary_muscles=["chest"],
+            )
+            .on_conflict_do_nothing()
+        )
+        routine, workout = uid(), uid()
+        await add(
+            t["routines"],
+            id=routine,
+            user_id=user,
+            name=f"Push {tag}",
+            slots=[{"exercise_id": "Made_Up_Press", "sets": 3, "reps": 8}],
+            created_at=now,
+            updated_at=now,
+        )
+        await add(
+            t["training_plans"],
+            user_id=user,
+            kind="weekly",
+            weekly={"0": str(routine)},
+            rotation=[],
+            updated_at=now,
+        )
+        await add(
+            t["workouts"],
+            id=workout,
+            user_id=user,
+            routine_id=routine,
+            started_at=now,
+            note=f"felt good {tag}",
+        )
+        await add(
+            t["workout_sets"],
+            id=uid(),
+            user_id=user,
+            workout_id=workout,
+            exercise_id="Made_Up_Press",
+            position=1,
+            kind="working",
+            reps=8,
+            weight=Decimal("60.00"),
+            unit="kg",
+            done_at=now,
         )
         await add(
             t["market_alerts"],

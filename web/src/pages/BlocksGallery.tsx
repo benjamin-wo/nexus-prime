@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Button, ButtonLink, Chip, ChipGroup, Figure, Row, RowList, Section, Tabs } from "../components/ui";
+import { BodyMap } from "../health/body/BodyMap";
 
 /**
  * Every building block in components/ui, in each of its states, with made-up figures: a page to review the look
@@ -154,6 +155,14 @@ export function BlocksGallery() {
             <Figure size="sm" label="A usual month" value="2,140.00" extra="Last six months" />
             <Figure size="sm" label="Saved" value="19%" />
           </div>
+        </div>
+      </Section>
+
+      <Section id="g-bodymap" title="Body map">
+        <div className="stack" style={{ paddingBlock: "var(--space-3)" }}>
+          <p className="caption">Primary is the accent, secondary the same accent lighter. Health, Gym.</p>
+          <BodyMap view="both" size={300} primary={["chest", "quadriceps"]} secondary={["triceps", "shoulders", "glutes", "lats"]} />
+          <BodyMap view="front" size={200} primary={["abdominals"]} secondary={["adductors"]} />
         </div>
       </Section>
     </>
