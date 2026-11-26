@@ -132,6 +132,7 @@ ORDER = (
     "finish_workout",
     "undo_last_set",
     "log_food",
+    "log_photo_meal",
     "food_today",
     "restore_transaction",
     "undo_last_change",

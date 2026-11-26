@@ -10,6 +10,7 @@ this module re-exports what the rest of the code imports.
 
 from nexus.agent.tools.core import ToolContext, ToolResult, ToolSpec, UowFactory
 from nexus.agent.tools.email import AnswerEmailArgs
+from nexus.agent.tools.food import LogFoodArgs
 from nexus.agent.tools.helpers import parse_money
 from nexus.agent.tools.registry import (
     MENU_OF,
@@ -26,6 +27,7 @@ __all__ = [
     "READ_ONLY",
     "AnswerEmailArgs",
     "FlightPricesArgs",
+    "LogFoodArgs",
     "ToolContext",
     "ToolResult",
     "ToolSpec",

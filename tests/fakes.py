@@ -17,6 +17,7 @@ from pydantic import Field
 
 from nexus.agent.holdings_reader import ScreenshotHoldings, ScreenshotPosition
 from nexus.agent.image_look import ImageLook, LookFailed
+from nexus.agent.meal_reader import MealDraft
 from nexus.agent.receipts import ReceiptDraft
 from nexus.agent.service import Button
 from nexus.agent.trip_reader import ShotEntry, ShotLeg, TripShot
@@ -125,6 +126,22 @@ class FakeReceipts:
     ) -> ReceiptDraft:
         self.reads += 1
         self.categories = list(categories)
+        return self.draft
+
+
+@dataclass
+class FakeMeals:
+    """A meal reader that returns ``draft``, and counts the photos it was given."""
+
+    draft: MealDraft
+    reads: int = 0
+    captions: list[str | None] = field(default_factory=list)
+
+    async def read(
+        self, image: bytes, mime_type: str, caption: str | None, *, today: date | None = None
+    ) -> MealDraft:
+        self.reads += 1
+        self.captions.append(caption)
         return self.draft
 
 

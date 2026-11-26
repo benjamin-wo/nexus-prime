@@ -1526,6 +1526,135 @@
       "confirms": true
     },
     {
+      "name": "log_photo_meal",
+      "description": "Log a meal read from a photo. Used by the photo flow only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "log_photo_meal",
+          "description": "Log a meal read from a photo. Used by the photo flow only.",
+          "parameters": {
+            "description": "What the meal-photo flow asks ``log_photo_meal`` to log. Not offered to the model.",
+            "properties": {
+              "foods": {
+                "items": {
+                  "properties": {
+                    "food": {
+                      "description": "The food as the user said it ('chicken rice', 'egg'), or its id from an earlier answer of this tool",
+                      "type": "string"
+                    },
+                    "portion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "A serving the user said ('1 cup', '1 plate', '2 slices')"
+                    },
+                    "grams": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Weight in grams: what the user said, or your estimate (estimated true)"
+                    },
+                    "estimated": {
+                      "default": false,
+                      "description": "True when grams is your guess, not the user's",
+                      "type": "boolean"
+                    },
+                    "cooking": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "fried",
+                            "stir-fried",
+                            "curry/gravy"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Only if the user said how it was cooked"
+                    },
+                    "modifiers": {
+                      "description": "'less rice', 'extra gravy': only what the user said",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "shown": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    }
+                  },
+                  "required": [
+                    "food"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "meal": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "breakfast",
+                      "lunch",
+                      "dinner",
+                      "snack"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "when": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              }
+            },
+            "required": [
+              "foods"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": false,
+      "confirms": true
+    },
+    {
       "name": "food_today",
       "description": "What the user ate on a day (today by default), with totals and what is left of today's targets, as worked out by code. Read-only.",
       "schema": {
@@ -5680,6 +5809,7 @@
     "finish_workout",
     "undo_last_set",
     "log_food",
+    "log_photo_meal",
     "food_today",
     "spending_summary",
     "query_ledger",

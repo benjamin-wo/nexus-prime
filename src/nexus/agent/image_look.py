@@ -38,6 +38,7 @@ class ImageKind(StrEnum):
     PORTFOLIO = "portfolio"  # a broker's holdings screen
     TRAVEL = "travel_booking"  # a booking confirmation, ticket, itinerary or day plan
     CHART = "chart"
+    MEAL = "meal"  # food or drink on a plate, in a bowl or a cup
     OTHER = "other"
 
 
@@ -70,7 +71,8 @@ _PROMPT = (
     "Look at this image a user sent to their AI lifestyle manager. Reply with JSON "
     'only: {"kind": one of receipt (something paid), bill (something still to pay), '
     "transfer (a bank transfer or payment confirmation), payslip, portfolio (a broker's "
-    "holdings), travel_booking (a booking, ticket, itinerary or day plan), chart, other; "
+    "holdings), travel_booking (a booking, ticket, itinerary or day plan), chart, "
+    "meal (a photo of food or drink to eat, not a menu or receipt), other; "
     '"currency": the ISO 4217 code of the prices shown, from symbols, words or the '
     "country (JPY for ¥ or 円, MYR for RM, SGD for S$), or null; "
     '"summary": one plain sentence on what it shows; '
@@ -154,6 +156,7 @@ class Route(StrEnum):
     RECEIPT = "receipt"  # log it as an expense
     PORTFOLIO = "portfolio"  # read holdings
     TRAVEL = "travel"  # put bookings and plans on a trip
+    MEAL = "meal"  # read the food, then ask to log it
     CHAT = "chat"  # the chat agent answers, from the transcription
 
 
@@ -191,10 +194,33 @@ def asks(caption: str | None) -> bool:
     return bool(caption and _QUESTION.search(caption) and not _LOG.search(caption))
 
 
-def route(look: ImageLook | None, caption: str | None) -> Route:
+MEAL_WORDS = re.compile(
+    r"\b(?:breakfast|brunch|lunch|dinner|supper|snack|meal|ate|eaten|eating|food|dessert|"
+    r"my plate|my bowl)\b",
+    re.I,
+)
+MONEY_WORDS = re.compile(
+    r"[$€£¥]|\b(?:sgd|usd|myr|rm|price|prices|receipt|bill|invoice|paid|spent|cost|total)\b"
+    r"|\d+[.,]\d{2}\b",
+    re.I,
+)
+
+
+def meal_caption(caption: str | None) -> bool:
+    """Whether a caption says the photo is a meal: it names one, and talks of no price."""
+    return bool(caption and MEAL_WORDS.search(caption) and not MONEY_WORDS.search(caption))
+
+
+def money_caption(caption: str | None) -> bool:
+    return bool(caption and MONEY_WORDS.search(caption))
+
+
+def route(look: ImageLook | None, caption: str | None, *, meals: bool = True) -> Route:
     """Where an image goes. A caption naming travel or a portfolio wins; a question
-    goes to the chat agent; otherwise the kind decides. Without a look (both models
-    failed), it's read as a receipt, as before."""
+    goes to the chat agent; a caption naming a meal ("my lunch") sends it to the meal
+    reader, unless it talks of a price, receipt or bill (then it is a receipt, as the kind
+    decides); otherwise the kind decides. Without a look (both models failed), it's read as
+    a receipt, as before. ``meals`` False: there is no meal reader, so nothing is a meal."""
     text = caption or ""
     if TRAVEL_WORDS.search(text) and not asks(caption):
         return Route.TRAVEL
@@ -202,8 +228,12 @@ def route(look: ImageLook | None, caption: str | None) -> Route:
         return Route.PORTFOLIO
     if asks(caption):
         return Route.CHAT
+    if meals and meal_caption(caption):
+        return Route.MEAL
     if look is None:
         return Route.RECEIPT
+    if meals and look.kind is ImageKind.MEAL:
+        return Route.RECEIPT if money_caption(caption) else Route.MEAL
     return {
         ImageKind.RECEIPT: Route.RECEIPT,
         ImageKind.PORTFOLIO: Route.PORTFOLIO,

@@ -36,7 +36,7 @@ function Idle({ routine }: { routine: Routine | null }) {
     <>
       <div className="page-head">
         <div>
-          <h1>Health</h1>
+          <h1>Workout</h1>
           <p className="muted">Your workout for today.</p>
         </div>
       </div>
@@ -56,7 +56,7 @@ function Idle({ routine }: { routine: Routine | null }) {
           </>
         ) : (
           <p className="muted">
-            Nothing planned for today. <Link to="/health/routines">Set up your routines</Link> or start without one.
+            Nothing planned for today. <Link to="/health/gym/routines">Set up your routines</Link> or start without one.
           </p>
         )}
         <div className="health-actions">

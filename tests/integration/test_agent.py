@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from nexus.agent.graph import MAX_STEPS, AgentDeps, AgentGraph
 from nexus.agent.holdings_reader import HoldingsReader
 from nexus.agent.image_look import ImageLooker
+from nexus.agent.meal_reader import MealReader
 from nexus.agent.progress import Step
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader
 from nexus.agent.service import AgentService, Reply
@@ -65,6 +66,7 @@ def build(
     receipt_text: ReceiptTextReader | None = None,
     lookup: WebLooker | None = None,
     prices: PriceLooker | None = None,
+    meals: MealReader | None = None,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -101,6 +103,7 @@ def build(
         speech=speech,
         limiter=limiter,
         receipt_text=receipt_text,
+        meals=meals,
     )
 
 

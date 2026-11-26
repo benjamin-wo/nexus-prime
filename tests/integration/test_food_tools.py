@@ -1,12 +1,13 @@
 """Prime's food tools: logging by chat behind a confirm card, and the day's log for the model.
 Every name and figure is made up. Figures in a tool's text come from the application layer."""
 
+import json
 from datetime import timedelta
 from typing import Any
 
 import pytest
 
-from nexus.agent.tools import ToolContext, build_tools, run_tool
+from nexus.agent.tools import LogFoodArgs, ToolContext, build_tools, run_tool
 from nexus.application import gym as gym_cases
 from nexus.application import health as health_cases
 from nexus.application import health_consent as consent_cases
@@ -73,7 +74,7 @@ async def test_a_chat_log_asks_first_then_saves_with_figures_from_the_database(
     model = scripted(call("log_food", foods=[PLATE], meal="lunch"), say("Logged."))
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
-    assert ask.text.startswith("Log lunch: test feast (1 plate, about ") and "kcal" in ask.text
+    assert ask.text.startswith("Log lunch: banquet (1 plate, about ") and "kcal" in ask.text
     assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
     done = only(await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True))
     assert "Logged." in done.text
@@ -86,7 +87,7 @@ async def test_a_chat_log_asks_first_then_saves_with_figures_from_the_database(
 async def test_the_tool_result_reports_what_was_logged(uow: UowFactory, alice: UserId) -> None:
     await agree(uow, alice)
     text, error = await run(uow, alice, "log_food", foods=[PLATE], meal="snack")
-    assert error is None and text.startswith("Logged snack: test feast (1 plate, about ")
+    assert error is None and text.startswith("Logged snack: banquet (1 plate, about ")
     assert text.endswith(".")
 
 
@@ -124,7 +125,37 @@ async def test_numbers_free_mode_has_no_numbers_in_confirm_log_or_day(
     model = scripted(call("log_food", foods=[PLATE], meal="lunch"), say("Logged."))
     agent = build(uow, model)
     ask = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
-    assert ask.text == "Log lunch: test feast (1 plate)?"
+    assert ask.text == "Log lunch: banquet (1 plate)?"
     await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
     text, _ = await run(uow, alice, "food_today")
-    assert "Test Feast (1 plate)" in text and "kcal" not in text and "protein" not in text
+    assert "banquet (1 plate)" in text and "kcal" not in text and "protein" not in text
+
+
+async def test_the_model_cannot_set_the_photo_source(uow: UowFactory, alice: UserId) -> None:
+    await agree(uow, alice)
+    model = scripted(say("ok"))
+    agent = build(uow, model)
+    await agent.handle_text(alice, "hello", "m1")
+    offered = set().union(*model.bound)
+    assert "log_photo_meal" not in offered
+    assert "from_photo" not in json.dumps(LogFoodArgs.model_json_schema())
+    assert build_tools(lambda _: "")["log_photo_meal"].exposed is False
+
+
+async def test_a_logged_meal_keeps_the_users_word_and_the_usda_id(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    foods = [{"food": "rice", "grams": "150"}, {"food": "chicken breast", "grams": "150"}]
+    text, error = await run(uow, alice, "log_food", foods=foods, meal="lunch")
+    assert error is None and text.startswith("Logged lunch: rice (150 g, about ")
+    assert "chicken breast (150 g, about " in text
+    (entry,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    assert [(i.name, i.food_id) for i in entry.items] == [
+        ("rice", "usda:168878"),
+        ("chicken breast", "usda:171477"),
+    ]
+    day, _ = await run(uow, alice, "food_today")
+    assert "rice (150 g)" in day and "chicken breast (150 g)" in day
+    by_id, _ = await run(uow, alice, "log_food", foods=[{"food": "usda:168878", "grams": "100"}])
+    assert "rice, white, long-grain" in by_id  # an id has no words of the user's: the USDA name

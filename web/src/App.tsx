@@ -28,6 +28,10 @@ const ConnectGmail = lazyNamed(() => import("./pages/Connect"), "ConnectGmail");
 const Dashboard = lazyNamed(() => import("./pages/Dashboard"), "Dashboard");
 const CostsPage = lazyNamed(() => import("./pages/Costs"), "CostsPage");
 const EmailPage = lazyNamed(() => import("./pages/Email"), "EmailPage");
+const HealthHome = lazyNamed(() => import("./health/HealthHome"), "HealthHome");
+const HealthFood = lazyNamed(() => import("./health/HealthFood"), "HealthFood");
+const HealthWeight = lazyNamed(() => import("./health/HealthWeight"), "HealthWeight");
+const HealthGym = lazyNamed(() => import("./health/HealthGym"), "HealthGym");
 const HealthToday = lazyNamed(() => import("./health/HealthToday"), "HealthToday");
 const HealthRoutines = lazyNamed(() => import("./health/HealthRoutines"), "HealthRoutines");
 const HealthLibrary = lazyNamed(() => import("./health/HealthLibrary"), "HealthLibrary");
@@ -240,10 +244,19 @@ function Cockpit({ me }: { me: Me }) {
             <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
             <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
             <Route path="/travel/research/:id" element={<ResearchPage />} />
-            <Route path="/health" element={<HealthToday />} />
-            <Route path="/health/routines" element={<HealthRoutines />} />
-            <Route path="/health/library" element={<HealthLibrary />} />
-            <Route path="/health/history" element={<HealthHistory />} />
+            <Route path="/health" element={<HealthHome />} />
+            <Route path="/health/food" element={<HealthFood />} />
+            <Route path="/health/weight" element={<HealthWeight />} />
+            <Route path="/health/gym" element={<HealthGym />}>
+              <Route index element={<HealthToday />} />
+              <Route path="routines" element={<HealthRoutines />} />
+              <Route path="library" element={<HealthLibrary />} />
+              <Route path="history" element={<HealthHistory />} />
+            </Route>
+            {/* Gym's pages used to sit straight under Health. */}
+            <Route path="/health/routines" element={<Navigate to="/health/gym/routines" replace />} />
+            <Route path="/health/library" element={<Navigate to="/health/gym/library" replace />} />
+            <Route path="/health/history" element={<Navigate to="/health/gym/history" replace />} />
             {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
               <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
             ))}

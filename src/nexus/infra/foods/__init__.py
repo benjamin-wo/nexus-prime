@@ -7,6 +7,11 @@ reads them: ``id`` (``<source>:<the source's own id>``), ``source``, ``name``, `
 ``kcal``, ``protein_g``, ``carbs_g``, ``fat_g`` and ``fibre_g`` per 100 g (fibre may be null),
 and ``portions`` (``{label, grams}``).
 
+``aliases.json`` is not a food file: it maps everyday names ("egg", "toast", "kopi o") to ids
+already in the files above, and ``load_foods`` adds each name to that food's ``aliases``. It is
+hand-curated and carries no nutrient value; ``scripts/build_food_aliases.py --check`` validates
+it (the rule for choosing a food is in that script).
+
 SG FoodID (Health Promotion Board, Singapore) is the intended second source, for hawker and
 local dishes, as ``sgfoodid.json`` with ``source`` ``sgfoodid``. Its terms of use (6 Oct 2025,
 https://file.go.gov.sg/termsofuse-hpbsgfoodid.pdf) grant a worldwide, perpetual, royalty-free,
@@ -18,6 +23,7 @@ no nutrient value, hawker dishes included, is ever written by hand.
 """
 
 import json
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -26,6 +32,7 @@ from nexus.domain.errors import InvalidInput
 from nexus.domain.nutrition import Food
 
 FOODS_DIR = Path(__file__).parent
+ALIASES_FILE = "aliases.json"
 
 
 def load_file(path: Path) -> list[Food]:
@@ -33,11 +40,45 @@ def load_file(path: Path) -> list[Food]:
     return [Food.from_dict(entry) for entry in entries]
 
 
+def load_aliases(path: Path) -> dict[str, str]:
+    """Everyday name -> food id, as written in the file."""
+    data: Any = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in data.items()
+    ):
+        raise InvalidInput(f"{path.name} must map names to food ids")
+    return data
+
+
+def with_aliases(foods: list[Food], aliases: dict[str, str]) -> list[Food]:
+    """The foods with each everyday name added to its food's aliases. A name for a food that
+    isn't there is an error: the map must not point at nothing."""
+    by_id = {f.id: f for f in foods}
+    added: dict[str, list[str]] = {}
+    for name, food_id in sorted(aliases.items()):
+        if food_id not in by_id:
+            raise InvalidInput(f"alias {name!r} points at a food that does not exist: {food_id}")
+        added.setdefault(food_id, []).append(name)
+    return [
+        replace(f, aliases=(*f.aliases, *(n for n in added[f.id] if n not in f.aliases)))
+        if f.id in added
+        else f
+        for f in foods
+    ]
+
+
 def load_foods(directory: Path = FOODS_DIR) -> list[Food]:
-    """Every food in every ``*.json`` file in the directory, in file-name order. An id used
-    twice is an error: two sources must not claim the same food."""
-    foods = [food for path in sorted(directory.glob("*.json")) for food in load_file(path)]
+    """Every food in every ``*.json`` file in the directory (but the aliases file), in
+    file-name order, with the everyday-name aliases merged in. An id used twice is an error:
+    two sources must not claim the same food."""
+    foods = [
+        food
+        for path in sorted(directory.glob("*.json"))
+        if path.name != ALIASES_FILE
+        for food in load_file(path)
+    ]
     ids = [f.id for f in foods]
     if len(set(ids)) != len(ids):
         raise InvalidInput("a food id appears in more than one place")
-    return foods
+    aliases = directory / ALIASES_FILE
+    return with_aliases(foods, load_aliases(aliases)) if aliases.exists() else foods
