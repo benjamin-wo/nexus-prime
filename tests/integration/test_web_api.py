@@ -1561,7 +1561,7 @@ async def test_widget_redirect_login(world: World) -> None:
 
 async def test_config_and_security_headers(world: World) -> None:
     response = await world.browser().get("/api/config")
-    assert response.json() == {"bot_username": "nexus_test_bot"}
+    assert response.json() == {"bot_username": "nexus_test_bot", "views_enabled": False}
     csp = response.headers["content-security-policy"]
     assert "default-src 'self'" in csp and "unsafe-eval" not in csp
     # Inline styles only, for Google's trip map; scripts are never inline.

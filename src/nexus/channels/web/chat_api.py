@@ -1,7 +1,7 @@
 """Web API: chat."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -25,12 +25,24 @@ class ChatIn(Model):
     message: str = Field(min_length=1, max_length=2000)
 
 
+class StoredViewOut(Model):
+    """A view kept with a reply: which view, opened with what, and whether it was the focus.
+    Never figures: the card's figures are read fresh (``GET /api/views/{kind}``)."""
+
+    kind: str
+    params: dict[str, Any]
+    focus: bool
+
+
 class ChatLineOut(Model):
     id: int
     role: str  # "user" or "nexus"
     text: str
     channel: str | None
     at: datetime
+    views: list[StoredViewOut] = Field(
+        default_factory=list
+    )  # a Nexus reply's views; empty unless views are on
 
 
 class ChatHistoryOut(Model):
@@ -56,7 +68,12 @@ async def chat_history(
     return ChatHistoryOut(
         lines=[
             ChatLineOut(
-                id=x.id or 0, role=x.role.value, text=x.text, channel=x.channel, at=x.created_at
+                id=x.id or 0,
+                role=x.role.value,
+                text=x.text,
+                channel=x.channel,
+                at=x.created_at,
+                views=[StoredViewOut(**v) for v in x.views or []],
             )
             for x in lines
         ],

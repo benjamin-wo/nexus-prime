@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
@@ -290,6 +291,22 @@ async def test_other_buttons_stay_and_a_pressed_one_cancels_the_expiry(
     assert (OWNER, message_id) in bot.telegram.cleared
     # The one still queued is the first message's; the pressed message's is gone.
     assert [j.dedupe_key for j in await undo_jobs(engine)] == [job.dedupe_key]
+
+
+async def test_a_reply_with_views_gets_one_open_in_nexus_link_button_and_no_card(
+    bot: Bot,
+) -> None:
+    from nexus.agent.views import ViewKind, ViewRef
+
+    seen = ViewRef(ViewKind.BUDGETS, "finance.budgets", {"month": "2026-09"}, True, "Budgets", {})
+    settings = bot.runtime.settings.model_copy(update={"web_origin": "https://nexus.test"})
+    runtime = replace(bot.runtime, settings=settings)  # the same bot, the web origin known
+    await webhook._send(runtime, OWNER, [Reply("Your budgets.", views=(seen,))])
+    sent = bot.telegram.sent[-1]
+    assert sent.text == "Your budgets."  # the text stands alone
+    assert sent.buttons == [[Button("Open in Nexus", "url:https://nexus.test/accounting/budgets")]]
+    await webhook._send(runtime, OWNER, [Reply("Hi.")])
+    assert bot.telegram.sent[-1].buttons is None
 
 
 async def test_typing_is_shown_again_until_the_reply_and_never_stops_it(

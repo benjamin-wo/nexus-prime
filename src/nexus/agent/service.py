@@ -4,7 +4,7 @@ import asyncio
 import functools
 import logging
 import time as clock
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
@@ -18,6 +18,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from nexus.agent import kernel, meal_photo, progress
+from nexus.agent.card_privacy import _hidden, _hidden_caption, _hidden_look
 from nexus.agent.graph import (
     BUTTONS,
     IMAGE,
@@ -45,16 +46,17 @@ from nexus.agent.image_look import (
 )
 from nexus.agent.links import app_link
 from nexus.agent.meal_reader import MealReader
-from nexus.agent.ops_timing import TurnTimer
-from nexus.agent.progress import StepSink
+from nexus.agent.ops_timing import SLOW_TURN_SECONDS, TurnTimer, record_turn
+from nexus.agent.progress import StepSink, ViewSink
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
 from nexus.agent.tools import HEALTH_OFF, UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
+from nexus.agent.views import ViewRef
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
 from nexus.application import coach as coach_cases
-from nexus.application import costs, food_entry, found_cards, health_menu, ops
+from nexus.application import costs, food_entry, found_cards, health_menu
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
 from nexus.application import gym as gym_cases
@@ -90,15 +92,12 @@ from nexus.domain.ledger import Direction, MenuSection, Transaction, UserId
 from nexus.domain.money import Money
 from nexus.domain.phrases import Phrase, phrase
 from nexus.domain.places import quoted
-from nexus.domain.private import hide_card_numbers
 from nexus.domain.source_links import merge as merge_sources
 from nexus.domain.transcript import HEARD_MARK, heard_line, tidy_transcript
 from nexus.infra.llm.factory import text_of
 from nexus.infra.pdf.text import PasswordNeeded, pdf_lines
 
 log = logging.getLogger(__name__)
-# A turn slower than this is logged as a warning, with what it did (never what was said).
-SLOW_TURN_SECONDS = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +120,9 @@ class Picture:
 class Reply:
     text: str
     buttons: list[list[Button]] = field(default_factory=list)
+    # The views the turn put on screen (ADR 0005), on the last reply of the turn; empty
+    # unless views are switched on.
+    views: tuple[ViewRef, ...] = ()
 
 
 UNDO = Button("Undo", "act:undo")
@@ -191,30 +193,6 @@ def in_voice[F: Callable[..., Awaitable[Any]]](method: F) -> F:
     return cast(F, wrapper)
 
 
-def _hidden(text: str) -> tuple[str, bool]:
-    """What the user sent with any card number cut down to its last four, and whether one
-    was. Every way words reach the agent (typed, spoken, a caption, text read from an image
-    or PDF) passes through here before they are shown to a model or kept anywhere."""
-    hidden = hide_card_numbers(text)
-    return hidden, hidden != text
-
-
-def _hidden_caption(caption: str | None) -> tuple[str | None, bool]:
-    if not caption:
-        return caption, False
-    return _hidden(caption)
-
-
-def _hidden_look(look: ImageLook | None) -> ImageLook | None:
-    """The look at an image with any card number in what it read cut down to its last
-    four; the very same look when there is none."""
-    if look is None:
-        return None
-    text, hid_text = _hidden(look.text)
-    summary, hid_summary = _hidden(look.summary)
-    return replace(look, summary=summary, text=text) if hid_text or hid_summary else look
-
-
 def _noted(replies: list[Reply], hid: bool) -> list[Reply]:
     """``replies`` with the card note ending the last one, once, when a card number was
     hidden. The rest of the reply, and its buttons, are as they were."""
@@ -233,6 +211,11 @@ MENU_NOTES = {
     MenuSection.TRAVEL: "I've added Travel to your menu.",
     MenuSection.HEALTH: "I've added Health to your menu.",
 }
+
+
+def _with_views(replies: list[Reply], shown: tuple[ViewRef, ...]) -> list[Reply]:
+    """``replies`` with the turn's views on the last one."""
+    return [*replies[:-1], replace(replies[-1], views=shown)] if shown else replies
 
 
 def _menu_added(new: list[BaseMessage]) -> list[str]:
@@ -266,29 +249,6 @@ def _log_turn(seconds: float, new: list[BaseMessage], timer: TurnTimer) -> None:
         timer.tools_ms / 1000,
         len(replies),
         ", ".join(tools) or "none",
-    )
-
-
-def _record_turn(
-    seconds: float, new: list[BaseMessage], timer: TurnTimer, error: str | None = None
-) -> None:
-    """The turn as an ops event: its time split into the model's and the rest (tools,
-    database, prompt building), the tools by name, and whether the fallback answered."""
-    tools = Counter(call["name"] for m in new if isinstance(m, AIMessage) for call in m.tool_calls)
-    ms = seconds * 1000
-    ops.emit(
-        "turn",
-        ops.current_channel() or "chat",
-        ok=error is None,
-        ms=ms,
-        error=error,
-        model_calls=len(timer.calls),
-        model_ms=timer.model_ms,
-        other_ms=max(0, int(ms) - timer.model_ms),
-        model_errors=timer.failures or None,
-        fallback=timer.fell_back or None,
-        tools=dict(tools) or None,
-        slow=seconds >= SLOW_TURN_SECONDS or None,
     )
 
 
@@ -352,8 +312,11 @@ class AgentService:
         demo: DemoGate | None = None,
         meals: MealReader | None = None,
         origin: str | None = None,
+        views: bool = False,
     ) -> None:
         self._graph = graph
+        # Views (ADR 0005): each turn keeps the views it shows, with its reply.
+        self._views = views
         # The web app's origin, for buttons that open a page; None: no such buttons.
         self.origin = origin
         # Reads meal photos into foods and portions; None: a meal photo is read as before.
@@ -406,11 +369,15 @@ class AgentService:
         return None
 
     async def _run(
-        self, actor: UserId, payload: Any, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        payload: Any,
+        on_step: StepSink | None = None,
+        on_view: ViewSink | None = None,
     ) -> list[Reply]:
         # A turn is chat unless a voice note, photo or PDF started it.
         with costs.scope("chat", user=actor, keep=True):
-            return await self._run_turn(actor, payload, on_step)
+            return await self._run_turn(actor, payload, on_step, on_view)
 
     def request_stop(self, actor: UserId) -> None:
         """Ask for the user's running turn to end at its next step. A model call already
@@ -422,7 +389,11 @@ class AgentService:
         self._stops.add(actor)
 
     async def _run_turn(
-        self, actor: UserId, payload: Any, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        payload: Any,
+        on_step: StepSink | None = None,
+        on_view: ViewSink | None = None,
     ) -> list[Reply]:
         await voice_cases.load(self._uow(), actor)  # in the user's turn, so not before the lock
         config = self._config(actor)
@@ -432,23 +403,26 @@ class AgentService:
         timer = TurnTimer(self._primary_model)
         self._stops.discard(actor)  # a Stop from before this turn started isn't for it
         try:
-            with progress.watching(on_step, lambda: actor in self._stops):
+            with progress.watching(
+                on_step, lambda: actor in self._stops, views=self._views, on_view=on_view
+            ):
                 await self._graph.ainvoke(payload, {**config, "callbacks": [timer]})
+                shown = tuple(await progress.finish_views())
         except Exception as exc:
-            _record_turn(clock.monotonic() - started, [], timer, error=type(exc).__name__)
+            record_turn(clock.monotonic() - started, [], timer, error=type(exc).__name__)
             raise
         state = await self._graph.aget_state(config)
         new: list[BaseMessage] = [
             m for m in state.values.get("messages", []) if m.id is None or m.id not in seen
         ]
         _log_turn(clock.monotonic() - started, new, timer)
-        _record_turn(clock.monotonic() - started, new, timer)
+        record_turn(clock.monotonic() - started, new, timer)
         pending = await self._pending(actor)
         notes = _menu_added(new)
         if pending is not None:
             pid, summary = pending
             buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
-            return [Reply(_with_notes(summary, notes), buttons)]
+            return _with_views([Reply(_with_notes(summary, notes), buttons)], shown)
         self._condense_soon(actor)
         # The shared Undo reverses money and trips: a turn whose only writes have an Undo of
         # their own (a meal) doesn't get it.
@@ -473,7 +447,8 @@ class AgentService:
                 for row in m.additional_kwargs.get(BUTTONS) or []
             )
         ]
-        return [Reply(_with_notes(text or "Done.", notes), extra + ([[UNDO]] if wrote else []))]
+        reply = Reply(_with_notes(text or "Done.", notes), extra + ([[UNDO]] if wrote else []))
+        return _with_views([reply], shown)
 
     def _condense_soon(self, actor: UserId) -> None:
         """After a turn, condense the user's thread in the background: the summary is a
@@ -534,7 +509,14 @@ class AgentService:
             channel = channel_of(ref) if ref else None
             lines = [ChatLine(actor, Speaker.USER, clip(said), channel, now)] if said else []
             lines += [
-                ChatLine(actor, Speaker.NEXUS, clip(voice_cases.sent(r.text)), channel, now)
+                ChatLine(
+                    actor,
+                    Speaker.NEXUS,
+                    clip(voice_cases.sent(r.text)),
+                    channel,
+                    now,
+                    views=[v.stored() for v in r.views] or None,
+                )
                 for r in replies
                 if r.text.strip()
             ]
@@ -559,21 +541,34 @@ class AgentService:
     @in_voice
     @costs.as_feature("chat")
     async def handle_text(
-        self, actor: UserId, text: str, ref: str, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        text: str,
+        ref: str,
+        on_step: StepSink | None = None,
+        on_view: ViewSink | None = None,
     ) -> list[Reply]:
         """``on_step``, if given, is told as each tool starts and finishes (a short label,
-        see ``progress``); the replies are the same with or without it."""
+        see ``progress``); ``on_view`` is told of each view the turn shows once it ends. The
+        replies are the same with or without them."""
         text, hid = _hidden(text)
         refusal = await self._demo_refusal(actor, Use.MESSAGE)
         replies = (
-            [Reply(refusal)] if refusal else await self._handle_text(actor, text, ref, on_step)
+            [Reply(refusal)]
+            if refusal
+            else await self._handle_text(actor, text, ref, on_step, on_view)
         )
         replies = _noted(replies, hid)
         await self._keep(actor, text, replies, ref)
         return replies
 
     async def _handle_text(
-        self, actor: UserId, text: str, ref: str, on_step: StepSink | None = None
+        self,
+        actor: UserId,
+        text: str,
+        ref: str,
+        on_step: StepSink | None = None,
+        on_view: ViewSink | None = None,
     ) -> list[Reply]:
         if self._over_limit(actor):
             return [Reply(SLOW_DOWN)]
@@ -585,7 +580,7 @@ class AgentService:
             message = HumanMessage(
                 content=text, additional_kwargs={REF: ref, SENT_AT: self._sent()}
             )
-            replies = await self._run(actor, {"messages": [message]}, on_step)
+            replies = await self._run(actor, {"messages": [message]}, on_step, on_view)
             await self._remember(actor, ref)
             return replies
 

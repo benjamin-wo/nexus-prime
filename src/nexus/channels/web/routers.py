@@ -25,6 +25,7 @@ from nexus.channels.web import (
     plan_api,
     settings_api,
     travel_api,
+    views_api,
 )
 
 ROUTERS: tuple[APIRouter, ...] = (
@@ -47,4 +48,5 @@ ROUTERS: tuple[APIRouter, ...] = (
     travel_api.router,
     travel_api.shared_router,
     ops_api.router,
+    views_api.router,
 )

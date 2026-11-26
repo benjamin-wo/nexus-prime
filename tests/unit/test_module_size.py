@@ -7,8 +7,8 @@ LIMIT = 800
 # Files already over the limit, at their current size. This list may only shrink: lower or
 # remove an entry when a file is split.
 LARGE_FILES: dict[str, int] = {
-    "src/nexus/agent/graph.py": 1340,
-    "src/nexus/agent/service.py": 1642,
+    "src/nexus/agent/graph.py": 1276,
+    "src/nexus/agent/service.py": 1637,
     "src/nexus/application/email.py": 1439,
     "src/nexus/application/ops_report.py": 884,
     "src/nexus/application/plans.py": 1257,

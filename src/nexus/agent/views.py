@@ -44,6 +44,18 @@ SUMMARY_ROWS = 5
 # At most this many views a turn, and at most one of them the focus (ADR 0005).
 MAX_PER_TURN = 3
 
+# What the prompt says about presenting a view: shown only when views are switched on.
+PRESENT_RULE = (
+    "- The web app can show a view of the user's data (a card) under your reply. Call present "
+    "when the user asks about something a view shows (their month, budgets, spending, a "
+    "trip's money, portfolio, today's food and workout, weight trend, a workout or records): "
+    "call the tool that answers first, then present. At most 3 views a turn, one of them "
+    "the focus (focus true, the one that answers); any others get focus false. Never present "
+    "for a write (logging, setting, deleting) or for small talk, thanks or a question about "
+    "what you can do. The card carries its own figures: say only the figures a tool "
+    "gave you, never ones from present.\n"
+)
+
 # Headline figures, JSON-ready: money as {"amount", "currency"} as the web API sends it.
 type Summary = dict[str, Any]
 
@@ -61,6 +73,34 @@ class ViewKind(StrEnum):
     WEIGHT_TREND = "health.weight_trend"
     WORKOUT = "health.workout"
     RECORDS = "health.records"
+
+
+@dataclass(frozen=True, slots=True)
+class ViewRef:
+    """A view as a turn shows it: what it is (kind and params), whether it is the focus, and
+    its caption and headline figures, both built by code from the use case's result."""
+
+    kind: ViewKind
+    view_id: str
+    params: dict[str, Any]  # JSON-ready, unset fields left out
+    focus: bool
+    caption: str
+    summary: dict[str, Any] | None
+
+    def event(self) -> dict[str, Any]:
+        """The ``view.show`` frame's data (and a reply's ``views`` entry)."""
+        return {
+            "view_id": self.view_id,
+            "kind": self.kind.value,
+            "params": self.params,
+            "focus": self.focus,
+            "caption": self.caption,
+            "summary": self.summary,
+        }
+
+    def stored(self) -> dict[str, Any]:
+        """What is kept with a reply: kind, params and focus, never figures."""
+        return {"kind": self.kind.value, "params": self.params, "focus": self.focus}
 
 
 class ViewStatus(StrEnum):
@@ -105,6 +145,9 @@ class DayParams(ViewParams):
 
 class WorkoutParams(ViewParams):
     state: Literal["suggested", "open"] = "open"
+    suggestion_id: str | None = Field(
+        None, description="With state suggested: the id of the suggestion the card shows"
+    )
 
 
 class RecordsParams(ViewParams):
@@ -466,10 +509,12 @@ SURFACING: dict[str, ViewKind] = {t: spec.name for spec in _SPECS for t in spec.
 
 # Every other tool. Writes open nothing unless a spec says so; neither do lookups, the
 # calculator, a currency check, the tools that read something no view shows yet, and
-# ``show`` (it names its view itself: see ``surfaced``). ``spending_summary`` is a supporting
-# lookup the model adds to other answers, so it opens nothing.
+# ``show`` and ``present`` (they name their view themselves: see ``surfaced``).
+# ``spending_summary`` is a supporting lookup the model adds to other answers, so it opens
+# nothing.
 NON_SURFACING = frozenset(
     {
+        "present",
         "add_bill", "add_category", "add_to_itinerary", "add_to_trip", "add_trip_cover",
         "add_trip_todo", "add_wallet", "answer_email", "apply_adjustments", "calculate",
         "cash_flow", "change_itinerary_entry", "combine_duplicate_transactions",
@@ -507,11 +552,11 @@ def is_classified(tool: str) -> bool:
 
 def surfaced(tool: str, args: Mapping[str, object] | None = None) -> ViewKind | None:
     """The view a call to ``tool`` opens: its mapping (``query_ledger`` only when grouped by
-    category: any other ledger question has no view yet), or for ``show`` the view it names.
-    None when it opens nothing (or the view it names isn't in the catalog)."""
+    category: any other ledger question has no view yet), or for ``show`` and ``present`` the
+    view they name. None when it opens nothing (or the view it names isn't in the catalog)."""
     if tool == "query_ledger":  # only an answer grouped by category is "where the money went"
         return SURFACING[tool] if (args or {}).get("group_by") == "category" else None
-    if tool == "show":
+    if tool in {"show", "present"}:
         try:
             return ViewKind(str((args or {}).get("view")))
         except ValueError:

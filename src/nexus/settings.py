@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     demo_enabled: bool = False
     trusted_proxy_hops: int = Field(1, ge=0, le=5)
 
+    # --- Views (ADR 0005): Prime brings a view of the user's data into the chat (the
+    # ``present`` tool and the safety net), streamed as ``view.show`` and kept with the
+    # reply. Off unless VIEWS_ENABLED=true: no tool, no prompt rule, no frames, nothing stored. ---
+    views_enabled: bool = False
+
     # --- Health -> Gym: where exercise images are served from. The default is the
     # free-exercise-db repository at the commit the catalogue was built from (its README
     # allows this); point it at your own host or bucket once the images are copied there. ---

@@ -4,7 +4,8 @@ runs, so no card number is written anywhere in the repository."""
 
 import pytest
 
-from nexus.agent.service import CARD_NOTE, Button, Reply, _hidden, _noted
+from nexus.agent.card_privacy import _hidden
+from nexus.agent.service import CARD_NOTE, Button, Reply, _noted
 from nexus.domain.private import hide_card_numbers, hide_private
 from tests.cards import card_number, last4, luhn_digit, spaced
 

@@ -138,7 +138,10 @@ def test_params_are_checked_against_the_spec() -> None:
     for bad in ({"month": "2026-13"}, {"month": "November"}, {}):
         with pytest.raises(ValidationError):
             month.validate(bad)
-    assert CATALOG[ViewKind.WORKOUT].validate({}).model_dump() == {"state": "open"}
+    assert CATALOG[ViewKind.WORKOUT].validate({}).model_dump() == {
+        "state": "open",
+        "suggestion_id": None,
+    }
     with pytest.raises(ValidationError):
         CATALOG[ViewKind.WORKOUT].validate({"state": "done"})
 
@@ -372,3 +375,51 @@ def test_the_records_summary_names_the_lifts() -> None:
         ]
     }
     assert summary(ViewKind.RECORDS, []) == {"records": []}
+
+
+# --- the turn's views and the Telegram button (ADR 0005) -----------------------------------
+
+
+def _ref(kind: ViewKind, focus: bool = False, **params: Any) -> Any:
+    from nexus.agent.views import ViewRef
+
+    spec = CATALOG[kind]
+    return ViewRef(kind, spec.view_id(spec.validate(params)), params, focus, "Caption", None)
+
+
+def test_a_turn_dedupes_by_view_id_caps_at_three_and_keeps_one_focus() -> None:
+    from nexus.agent.progress import TurnViews
+
+    turn = TurnViews()
+    assert turn.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-09"))
+    assert turn.add(_ref(ViewKind.MONTH_OUTLOOK, month="2026-08"))  # same id: updated in place
+    assert turn.add(_ref(ViewKind.BUDGETS, month="2026-08"))
+    assert turn.add(_ref(ViewKind.PORTFOLIO))
+    assert not turn.add(_ref(ViewKind.TODAY))  # a fourth is refused
+    assert turn.add(_ref(ViewKind.PORTFOLIO))  # one already in is never refused
+    final = turn.final()
+    assert [(v.kind, v.focus) for v in final] == [
+        (ViewKind.MONTH_OUTLOOK, True),
+        (ViewKind.BUDGETS, False),
+        (ViewKind.PORTFOLIO, False),
+    ]
+    assert final[0].params == {"month": "2026-08"}
+    turn.add(_ref(ViewKind.BUDGETS, focus=True, month="2026-08"), presented=True)
+    assert [v.focus for v in turn.final()] == [False, True, False]
+
+
+def test_present_names_its_view_for_the_metrics_like_show_does() -> None:
+    assert surfaced("present", {"view": "finance.budgets"}) is ViewKind.BUDGETS
+    assert surfaced("present", {"view": "nothing"}) is None
+
+
+def test_a_reply_with_views_gets_one_open_in_nexus_button_for_the_focus_view() -> None:
+    from nexus.agent.view_links import open_in_nexus
+
+    views = [_ref(ViewKind.MONTH_OUTLOOK, month="2026-09"), _ref(ViewKind.PORTFOLIO, True)]
+    assert open_in_nexus(views, "https://nexus.test/") == (
+        "Open in Nexus",
+        "url:https://nexus.test/investment",
+    )
+    assert open_in_nexus(views, None) is None
+    assert open_in_nexus([], "https://nexus.test") is None

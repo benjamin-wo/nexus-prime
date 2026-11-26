@@ -257,7 +257,7 @@ def test_the_model_is_bound_to_the_same_tools_in_the_same_order_every_time() -> 
 def test_offered_tools_are_unchanged_by_the_ordering() -> None:
     state = cast(AgentState, {"messages": [], "steps": 0, "skills": {"wallets": 3}})
     offered = build().offered(state)
-    assert set(CORE_TOOLS) <= offered
+    assert set(CORE_TOOLS) - {"present"} <= offered  # present only with views on
     assert offered - set(CORE_TOOLS) == set(SKILLS.tools()["wallets"]) & {
         n for n, s in TOOLS.items() if s.exposed
     } - set(CORE_TOOLS)

@@ -7,7 +7,9 @@ from zoneinfo import ZoneInfo
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 
-from nexus.agent.graph import SENT_AT, _history, _line
+from nexus.agent.graph import _line
+from nexus.agent.history import SENT_AT
+from nexus.agent.history import history as _history
 
 MADRID = ZoneInfo("Europe/Madrid")
 SAT_NIGHT = datetime(2026, 10, 24, 20, 51, tzinfo=UTC)  # 22:51 in Madrid

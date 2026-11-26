@@ -3,6 +3,11 @@
 Frames, each ``event: <name>`` and one line of JSON as ``data``:
 
 - ``step``    ``{"label": "Logging the expense", "state": "running" | "done"}``
+- ``view.show`` a view Prime puts in the chat as a card (ADR 0005): ``{"view_id", "kind",
+  "params", "focus", "caption", "summary"}``. At most 3 a turn, one in focus, sent when the
+  turn is done and before ``replies``. The caption and summary are built in code from the
+  view's use case (numbers-free mode leaves the numbers out of a Health view). Only when
+  views are switched on (``VIEWS_ENABLED``); off, the stream is what it was.
 - ``replies`` the same list ``POST /api/chat`` returns (the last frame of a turn)
 - ``error``   ``{"detail": "..."}`` (the last frame, when the turn failed)
 
@@ -25,6 +30,7 @@ from fastapi.responses import StreamingResponse
 
 from nexus.agent.progress import Step
 from nexus.agent.service import AgentService, Reply
+from nexus.agent.views import ViewRef
 from nexus.domain.errors import NexusError
 from nexus.domain.ledger import UserId
 
@@ -64,9 +70,12 @@ def stream_turn(
     async def on_step(step: Step) -> None:
         queue.put_nowait(("step", {"label": step.label, "state": step.state}))
 
+    async def on_view(view: ViewRef) -> None:
+        queue.put_nowait(("view.show", view.event()))
+
     async def turn() -> None:
         try:
-            done = await service.handle_text(user, message, ref, on_step=on_step)
+            done = await service.handle_text(user, message, ref, on_step=on_step, on_view=on_view)
             queue.put_nowait(("replies", replies(done)))
         except NexusError as exc:
             queue.put_nowait(("error", {"detail": str(exc)}))

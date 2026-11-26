@@ -2035,6 +2035,41 @@
       "confirms": false
     },
     {
+      "name": "present",
+      "description": "Put a view of the user's data on their screen as a card under your reply. Read-only: it never changes anything and carries its own figures, so call the tool that answers first and quote only what it gave you. Never for a write or for small talk. An unknown view or bad params come back as an error: fix them. Views: finance.month_outlook (month): The month at a glance: money in and out so far, the bills and pay still to come, and what should be left at the end. Use it for how a month is going.; finance.budgets (month): Each budget for a month with what is spent against it. Use it for how the user's budgets stand.; finance.spending (month, category_id): Where the money went in a month, by category. Use it for questions about spending patterns and what was spent on something.; travel.trip_budget (trip_id): One trip's money: its budget, what is spent and booked, and what is left. Use it for how a trip's spending is going.; travel.trips (no params): The list of the user's trips.; invest.portfolio (no params): The user's stock holdings with value and gain or loss. Use it for how the portfolio is doing.; health.today (day): The user's day in Health: what they ate and the workout of the day. Use it after a meal is logged and for what they ate today.; health.weight_trend (no params): The user's weight trend over time. Use it for 'how is my weight going' and after a weigh-in. Wellness only: it shows the trend, never what it means.; health.workout (state, suggestion_id): A workout: the one Prime suggested for today, or the one open now. Use it for 'what should I train', today's routine and while sets are being logged.; health.records (exercise): The user's best lifts: heaviest weight, estimated one-rep max, sessions. Use it for 'what's my bench PR'.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "present",
+          "description": "Put a view of the user's data on their screen as a card under your reply. Read-only: it never changes anything and carries its own figures, so call the tool that answers first and quote only what it gave you. Never for a write or for small talk. An unknown view or bad params come back as an error: fix them. Views: finance.month_outlook (month): The month at a glance: money in and out so far, the bills and pay still to come, and what should be left at the end. Use it for how a month is going.; finance.budgets (month): Each budget for a month with what is spent against it. Use it for how the user's budgets stand.; finance.spending (month, category_id): Where the money went in a month, by category. Use it for questions about spending patterns and what was spent on something.; travel.trip_budget (trip_id): One trip's money: its budget, what is spent and booked, and what is left. Use it for how a trip's spending is going.; travel.trips (no params): The list of the user's trips.; invest.portfolio (no params): The user's stock holdings with value and gain or loss. Use it for how the portfolio is doing.; health.today (day): The user's day in Health: what they ate and the workout of the day. Use it after a meal is logged and for what they ate today.; health.weight_trend (no params): The user's weight trend over time. Use it for 'how is my weight going' and after a weigh-in. Wellness only: it shows the trend, never what it means.; health.workout (state, suggestion_id): A workout: the one Prime suggested for today, or the one open now. Use it for 'what should I train', today's routine and while sets are being logged.; health.records (exercise): The user's best lifts: heaviest weight, estimated one-rep max, sessions. Use it for 'what's my bench PR'.",
+          "parameters": {
+            "properties": {
+              "view": {
+                "description": "A view's name from the list, like finance.month_outlook",
+                "type": "string"
+              },
+              "params": {
+                "additionalProperties": true,
+                "description": "What the view is opened with, like {\"month\": \"2026-09\"}; never a user id",
+                "type": "object"
+              },
+              "focus": {
+                "default": true,
+                "description": "True for the one view that answers; false for supporting ones",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "view"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
       "name": "suggest_workout",
       "description": "Suggest a workout for today ('a back workout', 'legs, 30 minutes') and show it as a card with Start and Shuffle buttons. Pick 4 to 6 exercises from the catalogue for the focus and the time, with sets, reps (or seconds) and rest. Time and place (gym or home) come from the user or their saved profile: if the tool says one is missing, ask just that, then call again. Code checks the equipment and the length. Nothing is started until the user taps Start. Wellness only: refuses for pain, injury and under-18s.",
       "schema": {
@@ -6450,6 +6485,7 @@
     "personal_records",
     "place_info",
     "plan_record",
+    "present",
     "query_ledger",
     "show",
     "show_dividends",
@@ -6552,6 +6588,7 @@
     "food_today",
     "energy_estimate",
     "show",
+    "present",
     "draft_training_plan",
     "suggest_adjustments",
     "apply_adjustments",

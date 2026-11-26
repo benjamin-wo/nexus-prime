@@ -10,7 +10,7 @@ import contextlib
 import hmac
 import logging
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,6 +18,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from nexus.agent.service import UNDO, AgentService, Button, Picture, Reply
 from nexus.agent.tools import UowFactory
+from nexus.agent.view_links import open_in_nexus
 from nexus.application import acting, ops
 from nexus.application import speech as speech_rules
 from nexus.application.access import NO_WEB_ACCESS, create_invite, has_web_access, issue_login_link
@@ -150,6 +151,8 @@ def _undo_key(chat_id: int, message_id: int) -> str:
 
 async def _send(runtime: TelegramRuntime, chat_id: int, replies: list[Reply]) -> None:
     for reply in replies:
+        if link := open_in_nexus(reply.views, runtime.settings.public_origin):
+            reply = replace(reply, buttons=[*reply.buttons, [Button(*link)]])
         message_id = await runtime.client.send_message(chat_id, reply.text, reply.buttons or None)
         if message_id is not None and any(UNDO in row for row in reply.buttons):
             keep = [[b for b in row if b != UNDO] for row in reply.buttons]
