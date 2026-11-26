@@ -15,7 +15,6 @@ LARGE_FILES: dict[str, int] = {
     "src/nexus/application/ports.py": 1253,
     "src/nexus/application/travel_research.py": 974,
     "src/nexus/application/trips.py": 971,
-    "src/nexus/channels/web/api.py": 3061,
     "src/nexus/channels/web/investments_api.py": 835,
     "src/nexus/channels/web/travel_api.py": 2427,
     "src/nexus/evals/cases.py": 2806,
@@ -23,11 +22,8 @@ LARGE_FILES: dict[str, int] = {
     "src/nexus/infra/db/ledger_repository.py": 1648,
     "src/nexus/infra/db/tables.py": 1619,
     "src/nexus/infra/db/trip_repository.py": 1153,
-    "src/nexus/main.py": 879,
-    "web/src/api.ts": 1426,
+    "src/nexus/main.py": 873,
     "web/src/pages/TripArrange.tsx": 808,
-    "web/src/pages/TripMoney.tsx": 1433,
-    "web/src/pages/Trips.tsx": 1459,
 }
 
 ROOT = Path(__file__).resolve().parents[2]
