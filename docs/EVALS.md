@@ -510,6 +510,23 @@ Values are mean (min-max over the 3 rounds). What changed between runs, `PRESENT
 - Run 2: added "present only the views that answer what was asked, never a neighbour" with the trips and workout examples. The trips extras went away; one `finance.budgets` after a budget write and one `health.today` for a weight-and-money question appeared.
 - Run 3: added "default to one view", the budget write as a write, and money views not going with weight or food questions alone. Silence back to 100%.
 
+**Run 4, after the supersede rules and adjusted outlooks (same setup, `--repeat 3`, 178 of 180 case runs passed, $0.09):** the catalog now says `finance.budgets` supersedes `finance.month_outlook` and `health.today` supersedes `health.workout`: a view only the safety net opened is dropped when the superseding view is in the turn (a view Prime chose with `present` never is). The prompt was not changed.
+
+| Figure | Gate | Run 4 |
+|---|---|---|
+| Precision (micro) | at least 95% | 98.2% (95-100) pass |
+| Recall (micro) | at least 85% | 97.5% (96-98) pass |
+| Exact-set match | at least 85% | 97.5% (96-99) pass |
+| Correct silence | at least 95% | 100% (100-100) pass |
+| Over-surfacing | at most 5% | 1.5% (0-4) pass |
+| Under-surfacing | (none) | 2.0% |
+| Follow-up carry-over (exact) | (none) | 86% (86-86) |
+| Distractor cases (exact) | (none) | 92% (75-100) |
+
+All five gates pass. What still misses, one turn each: `views-followup-budgets-august` (nothing, and spending), `views-followup-july` (nothing), `views-trip-and-month` (an extra trips list), `views-distract-weight-money` (weight trend for a money question). The budget and day misses of run 3 are gone.
+
+The gate status above is as of run 3.
+
 **Gate status: precision fails in all three runs (94.6% in the last, 0.4 points short); the other four gates pass in run 3.** What is left is routing, not `present` wording, and I stopped at the two re-runs allowed:
 
 | Case | Opened vs wanted | Likely cause |
