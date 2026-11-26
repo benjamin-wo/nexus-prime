@@ -2,7 +2,7 @@
 // doing while the turn runs ("step" events), then the replies, exactly as POST /api/chat gives them.
 // EventSource can't POST or send the CSRF header, so this reads the response body by hand.
 
-import { ApiError, csrfHeader, type ChatHistory, type Reply } from "./api";
+import { ApiError, csrfHeader, type ChatHistory, type Reply, type ViewShow } from "./api";
 
 export type ChatStep = { label: string; state: "running" | "done" };
 
@@ -68,10 +68,16 @@ async function refusal(response: Response): Promise<ApiError> {
   return new ApiError(response.status, typeof detail === "string" ? detail : response.statusText);
 }
 
-/** Send `message` and follow the turn. Calls `onStep` as Nexus works and resolves with the replies.
+/** Send `message` and follow the turn. Calls `onStep` as Nexus works, `onView` for each view the turn shows
+ * (`view.show`, sent once the turn is done and before the replies; none unless views are switched on),
+ * and resolves with the replies.
  * Rejects with StreamNotStarted (send it the usual way), StreamInterrupted (do not send it again;
  * look in the chat history), or an ApiError (the server refused, or the turn failed: show it). */
-export async function streamChat(message: string, onStep: (step: ChatStep) => void): Promise<Reply[]> {
+export async function streamChat(
+  message: string,
+  onStep: (step: ChatStep) => void,
+  onView?: (view: ViewShow) => void,
+): Promise<Reply[]> {
   if (typeof ReadableStream === "undefined") throw new StreamNotStarted();
   let response: Response;
   try {
@@ -107,6 +113,7 @@ export async function streamChat(message: string, onStep: (step: ChatStep) => vo
       for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
         const data: unknown = JSON.parse(frame.data);
         if (frame.event === "step") onStep(data as ChatStep);
+        else if (frame.event === "view.show") onView?.(data as ViewShow);
         else if (frame.event === "replies") return data as Reply[];
         else if (frame.event === "error") {
           const detail = (data as { detail?: unknown }).detail;
