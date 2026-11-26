@@ -602,6 +602,643 @@
  },
  {
   "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/consent",
+  "endpoint": "withdraw_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/consent",
+  "endpoint": "get_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/consent",
+  "endpoint": "give_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/consents",
+  "endpoint": "get_consents",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/consents/{scope}",
+  "endpoint": "withdraw_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ScopeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/consents/{scope}",
+  "endpoint": "grant_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ScopeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/day",
+  "endpoint": "day",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "DayOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/energy",
+  "endpoint": "energy",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "EnergyOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises",
+  "endpoint": "exercises",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}",
+  "endpoint": "exercise",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ExerciseOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}/last",
+  "endpoint": "last_time",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}/progress",
+  "endpoint": "exercise_progress",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/foods",
+  "endpoint": "list_foods",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/foods/{food_id}",
+  "endpoint": "get_food",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "FoodOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/meals",
+  "endpoint": "list_meals",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/meals",
+  "endpoint": "log_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "delete_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "get_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "edit_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/plan",
+  "endpoint": "get_plan",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PlanOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/plan",
+  "endpoint": "put_plan",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PlanOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/preferences",
+  "endpoint": "get_preferences",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "HealthPreferencesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/preferences",
+  "endpoint": "put_preferences",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "HealthPreferencesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/profile",
+  "endpoint": "get_profile",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ProfileOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/profile",
+  "endpoint": "save_profile",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ProfileOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/profile/training",
+  "endpoint": "get_training",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TrainingIn | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/profile/training",
+  "endpoint": "save_training",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TrainingIn",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/routines",
+  "endpoint": "routines",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/routines",
+  "endpoint": "create_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RoutineOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/routines/{routine_id}",
+  "endpoint": "delete_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/routines/{routine_id}",
+  "endpoint": "get_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RoutineOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/routines/{routine_id}",
+  "endpoint": "replace_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RoutineOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/samples",
+  "endpoint": "samples",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/samples",
+  "endpoint": "log_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SampleOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/samples/latest",
+  "endpoint": "latest_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SampleOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/samples/{sample_id}",
+  "endpoint": "delete_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/samples/{sample_id}",
+  "endpoint": "edit_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SampleOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/sets/{set_id}",
+  "endpoint": "delete_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/sets/{set_id}",
+  "endpoint": "edit_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SetOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/today",
+  "endpoint": "today",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TodayOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/volume",
+  "endpoint": "weekly_volume",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "VolumeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/weight",
+  "endpoint": "weight",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WeightOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/workouts",
+  "endpoint": "workouts",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts",
+  "endpoint": "start_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WorkoutOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/workouts/{workout_id}",
+  "endpoint": "discard_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/workouts/{workout_id}",
+  "endpoint": "get_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WorkoutDetailOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts/{workout_id}/finish",
+  "endpoint": "finish_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SummaryOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts/{workout_id}/sets",
+  "endpoint": "log_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "LoggedSetOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts/{workout_id}/undo",
+  "endpoint": "undo_last_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SetOut",
+  "status_code": null
+ },
+ {
+  "methods": [
    "GET"
   ],
   "path": "/api/home",
