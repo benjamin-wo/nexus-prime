@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncConnection
 from sqlalchemy.sql.elements import ColumnElement
 
+from nexus.domain.coach import TrainingProfile
 from nexus.domain.gym import (
     Category,
     Equipment,
@@ -36,6 +37,7 @@ from nexus.infra.db.tables import (
     exercises,
     routines,
     training_plans,
+    training_profiles,
     users,
     workout_sets,
     workouts,
@@ -297,6 +299,25 @@ class SqlGymRepository:
         insert = pg_insert(training_plans).values(user_id=plan.user_id, **values)
         await self._connection.execute(
             insert.on_conflict_do_update(index_elements=[training_plans.c.user_id], set_=values)
+        )
+
+    # --- the coach's inputs --------------------------------------------------------------
+
+    async def get_training_profile(self, user_id: UserId) -> TrainingProfile | None:
+        row = (
+            await self._connection.execute(
+                select(training_profiles).where(training_profiles.c.user_id == user_id)
+            )
+        ).first()
+        return None if row is None else TrainingProfile.from_dict(dict(row._mapping))
+
+    async def save_training_profile(
+        self, user_id: UserId, profile: TrainingProfile, at: datetime
+    ) -> None:
+        values = {**profile.as_dict(), "updated_at": at}
+        insert = pg_insert(training_profiles).values(user_id=user_id, **values)
+        await self._connection.execute(
+            insert.on_conflict_do_update(index_elements=[training_profiles.c.user_id], set_=values)
         )
 
     # --- workouts and sets ---------------------------------------------------------------

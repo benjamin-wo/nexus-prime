@@ -469,12 +469,32 @@ _RULES: tuple[_Rule, ...] = (
     _Rule(
         RedFlagKind.JOINT_POP,
         _rx(
-            rf"\b{_JOINT}\b.{{0,30}}\b(?:popped|snapped|dislocated)\b",
-            rf"\b(?:popped|snapped|dislocated)\b.{{0,30}}\b{_JOINT}\b",
-            rf"\b(?:heard|hear|felt|feel) (?:a |it |something )?pop\b.{{0,30}}\b{_JOINT}\b",
-            rf"\b{_JOINT}\b.{{0,30}}\b(?:heard|hear|felt|feel) (?:a |it |something )?pop\b",
+            rf"\b{_JOINT}\b.{{0,30}}\b(?:pop|pops|popped|popping|snap|snaps|snapped|snapping|"
+            rf"dislocated)\b",
+            rf"\b(?:pop|pops|popped|popping|snap|snaps|snapped|snapping|dislocated)\b"
+            rf".{{0,30}}\b{_JOINT}\b",
             r"\bpop(?:ped)? out of (?:place|socket|joint)\b",
             r"\bdislocat\w+\b",
+        ),
+        # "popped back to the gym" or "popped into the shops": an errand, not a joint
+        unless=re.compile(
+            r"\b(?:pops|popped|popping) (?:back|into|over|by|to|out to|in (?:at|for|to))\b"
+        ),
+    ),
+    # Clicking alone, with no pain, is common and harmless: it needs a pain cue in the message,
+    # and a pain that is denied ("but doesn't hurt") cancels it.
+    _Rule(
+        RedFlagKind.JOINT_POP,
+        _rx(
+            rf"\b{_JOINT}\b.{{0,30}}\b(?:click|clicks|clicked|clicking)\b",
+            rf"\b(?:click|clicks|clicked|clicking)\b.{{0,30}}\b{_JOINT}\b",
+        ),
+        unless=re.compile(
+            r"\b(?:don'?t|doesn'?t|do not|does not|not|no|without|never|isn'?t|aren'?t)\b"
+            r"(?: \w+){0,2} (?:hurt\w*|pain\w*|ache\w*|sore\w*)\b|\bpainless\w*\b|\bpain-free\b"
+        ),
+        also=re.compile(
+            r"\b(?:hurt|hurts|hurting|pain|painful|aches?|aching|sore|swollen|swelling)\b"
         ),
     ),
     _Rule(

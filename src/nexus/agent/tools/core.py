@@ -53,6 +53,9 @@ class ToolContext:
     # Shared by everything the tools change in one chat turn, so Undo reverses it together.
     # None outside a turn: each change then stands alone.
     batch: UUID | None = None
+    # What the user said lately (their last few messages), for a tool that must not act on
+    # pain or injury. Empty outside a chat turn.
+    message: str = ""
 
     @property
     def tz(self) -> ZoneInfo:

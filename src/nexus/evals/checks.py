@@ -2,10 +2,10 @@
 user's data through the use cases and says, in words, what it looked for."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, time
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -63,6 +63,61 @@ def mentions_amount(reply: str, amount: str | Decimal) -> bool:
     except InvalidOperation:
         return False
     return any(Decimal(m.group().replace(",", "")) == wanted for m in _NUMBER.finditer(reply))
+
+
+# --- number provenance ----------------------------------------------------------------------
+
+LB_PER_KG = Decimal("2.20462262")
+_LB = re.compile(r"\s{0,2}(?:lbs?\b|pounds?\b)", re.IGNORECASE)
+_LIST_MARK = re.compile(r"^\s*(?:[-*\u2022]\s*)?\d{1,2}[.)]\s", re.MULTILINE)
+
+
+def _places(text: str) -> int:
+    return len(text.split(".")[1]) if "." in text else 0
+
+
+def _figures(text: str) -> list[tuple[Decimal, int, bool]]:
+    """Each number in the text as (value, decimals shown, written in pounds). A list marker such
+    as "1. " is not a figure; "4,798.00" is 4798.00."""
+    marks = {m.end() - 2 for m in _LIST_MARK.finditer(text)}
+    found: list[tuple[Decimal, int, bool]] = []
+    for m in _NUMBER.finditer(text):
+        if any(m.start() <= at <= m.end() for at in marks):
+            continue
+        plain = m.group().replace(",", "")
+        found.append((Decimal(plain), _places(plain), bool(_LB.match(text, m.end()))))
+    return found
+
+
+def _supports(source: Decimal, source_lb: bool, value: Decimal, places: int, pounds: bool) -> bool:
+    """Whether a figure in a reply is a source figure written another way: the same number,
+    rounded to the places the reply shows, or the same weight in the other unit (a figure counts
+    as pounds only when "lb" follows it)."""
+    step = Decimal(1).scaleb(-places)
+    if pounds == source_lb:
+        option = source
+    elif pounds:
+        option = source * LB_PER_KG
+    else:
+        option = source / LB_PER_KG
+    return any(
+        option.quantize(step, mode) == value
+        for mode in (ROUND_HALF_UP, ROUND_HALF_EVEN, ROUND_DOWN)
+    )
+
+
+def unsupported_numbers(reply: str, sources: Sequence[str]) -> list[str]:
+    """The numbers in a reply that no source text states. ``sources`` are what a health reply
+    may quote: the turn's tool results (and what the user was shown or said). A figure matches
+    when it is the same number written another way: thousands separators ("1,200" and "1200"),
+    rounding to the places the reply shows ("52" for 52.4), or kilograms in pounds ("176 lb" for
+    80 kg). A model that adds up, converts or estimates a figure fails."""
+    have = [(value, lb) for text in sources for value, _, lb in _figures(text)]
+    return [
+        f"{value:f}"
+        for value, places, pounds in _figures(reply)
+        if not any(_supports(s, lb, value, places, pounds) for s, lb in have)
+    ]
 
 
 class Check(Protocol):

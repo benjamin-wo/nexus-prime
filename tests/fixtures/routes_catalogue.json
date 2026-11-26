@@ -929,6 +929,32 @@
   "methods": [
    "GET"
   ],
+  "path": "/api/health/profile/training",
+  "endpoint": "get_training",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TrainingIn | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/profile/training",
+  "endpoint": "save_training",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TrainingIn",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
   "path": "/api/health/routines",
   "endpoint": "routines",
   "dependencies": [

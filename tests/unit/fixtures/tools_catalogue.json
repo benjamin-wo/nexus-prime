@@ -1685,6 +1685,288 @@
       "confirms": false
     },
     {
+      "name": "energy_estimate",
+      "description": "The user's daily energy use (maintenance calories, TDEE) as a range, whether it is estimated from their profile or from their logs, and today's targets if any, as worked out by code. Quote it exactly: never estimate it yourself. If it asks for profile details, tell the user to set them in the Health profile. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "energy_estimate",
+          "description": "The user's daily energy use (maintenance calories, TDEE) as a range, whether it is estimated from their profile or from their logs, and today's targets if any, as worked out by code. Quote it exactly: never estimate it yourself. If it asks for profile details, tell the user to set them in the Health profile. Read-only.",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "draft_training_plan",
+      "description": "Draft a training plan (routines and a weekly or rotation schedule) for the user and show it for them to confirm; nothing is saved until they do. Exercises are looked up in the catalogue and the plan is checked in code against their days, session length and equipment: if it says what is wrong, fix it and call again. Ask the user for any input you don't have first. Wellness only: refuses for pain, injury and under-18s. Asks the user to confirm.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "draft_training_plan",
+          "description": "Draft a training plan (routines and a weekly or rotation schedule) for the user and show it for them to confirm; nothing is saved until they do. Exercises are looked up in the catalogue and the plan is checked in code against their days, session length and equipment: if it says what is wrong, fix it and call again. Ask the user for any input you don't have first. Wellness only: refuses for pain, injury and under-18s. Asks the user to confirm.",
+          "parameters": {
+            "properties": {
+              "routines": {
+                "items": {
+                  "properties": {
+                    "name": {
+                      "description": "A short name ('Push', 'Full body A')",
+                      "type": "string"
+                    },
+                    "slots": {
+                      "description": "The exercises, in order",
+                      "items": {
+                        "properties": {
+                          "exercise_query": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null,
+                            "description": "The exercise as the user would say it ('bench press'); or use the id"
+                          },
+                          "exercise_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null,
+                            "description": "An id from find_exercise"
+                          },
+                          "sets": {
+                            "description": "Working sets",
+                            "type": "integer"
+                          },
+                          "reps": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null,
+                            "description": "Target reps per set (not with seconds)"
+                          },
+                          "seconds": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "default": null,
+                            "description": "Target seconds per set, for holds like planks"
+                          },
+                          "rest_seconds": {
+                            "default": 90,
+                            "description": "Rest between sets, in seconds",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "sets"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 12,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "slots"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 7,
+                "type": "array"
+              },
+              "schedule": {
+                "properties": {
+                  "weekly": {
+                    "description": "A routine on each training weekday",
+                    "items": {
+                      "properties": {
+                        "day": {
+                          "description": "mon, tue, wed, thu, fri, sat or sun",
+                          "type": "string"
+                        },
+                        "routine": {
+                          "description": "The name of one of the routines",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "day",
+                        "routine"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 7,
+                    "type": "array"
+                  },
+                  "rotation": {
+                    "description": "Instead of weekdays: routine names in turn (A, B, A...)",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 12,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "days_per_week": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only what the user said, if not saved"
+              },
+              "session_minutes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only what the user said, if not saved"
+              },
+              "equipment": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only what the user said, if not saved: barbell, dumbbell, machine..."
+              },
+              "experience": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "beginner, intermediate or advanced"
+              },
+              "focus": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "strength, hypertrophy or general"
+              },
+              "birth_year": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only if the user said it and none is saved"
+              }
+            },
+            "required": [
+              "routines",
+              "schedule"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": true
+    },
+    {
+      "name": "suggest_adjustments",
+      "description": "Numbered proposals to change the user's current plan (add load, hold, lower it, a deload week), worked out in code from their last few weeks of sets, each with its reason. Read-only: nothing changes.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "suggest_adjustments",
+          "description": "Numbered proposals to change the user's current plan (add load, hold, lower it, a deload week), worked out in code from their last few weeks of sets, each with its reason. Read-only: nothing changes.",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "apply_adjustments",
+      "description": "Apply the adjustments from suggest_adjustments that the user accepted, by number. Never apply one they didn't accept. Asks the user to confirm.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "apply_adjustments",
+          "description": "Apply the adjustments from suggest_adjustments that the user accepted, by number. Never apply one they didn't accept. Asks the user to confirm.",
+          "parameters": {
+            "properties": {
+              "accept": {
+                "description": "The numbers of the adjustments the user accepted (from 1)",
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 50,
+                "type": "array"
+              }
+            },
+            "required": [
+              "accept"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": true
+    },
+    {
       "name": "restore_transaction",
       "description": "Bring back a deleted transaction.",
       "schema": {
@@ -5694,6 +5976,7 @@
     "calculate",
     "cash_flow",
     "email_status",
+    "energy_estimate",
     "explain_category",
     "find_duplicates",
     "find_exercise",
@@ -5727,6 +6010,7 @@
     "show_watchlist",
     "spending_summary",
     "stock_levels",
+    "suggest_adjustments",
     "todays_workout",
     "trade_history",
     "trip_status",
@@ -5739,9 +6023,12 @@
     "add_to_trip": "travel",
     "add_trip_cover": "travel",
     "add_trip_todo": "travel",
+    "apply_adjustments": "health",
     "change_itinerary_entry": "travel",
     "create_trip": "travel",
     "delete_trip": "travel",
+    "draft_training_plan": "health",
+    "energy_estimate": "health",
     "find_exercise": "health",
     "finish_workout": "health",
     "food_today": "health",
@@ -5767,6 +6054,7 @@
     "show_watchlist": "invest",
     "split_trip_costs": "travel",
     "stock_levels": "invest",
+    "suggest_adjustments": "health",
     "they_paid": "travel",
     "todays_workout": "health",
     "trade_history": "invest",
@@ -5811,6 +6099,10 @@
     "log_food",
     "log_photo_meal",
     "food_today",
+    "energy_estimate",
+    "draft_training_plan",
+    "suggest_adjustments",
+    "apply_adjustments",
     "spending_summary",
     "query_ledger",
     "list_categories",

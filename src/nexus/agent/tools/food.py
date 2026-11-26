@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from nexus.agent.tools.core import Args, ToolContext, ToolResult, ToolSpec
+from nexus.agent.tools.core import Args, NoArgs, ToolContext, ToolResult, ToolSpec
 from nexus.agent.tools.health import (
     ai_blocked,
     decimal,
@@ -17,6 +17,7 @@ from nexus.agent.tools.health import (
     need_consent,
 )
 from nexus.agent.tools.helpers import parse_day
+from nexus.application import energy as energy_cases
 from nexus.application import food_entry
 from nexus.application import health_targets as targets_cases
 from nexus.application import nutrition as nutrition_cases
@@ -176,6 +177,31 @@ async def _food_today(ctx: ToolContext, a: FoodTodayArgs) -> ToolResult:
     return ToolResult(food_entry.day_text(summary, names))
 
 
+async def _energy_estimate(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
+    async with ctx.uow() as uow:
+        profile = await uow.health.get_profile(ctx.user.id)
+    missing = energy_cases.missing_inputs(profile)
+    if missing:
+        return ToolResult(
+            f"Error: I need your {', '.join(missing)} to estimate your energy use. They can be "
+            "set in the Health profile.",
+            error="NeedsProfile",
+        )
+    found = await targets_cases.safe_targets(ctx.uow, ctx.user.id, now=ctx.now, record=False)
+    if found.overview.energy.estimate is None:
+        return ToolResult(
+            "Error: I need a weigh-in to estimate your energy use. Log your weight first.",
+            error="NeedsWeighIn",
+        )
+    return ToolResult(
+        energy_cases.energy_text(
+            found.overview, suspended=found.suspended, signposts=found.signposts
+        )
+    )
+
+
 SPECS = (
     ToolSpec(
         "log_food",
@@ -202,17 +228,28 @@ SPECS = (
         FoodTodayArgs,
         _food_today,
     ),
+    ToolSpec(
+        "energy_estimate",
+        "The user's daily energy use (maintenance calories, TDEE) as a range, whether it is "
+        "estimated from their profile or from their logs, and today's targets if any, as worked "
+        "out by code. Quote it exactly: never estimate it yourself. If it asks for profile "
+        "details, tell the user to set them in the Health profile. Read-only.",
+        NoArgs,
+        _energy_estimate,
+    ),
 )
 
 
 READ_ONLY: frozenset[str] = frozenset(
     {
+        "energy_estimate",
         "food_today",
     }
 )
 
 MENU: dict[str, MenuSection] = dict.fromkeys(
     (
+        "energy_estimate",
         "food_today",
         "log_food",
     ),

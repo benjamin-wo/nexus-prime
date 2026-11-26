@@ -9,12 +9,23 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from nexus.application import coach as coach_cases
 from nexus.application import health as health_cases
 from nexus.application import health_consent as consent_cases
 from nexus.application import health_safety as safety_cases
 from nexus.channels.web.health_api import _uuid, _weight
 from nexus.channels.web.security import Auth, Runtime
+from nexus.domain.coach import (
+    MAX_DAYS,
+    MAX_SESSION_MINUTES,
+    MIN_DAYS,
+    MIN_SESSION_MINUTES,
+    Experience,
+    Focus,
+    TrainingProfile,
+)
 from nexus.domain.errors import InvalidInput, NotFound
+from nexus.domain.gym import Equipment
 from nexus.domain.health import (
     WELLNESS_STATEMENT,
     ActivityLevel,
@@ -268,6 +279,42 @@ async def save_profile(body: ProfileIn, auth: Auth, web: Runtime) -> ProfileOut:
     )
     state = await safety_cases.assess(web.uow(), auth.user.id, now=web.clock())
     return _profile(saved.profile, _safety(state, saved.gate))
+
+
+# --- the Gym coach's inputs -----------------------------------------------------------------
+
+
+class TrainingIn(Model):
+    days_per_week: int = Field(ge=MIN_DAYS, le=MAX_DAYS)
+    session_minutes: int = Field(ge=MIN_SESSION_MINUTES, le=MAX_SESSION_MINUTES)
+    equipment: list[Equipment] = Field(max_length=len(Equipment))  # body weight needs no entry
+    experience: Experience
+    focus: Focus
+
+
+@router.get("/profile/training")
+async def get_training(auth: Auth, web: Runtime) -> TrainingIn | None:
+    """What the Gym coach plans around, or null until it is set."""
+    found = await coach_cases.training_profile(web.uow(), auth.user.id)
+    return None if found is None else TrainingIn(**found.as_dict())
+
+
+@router.put("/profile/training")
+async def save_training(body: TrainingIn, auth: Auth, web: Runtime) -> TrainingIn:
+    """Replace the coach inputs (needs the Health consent, like every health write)."""
+    saved = await coach_cases.save_training_profile(
+        web.uow(),
+        auth.user.id,
+        TrainingProfile(
+            body.days_per_week,
+            body.session_minutes,
+            tuple(body.equipment),
+            body.experience,
+            body.focus,
+        ),
+        now=web.clock(),
+    )
+    return TrainingIn(**saved.as_dict())
 
 
 # --- consents -------------------------------------------------------------------------------

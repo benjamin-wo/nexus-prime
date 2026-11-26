@@ -162,8 +162,8 @@ HEALTH = Department(
     name="health",
     label="Health",
     emoji="💪",
-    skills=("gym", "nutrition"),
-    blurb="Your workouts and food: log sets and meals, see records, history and what you ate.",
+    skills=("gym", "nutrition", "coach"),
+    blurb="Your workouts and food: log sets and meals, a plan from the coach, records and history.",
 )
 
 

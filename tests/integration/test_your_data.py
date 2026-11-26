@@ -406,6 +406,16 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
             created_at=now,
         )
         await add(
+            t["training_profiles"],
+            user_id=user,
+            days_per_week=3,
+            session_minutes=60,
+            equipment=["barbell"],
+            experience="beginner",
+            focus="general",
+            updated_at=now,
+        )
+        await add(
             t["health_profiles"],
             user_id=user,
             sex_for_equations="unspecified",
