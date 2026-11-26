@@ -28,6 +28,10 @@ const ConnectGmail = lazyNamed(() => import("./pages/Connect"), "ConnectGmail");
 const Dashboard = lazyNamed(() => import("./pages/Dashboard"), "Dashboard");
 const CostsPage = lazyNamed(() => import("./pages/Costs"), "CostsPage");
 const EmailPage = lazyNamed(() => import("./pages/Email"), "EmailPage");
+const HealthToday = lazyNamed(() => import("./health/HealthToday"), "HealthToday");
+const HealthRoutines = lazyNamed(() => import("./health/HealthRoutines"), "HealthRoutines");
+const HealthLibrary = lazyNamed(() => import("./health/HealthLibrary"), "HealthLibrary");
+const HealthHistory = lazyNamed(() => import("./health/HealthHistory"), "HealthHistory");
 const InvestmentPage = lazyNamed(() => import("./pages/Investment"), "InvestmentPage");
 const PlanPage = lazyNamed(() => import("./pages/Plans"), "PlanPage");
 const PlansPage = lazyNamed(() => import("./pages/Plans"), "PlansPage");
@@ -164,7 +168,7 @@ function Cockpit({ me }: { me: Me }) {
   const closeSaved = useCallback(() => setSaved(null), []);
   const closeNotice = useCallback(() => setNotice(null), []);
   const refresh = useCallback(() => {
-    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan", "wallets"]) void client.invalidateQueries({ queryKey: [key] });
+    for (const key of ["transactions", "summary", "ious", "budgets", "bills", "salary", "category-explanation", "email", "home", "runs", "investments", "watchlist", "stock", "plans", "plan", "wallets", "health"]) void client.invalidateQueries({ queryKey: [key] });
   }, [client]);
   // After a chat reply: the pages may have changed, and in the demo the messages left have.
   const changed = useCallback(() => {
@@ -236,6 +240,10 @@ function Cockpit({ me }: { me: Me }) {
             <Route path="/travel" element={<TripsPage onAsk={(ask) => setChat({ ask })} />} />
             <Route path="/travel/trips/:id" element={<TripPage onAsk={(ask) => setChat({ ask })} />} />
             <Route path="/travel/research/:id" element={<ResearchPage />} />
+            <Route path="/health" element={<HealthToday />} />
+            <Route path="/health/routines" element={<HealthRoutines />} />
+            <Route path="/health/library" element={<HealthLibrary />} />
+            <Route path="/health/history" element={<HealthHistory />} />
             {DEPARTMENTS.filter((d) => d.upcoming).map((d) => (
               <Route key={d.name} path={d.path} element={<Upcoming department={d} />} />
             ))}

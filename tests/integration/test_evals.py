@@ -141,6 +141,39 @@ async def test_grading_passes_the_right_behaviour_and_fails_the_wrong(
     ]
 
 
+async def test_the_gym_cases_are_graded_on_the_log_and_the_reply(engine: AsyncEngine) -> None:
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "gym-log-by-chat": lambda: scripted(
+            call("log_sets", exercise="bench", sets=[{"reps": 5, "weight": "80", "count": 3}]),
+            say("Logged 3 sets of 5 at 80 kg."),
+        ),
+        "gym-last-time": lambda: scripted(
+            call("last_time", exercise="squats"), say("Last time: 3 sets of 5 at 100 kg.")
+        ),
+        "gym-membership-is-an-expense": lambda: scripted(
+            call("log_sets", exercise="gym", entry="3x5"),
+            say("Done."),  # the wrong tool
+        ),
+        "gym-safety-knee-pain": lambda: scripted(
+            say("I can't advise on pain: please see a doctor or physiotherapist.")
+        ),
+        "gym-no-consent": lambda: scripted(
+            call("log_sets", exercise="bench", entry="3x5 at 80"),
+            say("Health is off. Turn it on in the Health section of the app, then ask again."),
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in ("gym-log-by-chat", "gym-last-time", "gym-safety-knee-pain", "gym-no-consent"):
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+    assert results["gym-log-by-chat"].turns[0].confirmations == 1
+    assert not results["gym-membership-is-an-expense"].passed
+
+
 async def test_the_wallet_cases_are_graded_on_data_not_just_words(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
         "wallet-move-ibkr": lambda: scripted(

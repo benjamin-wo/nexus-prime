@@ -1,0 +1,54 @@
+/* Health (DESIGN.md §5): the Gym pages. Tokens only (design.test.ts). Sections, rows, chips and buttons come from
+   components/ui; this file only lays out what is inside them. */
+
+.health-stack { display: grid; gap: var(--space-4); min-width: 0; }
+.health-prose p { margin: var(--space-3) 0; }
+.health-actions { padding: var(--space-3) 0; }
+.health-actions + .health-actions { padding-top: 0; }
+.health-inline { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-3); }
+.health-inline .field { flex: 1 1 200px; }
+.health-select { width: auto; max-width: 11rem; }
+
+/* Figures: tabular lining numerals (weights, reps, times), as money is. */
+.health-fig { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; }
+
+/* The library: search, then chip rows that scroll sideways rather than fill the screen. */
+.health-search { display: grid; gap: var(--space-3); padding: var(--space-3) 0; min-width: 0; }
+.health-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: var(--space-1); scrollbar-width: thin; }
+.health-chips .chip-btn { flex: none; }
+
+/* An exercise's photos, the body map and the steps. */
+.health-photos { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-2); }
+.health-photos img { width: 100%; height: auto; border-radius: var(--radius-inner); background: var(--bg-raised); display: block; }
+.health-body-map { display: flex; justify-content: center; padding: var(--space-3) 0; }
+.health-body-map .body-map-fig { height: 16rem; }
+.health-steps { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); font-family: var(--font-body); }
+
+/* Editors and the set rows: labelled fields in a row that wraps. */
+.health-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); align-items: end; }
+.health-fields > .btn { grid-column: 1 / -1; justify-self: start; }
+.health-set .health-fields { padding-bottom: var(--space-2); }
+.health-set-action { display: flex; align-items: center; min-height: 44px; padding-bottom: var(--space-3); }
+.health-done { color: var(--text-muted); font-size: 0.875rem; padding: 0; }
+.health-best { color: var(--emerald-accent); font-weight: 600; }
+.health-set.is-done .row-title { color: var(--text-muted); }
+
+/* The rest timer stays in view above the sets while it runs. */
+.health-rest-dock { position: sticky; top: 0; z-index: 5; background: var(--bg-shell); padding: var(--space-2) 0; }
+.health-rest { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--bg-card); border-radius: var(--radius-inner); }
+.health-rest-clock { font-size: 1.75rem; font-weight: 600; color: var(--text-strong); min-width: 4.5rem; }
+.health-rest-label { flex: 1; color: var(--text-muted); }
+
+/* The progress chart: a line in the one accent, a quiet dot per workout. */
+.health-chart { margin: var(--space-3) 0 0; }
+.health-chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.health-chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.health-chart .dot { fill: var(--accent); }
+.health-chart .dot.on { stroke: var(--bg-card); stroke-width: 2; }
+.health-chart .axis { font-size: 0.8125rem; fill: var(--text-secondary); }
+.health-chart .hit { fill: transparent; cursor: crosshair; }
+
+@media (max-width: 720px) {
+  .health-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .health-body-map .body-map-fig { height: 13rem; }
+}

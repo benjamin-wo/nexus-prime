@@ -150,8 +150,11 @@ def search(
     equipment: Equipment | None = None,
     level: Level | None = None,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[Exercise]:
-    """Exercises matching every filter given, best first.
+    """Exercises matching every filter given, best first; ``offset`` skips that many of the
+    ranked results first (paging). The order is total (ties end on the id), so pages never
+    overlap or skip.
 
     ``text`` matches the name (case and punctuation ignored); exact, then prefix, then
     word-start matches come first. ``muscle`` matches a primary or secondary muscle, and
@@ -159,9 +162,11 @@ def search(
     """
     if not 1 <= limit <= MAX_RESULTS:
         raise InvalidInput(f"limit must be between 1 and {MAX_RESULTS}")
+    if offset < 0:
+        raise InvalidInput("offset can't be negative")
     tokens = words(text) if text else []
     query = " ".join(tokens)
-    ranked: list[tuple[int, int, int, str, Exercise]] = []
+    ranked: list[tuple[int, int, int, str, str, Exercise]] = []
     for e in exercises:
         if equipment is not None and e.equipment != equipment:
             continue
@@ -173,6 +178,6 @@ def search(
         if rank is None:
             continue
         primary = 0 if muscle is None or muscle in e.primary else 1
-        ranked.append((rank, primary, len(e.name), e.name.casefold(), e))
-    ranked.sort(key=lambda r: r[:4])
-    return [r[4] for r in ranked[:limit]]
+        ranked.append((rank, primary, len(e.name), e.name.casefold(), e.id, e))
+    ranked.sort(key=lambda r: r[:5])
+    return [r[5] for r in ranked[offset : offset + limit]]

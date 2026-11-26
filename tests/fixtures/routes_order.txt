@@ -140,6 +140,8 @@ GET /api/health/exercises/{exercise_id}
 GET /api/health/consent
 POST /api/health/consent
 DELETE /api/health/consent
+GET /api/health/preferences
+PUT /api/health/preferences
 GET /api/health/routines
 POST /api/health/routines
 GET /api/health/routines/{routine_id}

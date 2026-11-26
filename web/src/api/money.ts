@@ -166,9 +166,9 @@ export type Me = {
   joined_trip?: string | null;
   /** Set while this is the public demo account (made-up data, ends at `expires_at`); null for a real user. */
   demo?: Demo | null;
-  /** `show_invest` and `show_travel`: whether Invest and Travel are in the menu. Null is not decided
+  /** `show_invest`, `show_travel` and `show_health`: whether Invest, Travel and Health are in the menu. Null is not decided
    * (hidden; chat turns it on the first time it is used), false is switched off. */
-  preferences?: { track_cards: boolean; show_invest?: boolean | null; show_travel?: boolean | null };
+  preferences?: { track_cards: boolean; show_invest?: boolean | null; show_travel?: boolean | null; show_health?: boolean | null };
 };
 export type Demo = { expires_at: string; messages_left: number };
 /** The answer to the two time zone writes: the same fields as `/me`, and whether the zone moved. */

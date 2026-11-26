@@ -201,7 +201,11 @@ async def test_other_tools_leave_the_menu_alone(uow: UowFactory, alice: UserId) 
 def test_every_menu_tool_exists_and_both_sections_have_some() -> None:
     tools = build_tools(lambda _: "")
     assert set(MENU_OF) <= set(tools)
-    assert set(MENU_OF.values()) == {MenuSection.INVEST, MenuSection.TRAVEL}
+    assert set(MENU_OF.values()) == {
+        MenuSection.INVEST,
+        MenuSection.TRAVEL,
+        MenuSection.HEALTH,
+    }
     assert set(MENU_NOTES) == set(MenuSection)
 
 

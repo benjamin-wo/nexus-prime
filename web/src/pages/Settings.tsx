@@ -10,6 +10,7 @@ import { describeZone, filterZones, friendlyZone, sourceNote, zoneChoices } from
 import { CategoriesSection } from "./Categories";
 import { MemorySection } from "./Memory";
 import { RulesSection } from "./Rules";
+import { HealthSettings } from "../health/HealthSettings";
 import { UpdatesSection } from "./Updates";
 import { VoiceCard } from "./Voice";
 import { WalletsSection } from "./Wallets";
@@ -208,6 +209,7 @@ const SECTIONS: Section[] = [
   { slug: "wallets", title: "Wallets", group: "Your data", render: (me) => <WalletsSection me={me} /> },
   { slug: "rules", title: "Category rules", group: "Your data", render: () => <RulesSection /> },
   { slug: "memory", title: "What Nexus remembers", group: "Your data", render: () => <MemorySection /> },
+  { slug: "health", title: "Health data", group: "Your data", render: () => <HealthSettings /> },
   { slug: "data", title: "Download or delete", group: "Your data", render: () => <YourDataSection /> },
   { slug: "costs", title: "Model costs", group: "Your data", ownerOnly: true },
 ];
@@ -377,6 +379,7 @@ export function Settings({ me, onLogout }: { me: Me; onLogout: () => void }) {
           />
           <PreferenceSwitch me={me} field="show_invest" title="Investing" hint="Portfolio, watchlist and trade plans in the menu" />
           <PreferenceSwitch me={me} field="show_travel" title="Travel" hint="Trips and trip research in the menu" />
+          <PreferenceSwitch me={me} field="show_health" title="Health" hint="Gym workouts, routines and progress in the menu" />
           </RowList>
         </div>
       </section>

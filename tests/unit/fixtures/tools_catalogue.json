@@ -1054,6 +1054,358 @@
       "confirms": true
     },
     {
+      "name": "find_exercise",
+      "description": "Look up exercises in the catalogue by name, muscle or equipment: the best matches with their ids. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "find_exercise",
+          "description": "Look up exercises in the catalogue by name, muscle or equipment: the best matches with their ids. Read-only.",
+          "parameters": {
+            "properties": {
+              "query": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Part of the exercise's name, e.g. 'bench'"
+              },
+              "muscle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only exercises that work this muscle"
+              },
+              "equipment": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only exercises with this equipment"
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "todays_workout",
+      "description": "Today's routine from the user's training plan (exercises, sets, reps), or that there is no plan or it's a rest day, and any workout in progress. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "todays_workout",
+          "description": "Today's routine from the user's training plan (exercises, sets, reps), or that there is no plan or it's a rest day, and any workout in progress. Read-only.",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "last_time",
+      "description": "The sets the user did last time on one exercise, by name ('squats'). If the name could be several exercises it lists them: ask which. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "last_time",
+          "description": "The sets the user did last time on one exercise, by name ('squats'). If the name could be several exercises it lists them: ask which. Read-only.",
+          "parameters": {
+            "properties": {
+              "exercise": {
+                "description": "The exercise's name as the user said it, or its id",
+                "type": "string"
+              }
+            },
+            "required": [
+              "exercise"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "personal_records",
+      "description": "The user's records on one exercise (heaviest weight, best estimated one-rep max, most reps), or on the lifts they do most. Worked out in code. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "personal_records",
+          "description": "The user's records on one exercise (heaviest weight, best estimated one-rep max, most reps), or on the lifts they do most. Worked out in code. Read-only.",
+          "parameters": {
+            "properties": {
+              "exercise": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "The exercise's name as the user said it; leave out for all lifts"
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "workout_history",
+      "description": "The user's past workouts in a range of days, with sets and volume. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "workout_history",
+          "description": "The user's past workouts in a range of days, with sets and volume. Read-only.",
+          "parameters": {
+            "properties": {
+              "range": {
+                "description": "Which days: today, yesterday, this week, last week, this month, last month, last 7 days (any number up to 366), a date like 2026-09-14, or two dates like 2026-09-01 to 2026-09-14",
+                "type": "string"
+              }
+            },
+            "required": [
+              "range"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "weekly_volume",
+      "description": "Working volume and sets per muscle for a week. Read-only.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "weekly_volume",
+          "description": "Working volume and sets per muscle for a week. Read-only.",
+          "parameters": {
+            "properties": {
+              "week": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "'this week' (the default), 'last week' or a date in the week"
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "log_sets",
+      "description": "Log sets the user did, onto their workout in progress (one is started if there isn't one). Use the numbers the user gave, never guess a weight or reps. Wellness tracking only. Asks the user to confirm.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "log_sets",
+          "description": "Log sets the user did, onto their workout in progress (one is started if there isn't one). Use the numbers the user gave, never guess a weight or reps. Wellness tracking only. Asks the user to confirm.",
+          "parameters": {
+            "properties": {
+              "exercise": {
+                "description": "The exercise as the user said it ('bench'), or its id",
+                "type": "string"
+              },
+              "sets": {
+                "description": "The sets, with the numbers the user gave. 'same again': the sets of the last log_sets in this chat, or from last_time if there's none",
+                "items": {
+                  "properties": {
+                    "reps": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Reps in the set (or seconds, for timed ones)"
+                    },
+                    "seconds": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Seconds held, for a timed set like a plank"
+                    },
+                    "weight": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "The weight the user said, as they said it; leave out for bodyweight"
+                    },
+                    "unit": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "kg",
+                            "lb"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Only if the user said it"
+                    },
+                    "rpe": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "RPE 1 to 10, only if the user said it"
+                    },
+                    "kind": {
+                      "default": "working",
+                      "enum": [
+                        "working",
+                        "warmup"
+                      ],
+                      "type": "string"
+                    },
+                    "count": {
+                      "default": 1,
+                      "description": "'3x5': count 3",
+                      "maximum": 30,
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "entry": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Instead of sets: the user's own words for them, like '3x5 at 80' or '3 by 8 at 60kg RPE 8'. Read by code"
+              },
+              "when": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "The day, if not today and the user said so: 2026-09-14 or yesterday"
+              }
+            },
+            "required": [
+              "exercise"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": true
+    },
+    {
+      "name": "finish_workout",
+      "description": "End the user's workout in progress and report how long it took, the sets, the volume and any new records. Asks the user to confirm.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "finish_workout",
+          "description": "End the user's workout in progress and report how long it took, the sets, the volume and any new records. Asks the user to confirm.",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": true
+    },
+    {
+      "name": "undo_last_set",
+      "description": "Take out the set logged last in the workout in progress. Asks the user to confirm.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "undo_last_set",
+          "description": "Take out the set logged last in the workout in progress. Asks the user to confirm.",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": true
+    },
+    {
       "name": "restore_transaction",
       "description": "Bring back a deleted transaction.",
       "schema": {
@@ -5065,10 +5417,12 @@
     "email_status",
     "explain_category",
     "find_duplicates",
+    "find_exercise",
     "find_ideas",
     "find_likely_moves",
     "find_places",
     "find_transactions",
+    "last_time",
     "list_bills",
     "list_budgets",
     "list_categories",
@@ -5081,6 +5435,7 @@
     "load_skill",
     "money_history",
     "month_outlook",
+    "personal_records",
     "place_info",
     "plan_record",
     "query_ledger",
@@ -5092,9 +5447,12 @@
     "show_watchlist",
     "spending_summary",
     "stock_levels",
+    "todays_workout",
     "trade_history",
     "trip_status",
-    "what_moved_today"
+    "weekly_volume",
+    "what_moved_today",
+    "workout_history"
   ],
   "menu_of": {
     "add_to_itinerary": "travel",
@@ -5104,9 +5462,14 @@
     "change_itinerary_entry": "travel",
     "create_trip": "travel",
     "delete_trip": "travel",
+    "find_exercise": "health",
+    "finish_workout": "health",
     "keep_plan_fresh": "invest",
     "label_trip_day": "travel",
+    "last_time": "health",
     "list_trips": "travel",
+    "log_sets": "health",
+    "personal_records": "health",
     "plan_record": "invest",
     "record_trade": "invest",
     "remove_from_itinerary": "travel",
@@ -5123,12 +5486,16 @@
     "split_trip_costs": "travel",
     "stock_levels": "invest",
     "they_paid": "travel",
+    "todays_workout": "health",
     "trade_history": "invest",
     "trip_status": "travel",
+    "undo_last_set": "health",
     "unwatch_stock": "invest",
     "update_trip": "travel",
     "watch_stock": "invest",
-    "what_moved_today": "invest"
+    "weekly_volume": "health",
+    "what_moved_today": "invest",
+    "workout_history": "health"
   },
   "safe_for_images": [
     "log_move",
@@ -5150,6 +5517,15 @@
     "show_watchlist",
     "watch_stock",
     "unwatch_stock",
+    "find_exercise",
+    "todays_workout",
+    "last_time",
+    "personal_records",
+    "workout_history",
+    "weekly_volume",
+    "log_sets",
+    "finish_workout",
+    "undo_last_set",
     "spending_summary",
     "query_ledger",
     "list_categories",

@@ -14,12 +14,12 @@ export type DepartmentView = {
   upcoming?: string; // what it will do, for a department that isn't ready yet
   /** The preference that puts it in the menu (the nav rail and the bottom bar). Without one it is
    * always there. Its pages open by link either way; only the menu changes. */
-  menu?: "show_invest" | "show_travel";
+  menu?: "show_invest" | "show_travel" | "show_health";
 };
 
 /** The preferences that decide what the menu shows. A section turns on only for `true`: not
  * decided (null or absent) and switched off (false) are both hidden. */
-export type MenuPreferences = { show_invest?: boolean | null; show_travel?: boolean | null };
+export type MenuPreferences = { show_invest?: boolean | null; show_travel?: boolean | null; show_health?: boolean | null };
 
 /** Whether a department has a place in the menu for someone with these preferences. */
 export const inMenu = (d: DepartmentView, preferences?: MenuPreferences): boolean =>
@@ -64,6 +64,21 @@ export const DEPARTMENTS: DepartmentView[] = [
     path: "/travel",
     blurb: "Your trips: budgets, money set aside, spending and settling up.",
     tabs: [{ to: "/travel", label: "Trips", end: true }],
+  },
+  {
+    name: "health",
+    label: "Health",
+    short: "Health",
+    menu: "show_health",
+    icon: "",
+    path: "/health",
+    blurb: "Gym workouts, routines and progress.",
+    tabs: [
+      { to: "/health", label: "Today", end: true },
+      { to: "/health/routines", label: "Routines" },
+      { to: "/health/library", label: "Library" },
+      { to: "/health/history", label: "History" },
+    ],
   },
 ];
 

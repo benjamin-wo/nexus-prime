@@ -200,6 +200,7 @@ export async function fakeApi(
      * finds their tabs. */
     showInvest = true as boolean | null,
     showTravel = true as boolean | null,
+    showHealth = null as boolean | null,
     /** PUT /settings/preferences answers 500, to show how a refused save reads. */
     preferencesFail = false,
     /** Whether Home's "Get started" guide is put away (GET /setup `dismissed`; POST /setup/dismiss sets it). On by
@@ -323,7 +324,7 @@ export async function fakeApi(
     display_name: guest ? "Gus L." : demoSession ? "Demo" : member ? "Mia K." : "Sam R.",
     telegram_linked: demoSession ? false : telegramLinked,
   });
-  const preferences = { track_cards: trackCards, show_invest: showInvest, show_travel: showTravel };
+  const preferences = { track_cards: trackCards, show_invest: showInvest, show_travel: showTravel, show_health: showHealth };
   const meBody = () => ({
     user: userBody(),
     csrf_token: "csrf-1",
@@ -924,7 +925,7 @@ export async function fakeApi(
       state.preferencePuts.push(body);
       if (preferencesFail) return json(route, { detail: "Couldn't save that preference" }, 500);
       // Only the fields sent change; each is true or false, and at least one is sent.
-      const keys = ["track_cards", "show_invest", "show_travel"] as const;
+      const keys = ["track_cards", "show_invest", "show_travel", "show_health"] as const;
       const sent = keys.filter((k) => body && k in body);
       if (sent.length === 0 || sent.some((k) => typeof body?.[k] !== "boolean"))
         return json(route, { detail: "send at least one preference, each true or false" }, 422);
