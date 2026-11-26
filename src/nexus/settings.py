@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     demo_enabled: bool = False
     trusted_proxy_hops: int = Field(1, ge=0, le=5)
 
+    # --- Health -> Gym: where exercise images are served from. The default is the
+    # free-exercise-db repository at the commit the catalogue was built from (its README
+    # allows this); point it at your own host or bucket once the images are copied there. ---
+    exercise_image_base_url: str = (
+        "https://raw.githubusercontent.com/yuhonas/free-exercise-db/"
+        "f00c92c7dcf1216a928a52c3706c7ce8e2f71ed5/exercises/"
+    )
+
     # --- Background jobs (reminders, budget alerts). Unset: on in prod only, so
     # tests and local runs don't send messages unless asked to. ---
     jobs_enabled: bool | None = None

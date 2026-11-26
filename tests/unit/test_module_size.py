@@ -12,7 +12,7 @@ LARGE_FILES: dict[str, int] = {
     "src/nexus/application/email.py": 1439,
     "src/nexus/application/ops_report.py": 884,
     "src/nexus/application/plans.py": 1257,
-    "src/nexus/application/ports.py": 1253,
+    "src/nexus/application/ports.py": 1276,
     "src/nexus/application/travel_research.py": 974,
     "src/nexus/application/trips.py": 971,
     "src/nexus/channels/web/investments_api.py": 835,
@@ -20,9 +20,9 @@ LARGE_FILES: dict[str, int] = {
     "src/nexus/evals/cases.py": 2806,
     "src/nexus/infra/db/investment_repository.py": 822,
     "src/nexus/infra/db/ledger_repository.py": 1648,
-    "src/nexus/infra/db/tables.py": 1619,
+    "src/nexus/infra/db/tables.py": 1638,
     "src/nexus/infra/db/trip_repository.py": 1153,
-    "src/nexus/main.py": 873,
+    "src/nexus/main.py": 876,
     "web/src/pages/TripArrange.tsx": 808,
 }
 

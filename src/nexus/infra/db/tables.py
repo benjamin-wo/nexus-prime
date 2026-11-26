@@ -1603,6 +1603,25 @@ demo_starts = Table(
 )
 
 
+# The shared exercise catalogue (free-exercise-db): the same for every user, so no user_id
+# and no row-level security. Loaded from catalogue.json at startup, not by migrations.
+exercises = Table(
+    "exercises",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("name", Text, nullable=False),
+    Column("category", Text, nullable=False),
+    Column("level", Text, nullable=False),
+    Column("equipment", Text),
+    Column("force", Text),
+    Column("mechanic", Text),
+    Column("primary_muscles", ARRAY(Text), nullable=False),
+    Column("secondary_muscles", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+    Column("instructions", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+    Column("images", ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
+)
+
+
 def not_demo(user_id: ColumnElement[Any]) -> ColumnElement[bool]:
     """For the sweeps that message people or reach outside services on a schedule: true when
     the row's user is not a public-demo account, which they skip."""

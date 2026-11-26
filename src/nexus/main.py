@@ -33,6 +33,7 @@ from nexus.agent.tools import build_tools
 from nexus.agent.trip_reader import LlmTripReader, TripReader
 from nexus.application import costs, ops
 from nexus.application import email as email_cases
+from nexus.application import gym as gym_cases
 from nexus.application.clock import utcnow
 from nexus.application.departments import Departments, default_registry
 from nexus.application.destination_photos import PhotoFinder
@@ -84,6 +85,7 @@ from nexus.infra.db.uow import SqlUnitOfWork
 from nexus.infra.demo_store import DemoStore
 from nexus.infra.email.agentmail import AgentMailInboxes
 from nexus.infra.email.gmail import GmailMailbox
+from nexus.infra.exercises import load_catalogue
 from nexus.infra.fx.frankfurter import FrankfurterRates
 from nexus.infra.guides.wikivoyage import Wikivoyage
 from nexus.infra.http import timed_client
@@ -746,6 +748,7 @@ def create_app(settings: Settings | None = None, overrides: Overrides | None = N
         async with AsyncExitStack() as stack:
             stack.push_async_callback(engine.dispose)
             await assert_schema_at_head(engine)
+            await gym_cases.sync_catalogue(SqlUnitOfWork(engine), load_catalogue())
             app.state.engine = engine
             app.state.ops = await _ops_store(resolved, engine, stack)
             app.state.costs = await _cost_store(engine, stack)

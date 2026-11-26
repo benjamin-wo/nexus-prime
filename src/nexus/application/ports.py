@@ -27,6 +27,7 @@ from nexus.domain.email import (
     InboundEmail,
     Screening,
 )
+from nexus.domain.gym import Equipment, Exercise, Level, Muscle
 from nexus.domain.identity import Identity, Provider
 from nexus.domain.investments import (
     Dividend,
@@ -989,6 +990,26 @@ class TripRepository(Protocol):
         ...
 
 
+class GymRepository(Protocol):
+    """The exercise catalogue: shared by every user."""
+
+    async def get_exercise(self, exercise_id: str) -> Exercise | None: ...
+    async def find_exercises(
+        self,
+        *,
+        text: str | None = None,
+        muscle: Muscle | None = None,
+        equipment: Equipment | None = None,
+        level: Level | None = None,
+    ) -> list[Exercise]:
+        """Everything passing the filters, unranked; the name contains every word of ``text``."""
+        ...
+
+    async def upsert_exercises(self, catalogue: list[Exercise]) -> int:
+        """Insert new and update changed exercises, never delete; returns rows written."""
+        ...
+
+
 class InvestmentRepository(Protocol):
     async def list_holdings(self, user_id: UserId) -> list[Holding]: ...
     async def save_position(self, user_id: UserId, position: Position, at: datetime) -> None:
@@ -1230,6 +1251,8 @@ class UnitOfWork(Protocol):
     def statements(self) -> StatementRepository: ...
     @property
     def runs(self) -> RunRepository: ...
+    @property
+    def gym(self) -> GymRepository: ...
     @property
     def investments(self) -> InvestmentRepository: ...
     @property

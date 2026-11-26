@@ -80,6 +80,7 @@ EXCLUDED_TABLES: dict[str, str] = {
     "destination_photos": "photo cache refetched on demand (large binary rows)",
     "web_sessions": "login sessions: the new server issues its own, never revive old ones",
     "login_links": "one-time login links: never revive old ones",
+    "exercises": "the shared exercise catalogue, reloaded from catalogue.json at startup",
 }
 
 # The timestamp columns that say "this row was written or changed", per merged table. A row's
