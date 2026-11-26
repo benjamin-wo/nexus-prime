@@ -172,6 +172,7 @@ PUT /api/health/profile
 GET /api/health/profile/training
 PUT /api/health/profile/training
 GET /api/health/consents
+POST /api/health/consent/all
 PUT /api/health/consents/{scope}
 DELETE /api/health/consents/{scope}
 GET /api/health/weight
