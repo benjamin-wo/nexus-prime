@@ -240,7 +240,12 @@ async def test_the_database_wins_over_the_estimate_and_the_best_match_is_taken(
     # "rice" matches several foods: the top-ranked one is used, nothing is asked.
     text, error = await run(uow, alice, "log_food", foods=[{"food": "rice", "grams": "100"}])
     assert error is None and text.startswith("Logged ")
-    first, second = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    # Both are at the same moment, so their order isn't fixed: tell them apart by their kcal.
+    first, second = sorted(
+        await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW),
+        key=lambda m: m.totals.point.kcal,
+        reverse=True,
+    )
     assert str(first.totals.point.kcal) == "400.000" and second.items[0].source_detail == "db"
 
 

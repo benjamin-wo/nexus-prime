@@ -438,7 +438,7 @@ async def seed(world: World, user: UUID, other: UUID) -> Seeded:
         )
         await add(
             t["profile_undo"],
-            token="undo-token",
+            token=uid().hex,
             user_id=user,
             previous=None,
             created_at=now,

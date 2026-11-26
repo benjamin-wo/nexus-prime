@@ -1,0 +1,502 @@
+import type { Money } from "./money";
+
+/** Where the trip is for a stretch of days: a city or area, first to last day. One stop's
+ * last day may be the next one's first (the travel day). */
+export type TripStop = { name: string; start: string; end: string };
+
+/** A trip (Travel). Budget, set-aside and planned amounts are in the home currency. */
+export type Trip = {
+  id: string;
+  destination: string;
+  start: string;
+  end: string;
+  days: number;
+  currency: string;
+  budget: Money | null;
+  companions: string[];
+  set_aside: Money | null;
+  planned: Record<string, Money>;
+  status: "upcoming" | "ongoing" | "finished";
+  days_until: number;
+  day_number: number | null;
+  notes: string | null;
+  day_labels: Record<string, string>;
+  /** A famous view of where it goes, from Wikimedia Commons, once found. */
+  photo?: TripPhoto | null;
+  /** The user chose to show no photo. */
+  photo_off?: boolean;
+  packing?: PackItem[];
+  /** How longer hops go: public transport, or a hire car. */
+  getting_around?: "transit" | "car";
+  /** The stops the user set, in date order; empty means they follow the hotels (see
+   * TripDetail.suggested_stops). */
+  stops: TripStop[];
+  /** Costs are split evenly with the people going: offered once someone else is going. */
+  split_evenly: boolean;
+  /** "owner" for the user's own trip, "member" for one they were added to: there the budget,
+   * set-aside and planned amounts are left out (null, empty). */
+  role: "owner" | "member";
+  /** The owner's name, as they sign in with. */
+  owner_name: string | null;
+};
+
+export type PackItem = { text: string; done: boolean };
+
+/** A to-do on a trip's Prep tab. `due` is a date (YYYY-MM-DD) or null; one due tomorrow is reminded
+ * of in the morning unless it's done. `id` is short and stable: send it back with each save. */
+export type Todo = { id: string; text: string; due: string | null; done: boolean };
+/** What a to-do is sent as in `PUT /travel/trips/{id}/todos` (the whole list, replacing it): `id` is
+ * left out for a new one. At most 50, each at most 80 characters. */
+export type TodoIn = { id?: string | null; text: string; due?: string | null; done?: boolean };
+
+export type CoverKind = "insurance" | "visa" | "document" | "other";
+/** Cover and documents on the Prep tab: a policy, a visa, another document. `reference` is the user's
+ * own (a card or passport number is refused, 422). `cost` and `logged` are the owner's money: null and
+ * false for a member of the trip (`trip.role`), who never sees or sets them. */
+export type Cover = {
+  id: string;
+  kind: CoverKind;
+  name: string;
+  reference: string | null;
+  /** The number to call: digits, +, spaces, - and brackets. */
+  phone: string | null;
+  starts: string | null;
+  ends: string | null;
+  /** Counted in the trip's `booked` (and `booked_unlogged` until it is logged) like a booking's cost. */
+  cost: Money | null;
+  /** Its cost has been recorded as an expense (`POST .../covers/{id}/log`). */
+  logged: boolean;
+  note: string | null;
+};
+/** The body of `POST /travel/trips/{id}/covers` and `PUT .../covers/{id}` (an edit sends the whole cover).
+ * `cost` is only for the trip's owner (403 for a member), in `currency` or the home currency. */
+export type CoverIn = {
+  kind: CoverKind;
+  name: string;
+  reference?: string | null;
+  phone?: string | null;
+  starts?: string | null;
+  ends?: string | null;
+  cost?: string | null;
+  currency?: string | null;
+  note?: string | null;
+};
+/** Something the trip probably still needs, worked out on the server (never by a model) and left out
+ * once done or dismissed. `add_cover` opens the cover form; `add_todo` adds `text` as a to-do. */
+export type PrepSuggestion = { key: string; text: string; sub: string; action: "add_cover" | "add_todo" };
+/** The Prep tab's lists: what `PUT .../todos`, `POST .../prep/dismiss` and `DELETE .../prep/dismiss/{key}`
+ * answer with, as the person asking sees them. */
+export type Prep = { todos: Todo[]; covers: Cover[]; prep_suggestions: PrepSuggestion[] };
+
+/** The forecast once it reaches the trip, else the same dates in recent years. */
+export type TripWeather = {
+  place: string;
+  kind: "forecast" | "typical";
+  years: number;
+  days: { day: string; high: number | null; low: number | null; rain: number | null; summary: string | null; code: number | null }[];
+};
+
+/** A trip's header photo, served by our API, with the credit its licence asks for. */
+export type TripPhoto = {
+  url: string;
+  credit: string;
+  page: string | null;
+  licence_url: string | null;
+  spot: string | null;
+};
+
+/** A flight, hotel or train booking read from email. Times are local as booked. */
+export type Booking = {
+  id: string;
+  trip_id: string | null;
+  kind: "flight" | "hotel" | "rail" | "activity";
+  title: string;
+  provider: string | null;
+  starts: string;
+  ends: string | null;
+  segments: { number: string | null; origin: string | null; destination: string | null; departs: string | null; arrives: string | null }[];
+  hotel: string | null;
+  address: string | null;
+  check_in: string | null;
+  check_out: string | null;
+  name: string | null;
+  day: string | null;
+  at: string | null;
+  note: string | null;
+  reference: string | null;
+  booked_via: string | null;
+  category: string | null;
+  place_id: string | null;
+  /** A plan's end time, HH:MM. */
+  ends_at?: string | null;
+  /** A link to book or read more (https only). */
+  link?: string | null;
+  /** The list a place to visit is filed under (Food, Sights…). */
+  list_name?: string | null;
+  /** Its place in the day (or in places to visit) once rearranged by hand. */
+  order?: number | null;
+  scheduled: boolean;
+  cost: Money | null;
+  logged: boolean;
+  manual: boolean;
+  /** The user's own pin on the map, for a plan with no Google Maps place (never Google's
+   * coordinates, which can't be kept). Dropped once a place is linked. */
+  lat?: number | null;
+  lng?: number | null;
+};
+
+/** A place as Google Maps shows it: fetched when shown, only its id is kept. */
+export type Place = {
+  id: string;
+  name: string;
+  address: string | null;
+  kind: string | null;
+  rating: string | null;
+  ratings: number | null;
+  price: string | null;
+  maps_url: string | null;
+  website: string | null;
+  phone: string | null;
+  summary: string | null;
+  status: string | null;
+  hours: string[];
+  reviews: { rating: number | null; text: string; author: string | null; author_url: string | null; when: string | null }[];
+  /** A thumbnail served by our API, and who took it (credited where shown). */
+  photo_url?: string | null;
+  photo_author?: string | null;
+  photo_author_url?: string | null;
+  /** Where it is, for the trip map (fetched with the place, never stored). */
+  lat?: number | null;
+  lng?: number | null;
+  /** The neighbourhood it's in ("Gion"): fetched with the place, never stored. */
+  area?: string | null;
+  /** The city it's in ("Kyoto"): names a trip's stop. Fetched with the place, never stored. */
+  city?: string | null;
+};
+/** A place a travel guide or article recommends, with the page it came from and its
+ * Google Maps match when there is one. Nothing is saved until the user picks it. */
+export type Idea = {
+  name: string;
+  area: string | null;
+  kind: string | null;
+  why: string;
+  source: { url: string; title: string };
+  place: Place | null;
+};
+/** `destination` is where the search looked: the trip's, a stop's, or "<area>, <stop>" for a day. */
+export type Ideas = { query: string; destination: string; ideas: Idea[] };
+/** Where a search for a trip looks. Neither: the whole trip. `stop` is one of the trip's stops
+ * (its name, as in `stops`/`suggested_stops`); `day` is a date (YYYY-MM-DD) inside the trip, and
+ * leans a Google Maps search towards the places planned that day. Both need the trip: the server
+ * answers 422 for a stop that isn't the trip's, a day outside it (or outside the given stop), and
+ * 404 for a trip that isn't yours. */
+export type SearchScope = { stop?: string | null; day?: string | null };
+/** The query string for `GET /travel/places/search` in a trip, scoped to a stop or a day. */
+export function placeSearchPath(q: string, tripId: string, scope: SearchScope = {}): string {
+  return `/travel/places/search?q=${encodeURIComponent(q)}&trip_id=${tripId}${scopeQuery(scope)}`;
+}
+/** The path for `GET /travel/trips/{id}/ideas` (guides and articles), scoped to a stop or a day. */
+export function tripIdeasPath(tripId: string, q: string, scope: SearchScope = {}): string {
+  return `/travel/trips/${tripId}/ideas?q=${encodeURIComponent(q)}${scopeQuery(scope)}`;
+}
+function scopeQuery({ stop, day }: SearchScope): string {
+  return `${stop ? `&stop=${encodeURIComponent(stop)}` : ""}${day ? `&day=${encodeURIComponent(day)}` : ""}`;
+}
+export type LinkedPlace = {
+  booking_id: string;
+  place: Place;
+  warning: string | null;
+  /** For a flight's or train's airport or station: its name, and the days it's left from or landed at. */
+  station?: string | null;
+  stops?: { day: string; side: "from" | "to" }[];
+};
+export type TravelMode = "walk" | "transit" | "drive";
+/** Getting from one of a day's stops to the next. */
+export type Hop = {
+  start_id: string;
+  end_id: string;
+  start: string;
+  end: string;
+  mode: TravelMode;
+  /** Null when Google found no way to get there like that. */
+  minutes: number | null;
+  metres: number | null;
+  /** Takes longer than the time between the two plans. */
+  tight: boolean;
+  directions: string;
+  /** Between an airport and a place right by it (a hire-car desk): not drawn or timed. */
+  beside_airport?: boolean;
+};
+
+/** A trip as its read-only link shows it: the plan, never money, references, notes or
+ * who's going. */
+export type SharedBooking = Pick<Booking, "kind" | "title" | "provider" | "starts" | "ends" | "segments" | "hotel" | "address" | "check_in" | "check_out" | "day" | "at" | "category">;
+export type SharedTrip = Pick<Trip, "destination" | "start" | "end" | "days" | "status" | "days_until" | "day_number" | "day_labels" | "photo"> & {
+  stops: TripStop[];
+  bookings: SharedBooking[];
+  /** False when the owner hides flights, stays and tickets: `bookings` then holds only their own plans. */
+  show_bookings: boolean;
+  /** Days a hidden booking starts or ends on (dates only), so the page can say "Travel day"
+   * rather than "Free day". Empty while bookings are shown. */
+  hidden_days: string[];
+};
+export type TripShare = {
+  token: string | null;
+  /** The link shows flights, stays and tickets (on unless turned off). Money, references, notes
+   * and who's going are never shown. */
+  show_bookings: boolean;
+};
+
+/** A cost on the trip that nobody owes a share of yet. */
+export type ToSplit = {
+  transaction_id: string;
+  day: string;
+  counterparty: string | null;
+  category: string | null;
+  /** The whole bill. */
+  amount: Money;
+  home: Money | null;
+};
+
+/** Something a fellow traveller paid for the trip that the user shares in. */
+export type PaidByOther = {
+  id: string;
+  person: string;
+  /** The whole bill, in the currency it was paid in. */
+  amount: Money;
+  note: string | null;
+  paid_on: string;
+  /** The other travellers sharing it, besides the payer and the user. */
+  split_with: string[];
+  /** The user's equal part, in the currency it was paid in: what they owe the payer. */
+  my_share: Money;
+  settled: boolean;
+  settled_at: string | null;
+};
+
+/** One thing owed between the user and a person: "iou" is their share of a bill the user paid,
+ * "payment" the user's share of a bill they paid. */
+export type BalancePart = {
+  kind: "iou" | "payment";
+  id: string;
+  label: string | null;
+  amount: Money;
+  home: Money | null;
+  on: string;
+};
+
+/** Where the user stands with one person (open items only). `net` is in the home currency,
+ * positive when they owe the user, and null when a part has no exchange rate yet; then
+ * `net_by_currency` (signed the same way) has the amounts and `direction` is null if the
+ * currencies differ. */
+export type Balance = {
+  person: string;
+  direction: "owes_you" | "you_owe" | "even" | null;
+  net: Money | null;
+  net_by_currency: Money[];
+  owes_you: BalancePart[];
+  you_owe: BalancePart[];
+};
+
+/** POST /travel/trips/{id}/split: `all` splits every cost not split yet, else `transaction_ids`. */
+export type SplitBody = { transaction_ids: string[] } | { all: true };
+export type SplitResult = {
+  with_people: string[];
+  done: { transaction_id: string; counterparty: string | null; amount: Money; own_share: Money }[];
+  /** Split meanwhile, not on the trip, or can't be split: left alone. */
+  skipped: { transaction_id: string; reason: string }[];
+};
+
+/** POST/PUT /travel/trips/{id}/paid-by-others. `person` must be a traveller on the trip;
+ * `currency` defaults to the home currency, `paid_on` to today and `split_with` (the other
+ * travellers sharing it besides the payer and the user) to everyone. */
+export type PaidByOtherBody = {
+  person: string;
+  amount: string;
+  currency?: string | null;
+  note?: string | null;
+  paid_on?: string | null;
+  split_with?: string[] | null;
+};
+
+/** POST /travel/trips/{id}/settle. What they owe the user is always recorded as money in when it is
+ * marked paid back; `log` also records the user's share of what they paid as an expense. */
+export type SettleResult = {
+  person: string;
+  ious_repaid: number;
+  payments_settled: number;
+  income: Money[];
+  expenses: Money[];
+};
+
+export type ScreenshotRead = { added: Booking[]; repeated: number; message: string };
+
+/** Something worth a look on a trip day, worked out on the server. */
+export type DayNote = { kind: "clash" | "order" | "free" | "arrival"; text: string; ids: string[]; start?: string | null; end?: string | null };
+
+/** A trip day: its entries' ids in itinerary order, and its notes. */
+export type DayPlan = { day: string; order: string[]; notes: DayNote[] };
+
+/** What a trip has cost so far against its budget. */
+export type TripSpending = {
+  spent: Money;
+  left: Money | null;
+  percent: number | null;
+  before: Money;
+  today: Money | null;
+  per_day: Money | null;
+  per_day_left: Money | null;
+  categories: { name: string; planned: Money | null; spent: Money }[];
+  unconverted: number;
+};
+/** The set-aside plan for a trip. */
+export type TripSaving = {
+  per_payday: Money | null;
+  paydays_done: number;
+  paydays_left: number;
+  saved: Money | null;
+  by_start: Money | null;
+  covers_budget: boolean | null;
+  suggested: Money | null;
+  fits: boolean | null;
+  next_payday: string | null;
+  pay_schedule: boolean;
+};
+
+export type TripDetail = {
+  trip: Trip;
+  bookings: Booking[];
+  /** Each day's entries in order, as the server arranges them. */
+  days?: DayPlan[];
+  /** Places to visit (no day yet) in the user's order. */
+  places_order?: string[];
+  places: boolean;
+  /** Quick ideas from travel guides and articles are set up. */
+  ideas?: boolean;
+  /** The stops the hotels suggest (named by each hotel's area where Google Maps knows it):
+   * what the page shows until the user sets their own in trip.stops. */
+  suggested_stops: TripStop[];
+  /** Travel times between a day's stops are set up. */
+  routes?: boolean;
+  /** The browser key for Google's map; null when there's no map. */
+  map_key?: string | null;
+  /** Bookings' costs and covers' costs, together (a cover is listed under "Bookings paid" from `covers`). */
+  booked: Money | null;
+  booked_unlogged: Money | null;
+  to_spend: Money | null;
+  ready: { nights_without_stay: string[]; has_transport: boolean; has_budget: boolean; done: number; total: number };
+  /** Null for a member of the trip (`trip.role`), who gets the plan and no money. */
+  spending: TripSpending | null;
+  /** Null for a member of the trip. */
+  saving: TripSaving | null;
+  /** Empty for a member of the trip, as are `items`, `to_split`, `just_mine`, `paid_by_others`
+   * and `balances`; `booked`, `booked_unlogged` and `to_spend` are null. */
+  owed: { name: string; amounts: Money[]; home: Money | null }[];
+  /** Costs not split yet (newest first), while the trip splits evenly and others are going. */
+  to_split: ToSplit[];
+  /** Expenses marked "just mine". */
+  just_mine: string[];
+  /** What fellow travellers paid for the trip, oldest first, settled ones included. */
+  paid_by_others: PaidByOther[];
+  /** Where the user stands with each person (open items only), A to Z. */
+  balances: Balance[];
+  /** The Prep tab, always sent by the server (optional here so older fixtures still type-check). Anyone on
+   * the trip reads and edits the to-dos and covers; a member's covers have `cost` null and `logged` false. */
+  todos?: Todo[];
+  covers?: Cover[];
+  prep_suggestions?: PrepSuggestion[];
+  items: {
+    transaction_id: string;
+    day: string;
+    counterparty: string | null;
+    category: string | null;
+    amount: Money;
+    home: Money | null;
+    linked: boolean;
+  }[];
+};
+
+/** Someone on a trip: its owner, or a person added to it. */
+export type TripMember = {
+  id: string;
+  /** As they sign in with Telegram; "Someone" if they never gave one. */
+  name: string;
+  role: "owner" | "member";
+  /** Null for the owner. */
+  added_at: string | null;
+  /** The person asking. */
+  you: boolean;
+};
+/** A trip invite link that can still be used (never the link itself). */
+export type TripInvite = { id: string; created_at: string; expires_at: string };
+/** `POST /travel/trips/{id}/invites`: a single-use link, valid for 7 days. The token and url are
+ * shown this once. */
+export type IssuedTripInvite = TripInvite & { token: string; url: string };
+/** One change to the plan of a shared trip, newest first (the latest 20). */
+export type TripActivity = { actor: string; summary: string; at: string };
+/** `POST /travel/invites/{token}/accept`: `new` is false when they were on the trip already, and `own`
+ * is true when the link is their own trip's (nothing is joined; the trip is theirs to open). */
+export type JoinedTrip = { trip_id: string; new: boolean; own?: boolean };
+/** The path for the trip's members (`GET`), or one of them (`DELETE`: the owner removes someone,
+ * a member removes themselves). */
+export const tripMembersPath = (tripId: string, memberId?: string) =>
+  `/travel/trips/${tripId}/members${memberId ? `/${memberId}` : ""}`;
+/** The path for the trip's invites (`GET`, `POST`), or one of them (`DELETE` cancels it). */
+export const tripInvitesPath = (tripId: string, inviteId?: string) =>
+  `/travel/trips/${tripId}/invites${inviteId ? `/${inviteId}` : ""}`;
+/** The path for `GET /travel/trips/{id}/activity`. */
+export const tripActivityPath = (tripId: string) => `/travel/trips/${tripId}/activity`;
+/** The path for `PUT /travel/trips/{id}/notes` (body `{ notes: string | null }`), how a member edits the notes. */
+export const tripNotesPath = (tripId: string) => `/travel/trips/${tripId}/notes`;
+/** The path for `PUT /travel/trips/{id}/todos` (body `{ todos: TodoIn[] }`, answers `Prep`). */
+export const tripTodosPath = (tripId: string) => `/travel/trips/${tripId}/todos`;
+/** The path for `POST /travel/trips/{id}/prep/dismiss` (body `{ key }`, "Not needed") or, with a key,
+ * `DELETE .../prep/dismiss/{key}` (bring the suggestion back). Both answer `Prep`. */
+export const tripDismissPath = (tripId: string, key?: string) =>
+  `/travel/trips/${tripId}/prep/dismiss${key ? `/${encodeURIComponent(key)}` : ""}`;
+/** The path for `POST /travel/trips/{id}/covers` (body `CoverIn`, 201 with the `Cover`) or one of them:
+ * `PUT` (body `CoverIn`, answers the `Cover`) and `DELETE` (204). */
+export const tripCoversPath = (tripId: string, coverId?: string) =>
+  `/travel/trips/${tripId}/covers${coverId ? `/${coverId}` : ""}`;
+/** The path for `POST /travel/trips/{id}/covers/{cover}/log` (owner only; no body): records the cover's cost
+ * as an expense (Travel) that counts towards the trip. Answers the `Cover`, logged. 409 if it already is,
+ * 422 if it has no cost. Nexus pays nothing. */
+export const tripCoverLogPath = (tripId: string, coverId: string) => `/travel/trips/${tripId}/covers/${coverId}/log`;
+/** The path for `POST /travel/invites/{token}/accept`. */
+export const acceptInvitePath = (token: string) => `/travel/invites/${encodeURIComponent(token)}/accept`;
+
+/** A trip's research: every price names a source (by id), checked on the date given. */
+export type Research = {
+  destination: string;
+  start: string;
+  end: string;
+  nights: number;
+  travellers: number;
+  currency: string | null;
+  home_currency: string;
+  when_summary: string;
+  when: { text: string; source: number }[];
+  prices: { label: string; low: string; high: string; currency: string; per: string; source: number; home_low: string | null; home_high: string | null }[];
+  areas: { name: string; why: string; things: string[]; source: number }[];
+  getting_around: string;
+  getting_around_source: number | null;
+  sources: { id: number; url: string; title: string; checked_on: string }[];
+  estimate_low: string | null;
+  estimate_high: string | null;
+  estimate_lines: string[];
+  budget: string | null;
+  paydays_left: number;
+  set_aside: string | null;
+  fits: boolean | null;
+  trip_id: string | null;
+};
+
+/** `POST /travel/research/{run_id}/ideas` body: the research's areas (by name, 1 to 10) whose things
+ * to do become ideas on one of your upcoming or ongoing trips, each under a list named after its area. */
+export type ResearchIdeasIn = { trip_id: string; areas: string[] };
+/** What was done: ideas saved (at most 4 an area), ideas already on the trip (skipped), and the
+ * research's place when it is none of the trip's stops (offer it as one; `PUT /stops` saves it).
+ * Errors: 404 for a research or trip that isn't yours, 422 for a finished trip, no areas, an area the
+ * research lacks, or a trip that's full. Safe to repeat. */
+export type ResearchIdeasOut = { added: number; skipped: number; stop_suggestion: string | null };
+

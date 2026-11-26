@@ -1,0 +1,3237 @@
+[
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/auth/device",
+  "endpoint": "start_device_signin",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "DeviceStartOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/auth/device/{poll_id}",
+  "endpoint": "poll_device_signin",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/auth/logout",
+  "endpoint": "logout",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/auth/telegram",
+  "endpoint": "login",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "MeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/auth/telegram/callback",
+  "endpoint": "login_callback",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/auth/webapp",
+  "endpoint": "login_webapp",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "MeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/bills",
+  "endpoint": "bills",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/bills",
+  "endpoint": "add_bill",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "BillOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/bills/{bill_id}",
+  "endpoint": "remove_bill",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/bills/{bill_id}",
+  "endpoint": "patch_bill",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "BillOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/bills/{bill_id}/paid",
+  "endpoint": "bill_paid",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "BillPaidOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/bills/{bill_id}/skip",
+  "endpoint": "skip_bill",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/bills/{bill_id}/snooze",
+  "endpoint": "snooze_bill",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/budgets",
+  "endpoint": "budgets",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/budgets",
+  "endpoint": "set_budget",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/budgets/month",
+  "endpoint": "budgets_month",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MonthPlanOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/budgets/{budget_id}",
+  "endpoint": "remove_budget",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/cashflow",
+  "endpoint": "cashflow",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "CashFlowOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/categories",
+  "endpoint": "categories",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/categories",
+  "endpoint": "create_category",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "CategoryOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/categories/{category_id}",
+  "endpoint": "delete_category",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MergeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/categories/{category_id}",
+  "endpoint": "edit_category",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "CategoryOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/categories/{category_id}/merge",
+  "endpoint": "merge_category",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MergeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/category-rules",
+  "endpoint": "category_rules",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/category-rules",
+  "endpoint": "set_category_rule",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/category-rules/accept",
+  "endpoint": "accept_rule",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/category-rules/{rule_id}",
+  "endpoint": "remove_category_rule",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/chat",
+  "endpoint": "chat",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/chat/history",
+  "endpoint": "chat_history",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ChatHistoryOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/chat/press",
+  "endpoint": "press",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/chat/stop",
+  "endpoint": "chat_stop",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/chat/stream",
+  "endpoint": "chat_stream",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/chat/voice",
+  "endpoint": "chat_voice",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/config",
+  "endpoint": "config",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "ConfigOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/demo",
+  "endpoint": "start_demo",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "DemoOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/departments",
+  "endpoint": "list_departments",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/email",
+  "endpoint": "overview",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "OverviewOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/email/connections/{connection_id}",
+  "endpoint": "disconnect",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/email/gmail/callback",
+  "endpoint": "callback",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/email/gmail/start",
+  "endpoint": "start",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/email/link",
+  "endpoint": "check_link",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "LinkCheckOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/email/link",
+  "endpoint": "link",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "LinkOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/email/{email_id}/log",
+  "endpoint": "log_email",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/email/{email_id}/move",
+  "endpoint": "move_email",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/email/{email_id}/same",
+  "endpoint": "same_payment",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/email/{email_id}/skip",
+  "endpoint": "skip_email",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/export.csv",
+  "endpoint": "export_csv",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/consent",
+  "endpoint": "withdraw_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/consent",
+  "endpoint": "get_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/consent",
+  "endpoint": "give_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/consents",
+  "endpoint": "get_consents",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/consents/{scope}",
+  "endpoint": "withdraw_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ScopeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/consents/{scope}",
+  "endpoint": "grant_consent",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ScopeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/day",
+  "endpoint": "day",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "DayOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/energy",
+  "endpoint": "energy",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "EnergyOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises",
+  "endpoint": "exercises",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}",
+  "endpoint": "exercise",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ExerciseOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}/last",
+  "endpoint": "last_time",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/exercises/{exercise_id}/progress",
+  "endpoint": "exercise_progress",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/foods",
+  "endpoint": "list_foods",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/foods/{food_id}",
+  "endpoint": "get_food",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "FoodOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/meals",
+  "endpoint": "list_meals",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/meals",
+  "endpoint": "log_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "delete_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "get_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/meals/{meal_id}",
+  "endpoint": "edit_meal",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MealOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/plan",
+  "endpoint": "get_plan",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PlanOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/plan",
+  "endpoint": "put_plan",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PlanOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/preferences",
+  "endpoint": "get_preferences",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "HealthPreferencesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/preferences",
+  "endpoint": "put_preferences",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "HealthPreferencesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/profile",
+  "endpoint": "get_profile",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ProfileOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/profile",
+  "endpoint": "save_profile",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ProfileOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/profile/training",
+  "endpoint": "get_training",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TrainingIn | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/profile/training",
+  "endpoint": "save_training",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TrainingIn",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/routines",
+  "endpoint": "routines",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/routines",
+  "endpoint": "create_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RoutineOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/routines/{routine_id}",
+  "endpoint": "delete_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/routines/{routine_id}",
+  "endpoint": "get_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RoutineOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/health/routines/{routine_id}",
+  "endpoint": "replace_routine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RoutineOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/samples",
+  "endpoint": "samples",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/samples",
+  "endpoint": "log_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SampleOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/samples/latest",
+  "endpoint": "latest_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SampleOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/samples/{sample_id}",
+  "endpoint": "delete_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/samples/{sample_id}",
+  "endpoint": "edit_sample",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SampleOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/sets/{set_id}",
+  "endpoint": "delete_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/health/sets/{set_id}",
+  "endpoint": "edit_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SetOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/today",
+  "endpoint": "today",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TodayOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/volume",
+  "endpoint": "weekly_volume",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "VolumeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/weight",
+  "endpoint": "weight",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WeightOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/workouts",
+  "endpoint": "workouts",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts",
+  "endpoint": "start_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WorkoutOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/health/workouts/{workout_id}",
+  "endpoint": "discard_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/health/workouts/{workout_id}",
+  "endpoint": "get_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WorkoutDetailOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts/{workout_id}/finish",
+  "endpoint": "finish_workout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SummaryOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts/{workout_id}/sets",
+  "endpoint": "log_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "LoggedSetOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/health/workouts/{workout_id}/undo",
+  "endpoint": "undo_last_set",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SetOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/home",
+  "endpoint": "home",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/imports",
+  "endpoint": "imports",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/imports",
+  "endpoint": "import_statement",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ImportedOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/imports/layouts",
+  "endpoint": "import_layouts",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/imports/layouts/{layout_id}",
+  "endpoint": "forget_import_layout",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/imports/pdf",
+  "endpoint": "read_pdf_statement",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PdfOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/imports/preview",
+  "endpoint": "preview_import",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PreviewOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/imports/{import_id}/undo",
+  "endpoint": "undo_statement_import",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "dict",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments",
+  "endpoint": "portfolio",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PortfolioOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/dividends",
+  "endpoint": "dividends",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "DividendsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/drafts/{draft_id}/discard",
+  "endpoint": "discard_draft",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/drafts/{draft_id}/save",
+  "endpoint": "save_draft",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/investments/holdings/{symbol}",
+  "endpoint": "remove_holding",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/investments/holdings/{symbol}",
+  "endpoint": "set_holding",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/plans",
+  "endpoint": "plans",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/plans/record",
+  "endpoint": "plan_record",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RecordOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/plans/{plan_id}",
+  "endpoint": "plan",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PlanOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/plans/{plan_id}/alerts",
+  "endpoint": "plan_alerts",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/investments/plans/{plan_id}/keep-fresh",
+  "endpoint": "plan_keep_fresh",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/screenshot",
+  "endpoint": "read_screenshot",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "DraftOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/stocks/{symbol}",
+  "endpoint": "stock",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "StockOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/stocks/{symbol}/plan",
+  "endpoint": "start_plan",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "StartedOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/today",
+  "endpoint": "today",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TodayOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/today/{symbol}/why",
+  "endpoint": "why",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WhyOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/trades",
+  "endpoint": "trades",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/trades",
+  "endpoint": "add_trade",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TradeOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/investments/watchlist",
+  "endpoint": "watchlist",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WatchlistOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/investments/watchlist",
+  "endpoint": "watch",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WatchedResult",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/investments/watchlist/{symbol}",
+  "endpoint": "unwatch",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/invites",
+  "endpoint": "invite",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "InviteOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/ious",
+  "endpoint": "ious",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/ious/{split_id}/repaid",
+  "endpoint": "iou_repaid",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/me",
+  "endpoint": "me",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "MeOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/me/delete",
+  "endpoint": "delete_my_data",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/me/export",
+  "endpoint": "export_my_data",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/me/timezone",
+  "endpoint": "set_my_timezone",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TimezoneOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/me/timezone/home",
+  "endpoint": "set_my_timezone_home",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TimezoneOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/memories",
+  "endpoint": "forget_everything",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/memories",
+  "endpoint": "memories",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/memories/{memory_id}",
+  "endpoint": "forget_memory",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/moves",
+  "endpoint": "create_move",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TransactionOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/notifications",
+  "endpoint": "notifications",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "UpdatesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/notifications",
+  "endpoint": "set_notifications",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "UpdatesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/notifications/history",
+  "endpoint": "notification_history",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/ops/costs",
+  "endpoint": "costs",
+  "dependencies": [],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/ops/report",
+  "endpoint": "report",
+  "dependencies": [],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/ops/tickets",
+  "endpoint": "tickets",
+  "dependencies": [],
+  "response_model": "dict",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/runs",
+  "endpoint": "list_runs",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/runs/{run_id}",
+  "endpoint": "get_run",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RunOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/runs/{run_id}/cancel",
+  "endpoint": "cancel_run",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "RunOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/salary",
+  "endpoint": "remove_salary",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/salary",
+  "endpoint": "salary",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SalaryOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/salary",
+  "endpoint": "set_salary_schedule",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/salary/name-earlier",
+  "endpoint": "name_earlier_salaries",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "NamedSalariesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/salary/usual",
+  "endpoint": "set_usual_salary",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/settings/preferences",
+  "endpoint": "set_preferences",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PreferencesOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/settings/voice",
+  "endpoint": "get_voice",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "VoiceOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/settings/voice",
+  "endpoint": "set_voice",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "VoiceOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/setup",
+  "endpoint": "setup",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SetupOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/setup/dismiss",
+  "endpoint": "dismiss_setup",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/shared/trips/{token}",
+  "endpoint": "shared_trip",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": "SharedTripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/shared/trips/{token}/photo",
+  "endpoint": "shared_photo",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/spending/months",
+  "endpoint": "spending_months",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SpendingOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/subscriptions",
+  "endpoint": "subscriptions",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SubscriptionsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/subscriptions/{subscription_id}/dismiss",
+  "endpoint": "dismiss_subscription",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/subscriptions/{subscription_id}/track",
+  "endpoint": "track_subscription",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/summary",
+  "endpoint": "summary",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SummaryOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/transactions",
+  "endpoint": "list_transactions",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PageOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions",
+  "endpoint": "create_transaction",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TransactionOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions/bulk-delete",
+  "endpoint": "bulk_delete",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "IdsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions/bulk-restore",
+  "endpoint": "bulk_restore",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "IdsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/transactions/suggestions",
+  "endpoint": "merchant_suggestions",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/transactions/{transaction_id}",
+  "endpoint": "delete_transaction",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TransactionOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/transactions/{transaction_id}",
+  "endpoint": "get_transaction",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TransactionOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/transactions/{transaction_id}",
+  "endpoint": "edit_transaction",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "EditedTransactionOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/transactions/{transaction_id}/category-explanation",
+  "endpoint": "category_explanation",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "dict",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions/{transaction_id}/merge",
+  "endpoint": "merge_duplicates",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "MergedOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions/{transaction_id}/move",
+  "endpoint": "mark_transaction_as_move",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TransactionOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions/{transaction_id}/not-duplicate",
+  "endpoint": "not_duplicate",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/transactions/{transaction_id}/receipt",
+  "endpoint": "receipt",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/transactions/{transaction_id}/restore",
+  "endpoint": "restore_transaction",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TransactionOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/bookings",
+  "endpoint": "loose_bookings",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/bookings/{booking_id}",
+  "endpoint": "delete_booking",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/bookings/{booking_id}",
+  "endpoint": "edit_booking",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "BookingOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/bookings/{booking_id}/move",
+  "endpoint": "move_booking",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "BookingOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/bookings/{booking_id}/place",
+  "endpoint": "link_place",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "BookingOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/bookings/{booking_id}/trip",
+  "endpoint": "set_booking_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/currency",
+  "endpoint": "currency_for",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "CurrencyOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/invites/{token}/accept",
+  "endpoint": "accept_invite",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "JoinedOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/next",
+  "endpoint": "next_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripDetailOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/photos/{photo_id}",
+  "endpoint": "photo",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/places/search",
+  "endpoint": "search_places",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/places/{place_id}",
+  "endpoint": "get_place",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "PlaceOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/places/{place_id}/photo",
+  "endpoint": "place_photo",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/research/{run_id}",
+  "endpoint": "get_research",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "dict",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/research/{run_id}/ideas",
+  "endpoint": "research_ideas",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ResearchIdeasOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/research/{run_id}/trip",
+  "endpoint": "research_to_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips",
+  "endpoint": "list_trips",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips",
+  "endpoint": "create_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}",
+  "endpoint": "delete_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}",
+  "endpoint": "get_trip",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripDetailOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}",
+  "endpoint": "update_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/activity",
+  "endpoint": "trip_activity",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/bookings",
+  "endpoint": "add_booking",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "BookingOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/covers",
+  "endpoint": "add_cover",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "CoverOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/covers/{cover_id}",
+  "endpoint": "delete_cover",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/covers/{cover_id}",
+  "endpoint": "edit_cover",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "CoverOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/covers/{cover_id}/log",
+  "endpoint": "log_cover",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "CoverOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/days/{day}",
+  "endpoint": "label_day",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/days/{day}/hops",
+  "endpoint": "day_hops",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/days/{day}/hops/{start_id}/{end_id}",
+  "endpoint": "day_hop",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "HopOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/expenses/{transaction_id}",
+  "endpoint": "remove_expense",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/expenses/{transaction_id}",
+  "endpoint": "add_expense",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/getting-around",
+  "endpoint": "getting_around",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/ideas",
+  "endpoint": "trip_ideas",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "IdeasOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/invites",
+  "endpoint": "list_invites",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/invites",
+  "endpoint": "create_invite",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "IssuedInviteOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/invites/{invite_id}",
+  "endpoint": "revoke_invite",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/keep-mine",
+  "endpoint": "keep_mine",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "KeepMineOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/members",
+  "endpoint": "list_members",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/members/{member_id}",
+  "endpoint": "remove_member",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/notes",
+  "endpoint": "set_notes",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/packing",
+  "endpoint": "set_packing",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/packing/suggest",
+  "endpoint": "suggest_packing",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/paid-by-others",
+  "endpoint": "add_paid_by_other",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PaidByOtherOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/paid-by-others/{payment_id}",
+  "endpoint": "delete_paid_by_other",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/paid-by-others/{payment_id}",
+  "endpoint": "edit_paid_by_other",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "PaidByOtherOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/photo",
+  "endpoint": "choose_photo",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/places",
+  "endpoint": "trip_places",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/prep/dismiss",
+  "endpoint": "dismiss_suggestion",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "PrepOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/prep/dismiss/{key}",
+  "endpoint": "restore_suggestion",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "PrepOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/screenshot",
+  "endpoint": "read_screenshot",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "ScreenshotOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/settle",
+  "endpoint": "settle_person",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SettleOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/travel/trips/{trip_id}/share",
+  "endpoint": "stop_sharing",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/share",
+  "endpoint": "get_share",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ShareOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/share",
+  "endpoint": "share_trip",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ShareOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/travel/trips/{trip_id}/split",
+  "endpoint": "split_costs",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "SplitOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/split-evenly",
+  "endpoint": "split_evenly",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/stops",
+  "endpoint": "set_stops",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "TripOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/travel/trips/{trip_id}/todos",
+  "endpoint": "set_todos",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "PrepOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/travel/trips/{trip_id}/weather",
+  "endpoint": "trip_weather",
+  "dependencies": [
+   "runtime",
+   "signed_in"
+  ],
+  "response_model": "WeatherOut | None",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/trip-alerts",
+  "endpoint": "trip_alerts",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripAlertsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/trip-alerts",
+  "endpoint": "set_trip_alerts",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "TripAlertsOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/undo",
+  "endpoint": "undo",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "UndoOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/wallets",
+  "endpoint": "wallets",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/api/wallets",
+  "endpoint": "create_wallet",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WalletSavedOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/wallets/likely-moves",
+  "endpoint": "likely_moves",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "list",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PUT"
+  ],
+  "path": "/api/wallets/usual-card",
+  "endpoint": "set_usual_card",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": 204
+ },
+ {
+  "methods": [
+   "DELETE"
+  ],
+  "path": "/api/wallets/{wallet_id}",
+  "endpoint": "delete_wallet",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WalletDeletedOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "PATCH"
+  ],
+  "path": "/api/wallets/{wallet_id}",
+  "endpoint": "edit_wallet",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WalletSavedOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/wallets/{wallet_id}/delete-preview",
+  "endpoint": "delete_wallet_preview",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WalletPreviewOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/api/wallets/{wallet_id}/spend",
+  "endpoint": "wallet_spend",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "WalletSpendOut",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/healthz",
+  "endpoint": "healthz",
+  "dependencies": [],
+  "response_model": "dict",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
+  "path": "/login/link/{token}",
+  "endpoint": "login_with_link",
+  "dependencies": [
+   "runtime"
+  ],
+  "response_model": null,
+  "status_code": null
+ },
+ {
+  "methods": [
+   "POST"
+  ],
+  "path": "/telegram/webhook",
+  "endpoint": "webhook",
+  "dependencies": [],
+  "response_model": "dict",
+  "status_code": null
+ }
+]

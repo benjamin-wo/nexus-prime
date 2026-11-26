@@ -1,0 +1,279 @@
+"""Health: Nutrition tools. Food figures come from ``application.food_entry`` and
+``application.nutrition``: the model names foods and portions, code looks them up and
+does the sums."""
+
+from datetime import datetime
+from typing import Literal
+from uuid import UUID
+
+from pydantic import Field
+
+from nexus.agent.links import app_link
+from nexus.agent.tools.core import Args, NoArgs, ToolContext, ToolResult, ToolSpec
+from nexus.agent.tools.health import (
+    ai_blocked,
+    decimal,
+    has_consent,
+    health_off,
+    log_day,
+    opens,
+)
+from nexus.agent.tools.helpers import parse_day
+from nexus.application import energy as energy_cases
+from nexus.application import food_entry
+from nexus.application import health_targets as targets_cases
+from nexus.application import nutrition as nutrition_cases
+from nexus.domain.errors import (
+    InvalidInput,
+)
+from nexus.domain.ledger import MenuSection
+from nexus.domain.nutrition import Cooking, EntrySource, MealSlot
+
+
+class FoodItemArgs(Args):
+    food: str = Field(
+        description="The food as the user said it ('chicken rice', 'egg'), or its id from an "
+        "earlier answer of this tool"
+    )
+    portion: str | None = Field(
+        None, description="A serving the user said ('1 cup', '1 plate', '2 slices')"
+    )
+    grams: str | None = Field(
+        None, description="Weight in grams: what the user said, or your estimate (estimated true)"
+    )
+    estimated: bool = Field(False, description="True when grams is your guess, not the user's")
+    cooking: Literal["fried", "stir-fried", "curry/gravy"] | None = Field(
+        None, description="Only if the user said how it was cooked"
+    )
+    modifiers: list[str] = Field(
+        default_factory=list, description="'less rice', 'extra gravy': only what the user said"
+    )
+    est_kcal: float | None = Field(
+        None,
+        description="Your rough estimate of the kcal in this item as eaten. Used only when the "
+        "food isn't in the database; with est_protein_g, est_carbs_g and est_fat_g, in line "
+        "with each other",
+    )
+    est_protein_g: float | None = Field(None, description="Your estimate of protein, grams")
+    est_carbs_g: float | None = Field(None, description="Your estimate of carbohydrate, grams")
+    est_fat_g: float | None = Field(None, description="Your estimate of fat, grams")
+
+
+class LogFoodArgs(Args):
+    foods: list[FoodItemArgs] = Field(description="Everything eaten in this meal")
+    meal: Literal["breakfast", "lunch", "dinner", "snack"] | None = Field(
+        None, description="The meal; left out, it follows the time of day"
+    )
+    when: str | None = Field(
+        None, description="The day, if not today and the user said so: 2026-09-14 or yesterday"
+    )
+
+
+class PhotoItemArgs(FoodItemArgs):
+    shown: str | None = None  # the photo's own name for the item, shown in the confirm card
+
+
+class LogPhotoMealArgs(Args):
+    """What the meal-photo flow asks ``log_photo_meal`` to log. Not offered to the model."""
+
+    foods: list[PhotoItemArgs]
+    meal: Literal["breakfast", "lunch", "dinner", "snack"] | None = None
+    when: str | None = None
+
+
+class FoodTodayArgs(Args):
+    day: str | None = Field(
+        None, description="'today' (the default), 'yesterday' or a date like 2026-09-14"
+    )
+
+
+def _slot_for(ctx: ToolContext, at: datetime) -> MealSlot:
+    hour = at.astimezone(ctx.tz).hour
+    if 5 <= hour < 11:
+        return MealSlot.BREAKFAST
+    if 11 <= hour < 15:
+        return MealSlot.LUNCH
+    if 17 <= hour < 22:
+        return MealSlot.DINNER
+    return MealSlot.SNACK
+
+
+def _food_requests(
+    a: LogFoodArgs | LogPhotoMealArgs, *, photo: bool
+) -> list[food_entry.FoodRequest]:
+    if not a.foods:
+        raise InvalidInput("no foods given: ask the user what they ate")
+    return [
+        food_entry.FoodRequest(
+            f.food,
+            f.portion,
+            decimal(f.grams, "the weight"),
+            f.estimated or photo,
+            Cooking(f.cooking) if f.cooking else None,
+            tuple(f.modifiers),
+            photo,
+            f.shown if isinstance(f, PhotoItemArgs) else None,
+            food_entry.estimate_from(f.est_kcal, f.est_protein_g, f.est_carbs_g, f.est_fat_g),
+        )
+        for f in a.foods
+    ]
+
+
+async def _prepared_meal(
+    ctx: ToolContext, a: LogFoodArgs | LogPhotoMealArgs, *, photo: bool
+) -> tuple[food_entry.Resolved, MealSlot, datetime | None]:
+    at = log_day(ctx, a.when)
+    meal = MealSlot(a.meal) if a.meal else _slot_for(ctx, at or ctx.now)
+    resolved = await food_entry.resolve(ctx.uow, _food_requests(a, photo=photo))
+    return resolved, meal, at
+
+
+def _meal_buttons(ctx: ToolContext, meal_id: UUID) -> list[list[tuple[str, str]]]:
+    row = [("Undo", f"meal:undo:{meal_id}")]
+    edit = app_link(ctx.origin, f"/health/food?meal={meal_id}")
+    if edit is not None:
+        row.append(("Edit", edit))
+    return [row]
+
+
+async def _write_meal(
+    ctx: ToolContext, a: LogFoodArgs | LogPhotoMealArgs, photo: bool
+) -> ToolResult:
+    if not await has_consent(ctx):
+        return health_off()
+    try:
+        resolved, meal, at = await _prepared_meal(ctx, a, photo=photo)
+    except food_entry.NeedsAnswer as exc:  # its text is already an "Error: ..." for the model
+        return ToolResult(str(exc), error="NeedsAnswer")
+    source = EntrySource.PHOTO if photo else EntrySource.CHAT
+    entry = await nutrition_cases.log_meal(
+        ctx.uow(), ctx.user.id, resolved.inputs, meal, at, source, now=ctx.now
+    )
+    hidden = await nutrition_cases.numbers_hidden(ctx.uow(), ctx.user.id)
+    return ToolResult(
+        food_entry.logged_text(resolved, meal, hidden=hidden, photo=photo),
+        wrote=True,
+        buttons=_meal_buttons(ctx, entry.id),
+        own_undo=True,
+    )
+
+
+async def _log_food(ctx: ToolContext, a: LogFoodArgs) -> ToolResult:
+    return await _write_meal(ctx, a, False)
+
+
+# Only the meal-photo flow (AgentGraph._meal_step) builds this call: the model is never offered
+# it, so only code can set the photo source and the estimated range.
+async def _log_photo_meal(ctx: ToolContext, a: LogPhotoMealArgs) -> ToolResult:
+    return await _write_meal(ctx, a, True)
+
+
+async def _undo_last_meal(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    gone = await nutrition_cases.undo_latest_meal(ctx.uow(), ctx.user.id, now=ctx.now)
+    if gone is None:
+        return ToolResult("There's no meal logged in the last 30 minutes to remove.")
+    return ToolResult(f"Removed your {gone.meal.value}.", wrote=True, own_undo=True)
+
+
+@opens("health.today")
+async def _food_today(ctx: ToolContext, a: FoodTodayArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
+    day = parse_day(ctx, a.day).astimezone(ctx.tz).date() if a.day else None
+    targets = None
+    if day is None or day == ctx.today():
+        found = await targets_cases.safe_targets(ctx.uow, ctx.user.id, now=ctx.now, record=False)
+        targets = found.overview.targets
+    summary = await nutrition_cases.day_summary(
+        ctx.uow(), ctx.user.id, day, targets=targets, now=ctx.now
+    )
+    names = await nutrition_cases.food_names(
+        ctx.uow(), [i.food_id for e in summary.entries for i in e.items]
+    )
+    return ToolResult(food_entry.day_text(summary, names))
+
+
+async def _energy_estimate(ctx: ToolContext, _: NoArgs) -> ToolResult:
+    if (blocked := await ai_blocked(ctx)) is not None:
+        return blocked
+    async with ctx.uow() as uow:
+        profile = await uow.health.get_profile(ctx.user.id)
+    missing = energy_cases.missing_inputs(profile)
+    if missing:
+        return ToolResult(
+            f"Error: I need your {', '.join(missing)} to estimate your energy use. They can be "
+            "set in the Health profile.",
+            error="NeedsProfile",
+        )
+    found = await targets_cases.safe_targets(ctx.uow, ctx.user.id, now=ctx.now, record=False)
+    if found.overview.energy.estimate is None:
+        return ToolResult(
+            "Error: I need a weigh-in to estimate your energy use. Log your weight first.",
+            error="NeedsWeighIn",
+        )
+    return ToolResult(
+        energy_cases.energy_text(
+            found.overview, suspended=found.suspended, signposts=found.signposts
+        )
+    )
+
+
+SPECS = (
+    ToolSpec(
+        "log_food",
+        "Log what the user ate, straight away (no confirmation), as foods with a serving or a "
+        "weight. Calories and macros come from the food database. For each item also pass your "
+        "rough estimate (est_kcal, est_protein_g, est_carbs_g, est_fat_g, for the item as "
+        "eaten): it is used only when the food isn't in the database. The reply carries Undo "
+        "and Edit buttons. Quote its text as it is.",
+        LogFoodArgs,
+        _log_food,
+    ),
+    ToolSpec(
+        "undo_last_meal",
+        "Remove the meal the user just logged (logged in the last 30 minutes), for 'undo that' "
+        "or 'remove that' right after a meal. Not for money or trips (undo_last_change).",
+        NoArgs,
+        _undo_last_meal,
+    ),
+    ToolSpec(
+        "log_photo_meal",
+        "Log a meal read from a photo. Used by the photo flow only.",
+        LogPhotoMealArgs,
+        _log_photo_meal,
+        exposed=False,
+    ),
+    ToolSpec(
+        "food_today",
+        "What the user ate on a day (today by default), with totals and what is left of "
+        "today's targets, as worked out by code. Read-only.",
+        FoodTodayArgs,
+        _food_today,
+    ),
+    ToolSpec(
+        "energy_estimate",
+        "The user's daily energy use (maintenance calories, TDEE) as a range, whether it is "
+        "estimated from their profile or from their logs, and today's targets if any, as worked "
+        "out by code. Quote it exactly: never estimate it yourself. If it asks for profile "
+        "details, tell the user to set them in the Health profile. Read-only.",
+        NoArgs,
+        _energy_estimate,
+    ),
+)
+
+
+READ_ONLY: frozenset[str] = frozenset(
+    {
+        "energy_estimate",
+        "food_today",
+    }
+)
+
+MENU: dict[str, MenuSection] = dict.fromkeys(
+    (
+        "energy_estimate",
+        "food_today",
+        "log_food",
+    ),
+    MenuSection.HEALTH,
+)
