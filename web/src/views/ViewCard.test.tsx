@@ -44,6 +44,8 @@ describe("a card for each kind of view", () => {
     expect(await within(card).findByText("Left at month end")).toBeInTheDocument();
     expect(within(card).getByText(/2,899\.50/)).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /Received SGD\s?5,000\.00, spent SGD\s?2,100\.50/ })).toBeInTheDocument();
+    expect(within(card).getByText(/In · SGD\s?5,000\.00/)).toBeInTheDocument();
+    expect(within(card).getByText(/Out · SGD\s?2,100\.50/)).toBeInTheDocument();
     expect(within(card).getByText("Room to spare")).toBeInTheDocument();
   });
 

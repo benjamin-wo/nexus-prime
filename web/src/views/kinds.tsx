@@ -56,8 +56,14 @@ function InOut({ received, spent }: { received: Money | null; spent: Money | nul
   if (top <= 0) return null;
   return (
     <div className="vc-inout" role="img" aria-label={`Received ${money(received)}, spent ${money(spent)}`}>
-      <span className="vc-in" style={{ width: `${(a / top) * 100}%` }} />
-      <span className="vc-out" style={{ width: `${(b / top) * 100}%` }} />
+      <span className="vc-bar-line">
+        <span className="vc-bar-label">In · {money(received)}</span>
+        <span className="vc-in" style={{ width: `${(a / top) * 100}%` }} />
+      </span>
+      <span className="vc-bar-line">
+        <span className="vc-bar-label">Out · {money(spent)}</span>
+        <span className="vc-out" style={{ width: `${(b / top) * 100}%` }} />
+      </span>
     </div>
   );
 }
