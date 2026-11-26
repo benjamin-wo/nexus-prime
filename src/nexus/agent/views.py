@@ -351,7 +351,7 @@ _SPECS: tuple[ViewSpec, ...] = (
         lambda p: f"Where your money went in {month_label(p.month)}",
         _spending_summary,
         ViewStatus.LIVE,
-        ("spending_summary",),
+        ("query_ledger",),
     ),
     ViewSpec(
         ViewKind.TRANSACTIONS,
@@ -466,7 +466,8 @@ SURFACING: dict[str, ViewKind] = {t: spec.name for spec in _SPECS for t in spec.
 
 # Every other tool. Writes open nothing unless a spec says so; neither do lookups, the
 # calculator, a currency check, the tools that read something no view shows yet, and
-# ``show`` (it names its view itself: see ``surfaced``).
+# ``show`` (it names its view itself: see ``surfaced``). ``spending_summary`` is a supporting
+# lookup the model adds to other answers, so it opens nothing.
 NON_SURFACING = frozenset(
     {
         "add_bill", "add_category", "add_to_itinerary", "add_to_trip", "add_trip_cover",
@@ -481,7 +482,7 @@ NON_SURFACING = frozenset(
         "list_category_rules", "list_ious", "list_split_habits", "list_subscriptions",
         "list_trips", "list_wallets", "load_skill", "log_expense", "log_move",
         "log_receipt_expense", "mark_as_move", "mark_bill_paid", "merge_category",
-        "money_history", "place_info", "plan_record", "product_prices", "query_ledger",
+        "money_history", "place_info", "plan_record", "product_prices",
         "record_income", "record_trade", "remove_bill", "remove_budget", "remove_category_rule",
         "remove_from_itinerary", "remove_from_trip", "remove_pay_schedule",
         "remove_split_habit", "rename_category", "research_plan", "research_to_trip",
@@ -489,7 +490,8 @@ NON_SURFACING = frozenset(
         "set_market_alerts", "set_pay_schedule", "set_split_habit", "set_timezone",
         "set_usual_card", "set_usual_salary", "set_voice", "settle_up", "show",
         "show_dividends", "show_pay_schedule", "show_plan", "show_voice", "show_watchlist",
-        "snooze_bill", "split_bill", "split_trip_costs", "stock_levels", "suggest_adjustments",
+        "snooze_bill", "spending_summary", "split_bill", "split_trip_costs", "stock_levels",
+        "suggest_adjustments",
         "test_email_setup", "they_paid", "trade_history", "transaction_updates",
         "undo_last_change", "undo_last_meal", "undo_last_set", "unwatch_stock",
         "update_health_profile", "update_trip", "update_wallet", "watch_stock", "web_search",
@@ -504,8 +506,11 @@ def is_classified(tool: str) -> bool:
 
 
 def surfaced(tool: str, args: Mapping[str, object] | None = None) -> ViewKind | None:
-    """The view a call to ``tool`` opens: its mapping, or for ``show`` the view it names.
+    """The view a call to ``tool`` opens: its mapping (``query_ledger`` only when grouped by
+    category: any other ledger question has no view yet), or for ``show`` the view it names.
     None when it opens nothing (or the view it names isn't in the catalog)."""
+    if tool == "query_ledger":  # only an answer grouped by category is "where the money went"
+        return SURFACING[tool] if (args or {}).get("group_by") == "category" else None
     if tool == "show":
         try:
             return ViewKind(str((args or {}).get("view")))

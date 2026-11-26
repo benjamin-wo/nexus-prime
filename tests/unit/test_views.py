@@ -58,7 +58,7 @@ def test_the_first_views_and_their_tools() -> None:
     assert SURFACING == {
         "month_outlook": ViewKind.MONTH_OUTLOOK,
         "list_budgets": ViewKind.BUDGETS,
-        "spending_summary": ViewKind.SPENDING,
+        "query_ledger": ViewKind.SPENDING,
         "trip_status": ViewKind.TRIP_BUDGET,
         "show_portfolio": ViewKind.PORTFOLIO,
         "food_today": ViewKind.TODAY,
@@ -99,6 +99,10 @@ def test_show_opens_the_view_it_names() -> None:
     assert surfaced("show", {}) is None
     assert surfaced("month_outlook") is ViewKind.MONTH_OUTLOOK
     assert surfaced("log_expense") is None
+    assert surfaced("query_ledger", {"group_by": "category"}) is ViewKind.SPENDING
+    assert surfaced("query_ledger", {"group_by": "merchant"}) is None
+    assert surfaced("query_ledger", {}) is None
+    assert surfaced("spending_summary") is None
 
 
 # --- view_links reads the catalog -----------------------------------------------------------
