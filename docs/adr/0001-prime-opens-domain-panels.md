@@ -1,6 +1,6 @@
 # 0001. Prime opens domain panels from the tools it calls
 
-- **Status:** Proposed
+- **Status:** Proposed, partly superseded by [ADR 0005](0005-prime-views.md) (layout and stream events: decisions 3, 4 and 8)
 - **Date:** 2026-11-15
 - **Research:** [`reports/Agent driven UI for Nexus domains.md`](../../reports/Agent%20driven%20UI%20for%20Nexus%20domains.md)
 - **Build plan:** [`docs/plans/domain-panels.md`](../plans/domain-panels.md)
