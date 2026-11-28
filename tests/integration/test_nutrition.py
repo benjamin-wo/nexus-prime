@@ -545,6 +545,7 @@ async def test_meals_endpoints_end_to_end(world: World) -> None:
         and meal["items"][0]["nutrients"]["kcal"] == "260"
     )
     assert meal["items"][1]["cooking"] == "fried" and meal["items"][0]["label"] == "200 g"
+    assert {i["source_detail"] for i in meal["items"]} == {"db"}  # the web marks estimates by this
 
     listed = (await owner.get("/api/health/meals")).json()
     assert [m["id"] for m in listed] == [meal["id"]]
