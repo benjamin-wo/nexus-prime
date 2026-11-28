@@ -4,9 +4,11 @@
 changing its path in the catalog.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from nexus.agent.views import CATALOG
+from nexus.agent.links import app_link
+from nexus.agent.views import CATALOG, ViewRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,3 +24,14 @@ VIEWS: dict[str, View] = {
     for spec in CATALOG.values()
     if spec.show is not None
 }
+
+
+OPEN_IN_NEXUS = "Open in Nexus"
+
+
+def open_in_nexus(views: Sequence[ViewRef], origin: str | None) -> tuple[str, str] | None:
+    """The (label, data) of the one link button a reply with views gets on Telegram: the
+    focus view's page. None without views or the web app's origin. No cards there."""
+    focus = next((v for v in views if v.focus), None)
+    link = app_link(origin, CATALOG[focus.kind].path) if focus else None
+    return (OPEN_IN_NEXUS, link) if link else None

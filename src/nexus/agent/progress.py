@@ -7,6 +7,12 @@ passes a sink to ``AgentService.handle_text``; the graph reports to whichever si
 running turn has (a context variable, so the graph's own state and replies are untouched).
 With no sink, reporting does nothing: Telegram and every other caller never notice.
 
+Views (ADR 0005) are kept on a note of their own for the turn (``TurnViews``): a view
+opened by a tool that answered, or chosen with ``present``, is added to it; the same view
+twice is one, and a turn holds at most ``MAX_PER_TURN``. When the turn ends the service
+sends the final list to the view sink (``ViewSink``, beside the step sink) and keeps it with
+the reply. With views off there is no note and nothing is added.
+
 A stop request is read the same way: the graph asks ``stop_requested()`` between steps.
 """
 
@@ -14,8 +20,10 @@ import logging
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Literal
+
+from nexus.agent.views import CATALOG, MAX_PER_TURN, ViewRef
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +39,8 @@ class Step:
 
 
 type StepSink = Callable[[Step], Awaitable[None]]
+
+type ViewSink = Callable[[ViewRef], Awaitable[None]]
 
 GENERIC = "Working on it"
 
@@ -143,6 +153,7 @@ LABELS: dict[str, str] = {
     "set_voice": "Changing how I talk",
     "show_voice": "Checking how I talk",
     "load_skill": "Getting ready",
+    "present": "Putting it on screen",
 }
 
 
@@ -151,21 +162,92 @@ def label_for(tool: str) -> str:
     return LABELS.get(tool, GENERIC)
 
 
+@dataclass
+class TurnViews:
+    """The views one turn has put on screen so far, by view id and in the order first seen.
+    The focus is the latest ``present`` with focus true, else the first view."""
+
+    refs: dict[str, ViewRef] = field(default_factory=dict)
+    chosen: str | None = None  # the view id of the latest present with focus true
+    explicit: set[str] = field(default_factory=set)  # view ids Prime chose with present
+
+    def add(self, ref: ViewRef, *, presented: bool = False) -> bool:
+        """Note a view; False when the turn is full (a view already in is updated, never
+        refused). A view seen again keeps its place and takes the newer params and figures."""
+        if ref.view_id not in self.refs and len(self.refs) >= MAX_PER_TURN:
+            return False
+        self.refs[ref.view_id] = ref
+        if presented:
+            self.explicit.add(ref.view_id)
+        if presented and ref.focus:
+            self.chosen = ref.view_id
+        return True
+
+    def final(self) -> list[ViewRef]:
+        """The turn's views with exactly one in focus. A view only the safety net opened is
+        dropped when another view in the turn supersedes it (the catalog says which)."""
+        kept = {
+            i: r
+            for i, r in self.refs.items()
+            if i in self.explicit
+            or not any(r.kind in CATALOG[o.kind].supersedes for o in self.refs.values())
+        }
+        if not kept:
+            return []
+        focus = self.chosen if self.chosen in kept else next(iter(kept))
+        return [replace(r, focus=r.view_id == focus) for r in kept.values()]
+
+
 _sink: ContextVar[StepSink | None] = ContextVar("turn_step_sink", default=None)
+_view_sink: ContextVar[ViewSink | None] = ContextVar("turn_view_sink", default=None)
+_turn_views: ContextVar[TurnViews | None] = ContextVar("turn_views", default=None)
 _stop: ContextVar[Callable[[], bool] | None] = ContextVar("turn_stop", default=None)
 
 
 @contextmanager
-def watching(sink: StepSink | None, stop: Callable[[], bool] | None = None) -> Iterator[None]:
+def watching(
+    sink: StepSink | None,
+    stop: Callable[[], bool] | None = None,
+    *,
+    views: bool = False,
+    on_view: ViewSink | None = None,
+) -> Iterator[None]:
     """For the turn run inside: report its steps to ``sink`` and ask ``stop`` whether the
-    user wants it ended."""
+    user wants it ended. With ``views`` the turn keeps a note of its views (see
+    ``turn_views``); ``on_view`` is told of each once the turn ends (see ``finish_views``)."""
     steps = _sink.set(sink)
     stopper = _stop.set(stop)
+    # One mutable note, not a value per node: LangGraph runs each node in a copy of this
+    # context, and the copies must all add to the same turn's views.
+    noted = _turn_views.set(TurnViews() if views else None)
+    shown = _view_sink.set(on_view)
     try:
         yield
     finally:
+        _view_sink.reset(shown)
+        _turn_views.reset(noted)
         _stop.reset(stopper)
         _sink.reset(steps)
+
+
+def turn_views() -> TurnViews | None:
+    """The running turn's views so far; None when the turn keeps none (views are off)."""
+    return _turn_views.get()
+
+
+async def finish_views() -> list[ViewRef]:
+    """The turn's final views, each told to the view sink in order. Call it inside
+    ``watching``, once the graph has run. Never raises on a sink that fails."""
+    noted = _turn_views.get()
+    final = noted.final() if noted is not None else []
+    sink = _view_sink.get()
+    if sink is not None:
+        for view in final:
+            try:
+                await sink(view)
+            except Exception:
+                log.exception("could not report a view")
+    return final
 
 
 async def report(tool: str, state: StepState) -> None:

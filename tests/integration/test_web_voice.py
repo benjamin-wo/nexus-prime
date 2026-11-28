@@ -105,7 +105,7 @@ async def test_a_question_by_voice_has_no_heard_line(voice: Voice) -> None:
     voice.model.script += [say("Nothing yet.")]
     voice.speech.script += ["How much did I spend on Grab this month?"]
     [reply] = (await voice.post(content_type="audio/mp4")).json()
-    assert reply == {"text": "Nothing yet.", "buttons": []}
+    assert reply == {"text": "Nothing yet.", "buttons": [], "views": []}
     assert voice.speech.heard[0][1] == "m4a"
 
 

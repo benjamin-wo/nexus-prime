@@ -3115,6 +3115,19 @@
   "methods": [
    "GET"
   ],
+  "path": "/api/views/{kind}",
+  "endpoint": "get_view",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "Annotated",
+  "status_code": null
+ },
+ {
+  "methods": [
+   "GET"
+  ],
   "path": "/api/wallets",
   "endpoint": "wallets",
   "dependencies": [

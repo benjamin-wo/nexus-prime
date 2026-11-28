@@ -47,12 +47,15 @@ login_link_router = APIRouter()
 
 class ConfigOut(Model):
     bot_username: str
+    views_enabled: bool  # Prime shows views as cards in the chat (ADR 0005)
 
 
 @router.get("/config")
 async def config(web: Runtime) -> ConfigOut:
     """What the sign-in page needs before anyone is signed in."""
-    return ConfigOut(bot_username=await web.bot_username())
+    return ConfigOut(
+        bot_username=await web.bot_username(), views_enabled=web.settings.views_enabled
+    )
 
 
 # --- auth ---------------------------------------------------------------------------

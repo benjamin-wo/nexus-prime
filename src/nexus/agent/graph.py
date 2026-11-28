@@ -35,8 +35,14 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
-from nexus.agent import kernel, meal_photo, open_items, progress
+from nexus.agent import kernel, meal_photo, open_items, progress, view_data, views
 from nexus.agent.confirmation import combine
+from nexus.agent.history import HISTORY_LIMIT as HISTORY_LIMIT
+from nexus.agent.history import SENT_AT as SENT_AT
+from nexus.agent.history import day as _day
+from nexus.agent.history import history as _history
+from nexus.agent.history import sent_at as _sent_at
+from nexus.agent.history import when as _when
 from nexus.agent.image_look import acts
 from nexus.agent.open_items import OpenItem
 from nexus.agent.snapshot import money_snapshot
@@ -77,7 +83,6 @@ log = logging.getLogger(__name__)
 _END: Literal["__end__"] = "__end__"
 MAX_STEPS = 8
 EMPTY_REPLY_NUDGE = "Your last reply was empty. Reply to the user, or call a tool."
-HISTORY_LIMIT = 40
 # Past HISTORY_LIMIT messages, all but about the last KEEP are condensed into a
 # rolling summary and dropped from the conversation.
 KEEP = 20
@@ -125,6 +130,8 @@ CORE_TOOLS = (
     # "show me my budgets" and "open my weight trend" are said in passing: one line and an Open
     # button, read-only.
     "show",
+    # Prime chooses a view to show under its reply (ADR 0005); offered only with views on.
+    "present",
     "load_skill",
 )
 SKILL_TURNS = 5
@@ -194,7 +201,6 @@ IMAGE = "nexus_image"
 REF = "nexus_ref"
 # On the user's messages: when they were sent (UTC, ISO), so the model can tell a message
 # from yesterday from one sent now.
-SENT_AT = "nexus_sent_at"
 # Extra reply buttons: rows of [label, data].
 BUTTONS = "nexus_buttons"
 # On a tool result that turned a menu section on for the user (``MenuSection`` value): the
@@ -258,6 +264,8 @@ class AgentDeps:
     zones: ZoneFinder | None = None
     # The web app's origin, for buttons that open a page; None: no such buttons.
     origin: str | None = None
+    # Views (ADR 0005): the model is offered ``present`` and told when to use it. Off: neither.
+    views: bool = False
 
 
 def tool_order(names: Iterable[str]) -> list[str]:
@@ -356,83 +364,6 @@ def _turn_tools(
     )
 
 
-def _trim(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
-    """The recent history, starting at a user message so no tool result is orphaned."""
-    window = list(messages[-HISTORY_LIMIT:])
-    for i, message in enumerate(window):
-        if isinstance(message, HumanMessage):
-            return window[i:]
-    return window[-1:]
-
-
-def _sent_at(message: BaseMessage) -> datetime | None:
-    """When the user sent this message, if it was stamped."""
-    raw = message.additional_kwargs.get(SENT_AT)
-    if not isinstance(raw, str):
-        return None
-    try:
-        sent = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    return sent if sent.tzinfo else sent.replace(tzinfo=UTC)
-
-
-def _day(moment: datetime) -> str:
-    """ "Sat 24 Oct"."""
-    return f"{moment:%a} {moment.day} {moment:%b}"
-
-
-def _when(moment: datetime) -> str:
-    """ "Sat 24 Oct, 22:51"."""
-    return f"{_day(moment)}, {moment:%H:%M}"
-
-
-def _prefixed(message: HumanMessage, prefix: str) -> HumanMessage:
-    """A copy of the message with ``prefix`` before its text; images are left alone."""
-    content = message.content
-    if isinstance(content, str):
-        new: str | list[str | dict[str, Any]] = prefix + content
-    else:
-        parts = list(content)
-        for i, part in enumerate(parts):
-            if isinstance(part, str):
-                parts[i] = prefix + part
-                break
-            if part.get("type") == "text":
-                parts[i] = {**part, "text": prefix + str(part.get("text", ""))}
-                break
-        else:
-            parts.insert(0, {"type": "text", "text": prefix.rstrip()})
-        new = parts
-    return message.model_copy(update={"content": new})
-
-
-def _history(messages: Sequence[AnyMessage], now: datetime, tz: tzinfo) -> list[AnyMessage]:
-    """What the model reads: the recent history, with messages from an earlier local day
-    stamped with when they were sent, and a note on the newest one when the day has
-    turned since the one before it. Copies only; the stored messages are not touched.
-    Messages without a stamp (older threads) are left as they are."""
-    window = _trim(messages)
-    today = now.astimezone(tz).date()
-    humans = [i for i, m in enumerate(window) if isinstance(m, HumanMessage)]
-    shown = list(window)
-    for i in humans:
-        sent = _sent_at(window[i])
-        if sent is not None and sent.astimezone(tz).date() != today:
-            shown[i] = _prefixed(cast(HumanMessage, window[i]), f"[{_when(sent.astimezone(tz))}] ")
-    if len(humans) >= 2:
-        latest, before = _sent_at(window[humans[-1]]), _sent_at(window[humans[-2]])
-        if latest is not None and before is not None:
-            then = before.astimezone(tz)
-            if latest.astimezone(tz).date() > then.date():
-                note = (
-                    f"[It's now {_day(now.astimezone(tz))}; the messages above are from "
-                    f"{_day(then)} or earlier.]\n"
-                )
-                shown[humans[-1]] = _prefixed(cast(HumanMessage, shown[humans[-1]]), note)
-    return shown
-
-
 def _hands_off(state: AgentState) -> bool:
     """Whether this turn is about an image whose caption didn't ask to act on it."""
     messages = state.get("messages", [])
@@ -486,6 +417,8 @@ class AgentGraph:
         On a turn about an image the user didn't ask to act on, only tools that read
         or confirm first."""
         exposed = {name for name, spec in self.deps.tools.items() if spec.exposed}
+        if not self.deps.views:
+            exposed.discard("present")
         if _hands_off(state):
             exposed = {n for n in exposed if safe_for_images(self.deps.tools[n])}
         if self.deps.skill_tools is None:
@@ -707,8 +640,9 @@ class AgentGraph:
             "in a line "
             "what it is and offer the one useful next step (log the payment, add the bill, "
             "record the income). Never log, record or change anything from an image unless "
-            "the user asks; when they do, use the usual tools, which confirm first.\n\n"
-            "Skills: you start with the core tools. Each skill below lists the tools it "
+            "the user asks; when they do, use the usual tools, which confirm first.\n"
+            + (views.PRESENT_RULE if self.deps.views else "")
+            + "\nSkills: you start with the core tools. Each skill below lists the tools it "
             "adds; call load_skill to get them and the skill's instructions, then carry on "
             "in the same turn. Never tell the user something can't be done before loading "
             "the skill that covers it.\n"
@@ -1230,6 +1164,8 @@ class AgentGraph:
                     # A tool's "Error: ..." is the model's to fix (a bad argument, a
                     # missing thing): counted, so a tool the model keeps misusing shows.
                     refused = content.startswith("Error:")
+                    if not refused and (noted := progress.turn_views()) is not None:
+                        await view_data.surface(noted, ctx, call["name"], call["args"], result)
                     if not refused and call["name"] in MENU_OF:
                         menu_added = await self._show_in_menu(ctx, MENU_OF[call["name"]])
                     ops.emit(

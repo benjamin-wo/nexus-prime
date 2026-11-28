@@ -121,8 +121,7 @@ class TurnLog:
     memory_failed: bool = False
     memory_input_tokens: int = 0  # the memory writer's, priced as the memory model
     memory_output_tokens: int = 0
-    # The views the turn opened, as the catalog maps its tool calls (ADR 0005's safety net).
-    views: list[dict[str, Any]] = field(default_factory=list)
+    views: list[dict[str, Any]] = field(default_factory=list)  # the views opened (ADR 0005)
 
     @property
     def opened(self) -> frozenset[str]:
@@ -245,6 +244,7 @@ class Agent:
                 zones=Zones(),
                 lookup=self.lookup,
                 prices=self.prices,
+                views=view_cases.ON,
             )
         )
         self.graph = built.compile(InMemorySaver())
@@ -252,7 +252,7 @@ class Agent:
         self.service = AgentService(
             self.graph, self.uow, self.receipts, lambda: self.now, None, FixedRates(),
             trips=self.trips, looker=self.looker, condense=built.condense, speech=self.speech,
-            receipt_text=self.receipt_text,
+            receipt_text=self.receipt_text, views=view_cases.ON,
         )  # fmt: skip
 
     async def messages(self, user: User) -> list[BaseMessage]:
@@ -330,7 +330,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
             log.output_tokens += message.usage_metadata.get("output_tokens", 0)
             details = message.usage_metadata.get("input_token_details") or {}
             log.cached_tokens += details.get("cache_read", 0)
-    log.views = view_cases.opened_in(fresh, skip=KERNEL)
+    log.views = view_cases.shown(all_replies, fresh, skip=KERNEL)
     return log
 
 

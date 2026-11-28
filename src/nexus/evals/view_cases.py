@@ -10,6 +10,7 @@ Figures are the seed's (28 September 2026). Ledger questions ("what did I spend 
 Kopitiam") have no view yet (``finance.transactions`` is planned), so they are not here.
 """
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -23,6 +24,10 @@ from nexus.evals.view_metrics import TurnViews
 from nexus.infra.llm.factory import text_of
 
 Views = tuple[ViewKind, ...]
+
+# VIEWS_ENABLED=true runs the turns with views on: Prime is offered ``present`` and the safety
+# net opens views (ADR 0005), and the view figures count what was really shown.
+ON = os.environ.get("VIEWS_ENABLED", "").strip().lower() in {"1", "true", "yes"}
 
 _OUTLOOK: Views = (ViewKind.MONTH_OUTLOOK,)
 _BUDGETS: Views = (ViewKind.BUDGETS,)
@@ -202,6 +207,17 @@ def opened_in(messages: Sequence[BaseMessage], *, skip: str) -> list[dict[str, A
         if view is not None and live(view) and view.value not in opened:
             opened.append(view.value)
     return [{"view": v} for v in opened]
+
+
+def shown(
+    replies: Sequence[Any], messages: Sequence[BaseMessage], *, skip: str
+) -> list[dict[str, Any]]:
+    """The views a turn opened. With views on (``ON``), the ones its replies really carry:
+    ``present`` and the safety net, deduped and capped by the turn. With them off, the ones
+    its tool calls would open through the catalog (``opened_in``)."""
+    if not ON:
+        return opened_in(messages, skip=skip)
+    return [{"view": v.kind.value} for r in replies for v in r.views]
 
 
 def turn_views(case_id: str, opened: Sequence[frozenset[str]], round_no: int) -> list[TurnViews]:

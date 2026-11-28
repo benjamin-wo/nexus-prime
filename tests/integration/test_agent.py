@@ -67,6 +67,7 @@ def build(
     lookup: WebLooker | None = None,
     prices: PriceLooker | None = None,
     meals: MealReader | None = None,
+    views: bool = False,
 ) -> AgentService:
     skills = SkillLibrary.load()
 
@@ -87,6 +88,7 @@ def build(
             places=places,
             lookup=lookup,
             prices=prices,
+            views=views,
         )
     )
     graph = agent_graph.compile(InMemorySaver())
@@ -104,6 +106,7 @@ def build(
         limiter=limiter,
         receipt_text=receipt_text,
         meals=meals,
+        views=views,
     )
 
 

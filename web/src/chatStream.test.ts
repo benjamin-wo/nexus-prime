@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, type ChatHistory } from "./api";
+import { ApiError, type ChatHistory, type ViewShow } from "./api";
 import { repliesAfter, SseParser, streamChat, StreamInterrupted, StreamNotStarted, type ChatStep } from "./chatStream";
 
 describe("SseParser", () => {
@@ -69,6 +69,34 @@ describe("streamChat", () => {
     expect(url).toBe("/api/chat/stream");
     expect(init).toMatchObject({ method: "POST", credentials: "same-origin", body: '{"message":"coffee 5"}' });
     expect((init?.headers as Record<string, string>)["X-CSRF-Token"]).toBeDefined();
+  });
+
+  it("hands each view.show to onView, before the replies, and leaves a stream without views alone", async () => {
+    const stream = sseBody();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(stream.response);
+    const views: ViewShow[] = [];
+    const done = streamChat("how is my month", () => undefined, (v) => views.push(v));
+    const outlook: ViewShow = {
+      view_id: "finance.month_outlook",
+      kind: "finance.month_outlook",
+      params: { month: "2026-09" },
+      focus: true,
+      caption: "Your outlook for September 2026",
+      summary: { status: "on_track" },
+    };
+    stream.send(frame("view.show", outlook) + frame("view.show", { ...outlook, view_id: "x", focus: false, summary: null }));
+    await vi.waitFor(() => expect(views).toHaveLength(2));
+    stream.send(frame("replies", [{ text: "Fine.", buttons: [], views: [outlook] }]));
+    expect(await done).toEqual([{ text: "Fine.", buttons: [], views: [outlook] }]);
+    expect(views[0]).toEqual(outlook);
+    expect(views[1]).toMatchObject({ view_id: "x", focus: false, summary: null });
+
+    // No onView given (an older caller): the frame is ignored, the turn still ends with its replies.
+    const quiet = sseBody();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(quiet.response);
+    const again = streamChat("hi", () => undefined);
+    quiet.send(frame("view.show", outlook) + frame("replies", []));
+    expect(await again).toEqual([]);
   });
 
   it("is not started when the network fails or the proxy answers with an error", async () => {

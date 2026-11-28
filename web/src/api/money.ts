@@ -400,10 +400,28 @@ export type VoicePreset = { id: VoicePresetId; label: string; blurb: string } & 
 export type VoiceSettings = VoiceDials & { preset: VoicePresetId; note: string | null; presets: VoicePreset[] };
 /** Any of these may be sent; "" clears the note. Changing the preset alone resets the dials to its defaults. */
 export type VoiceUpdate = Partial<VoiceDials & { preset: VoicePresetId; note: string }>;
-export type Reply = { text: string; buttons: { label: string; data: string }[][] };
+/** A view Prime puts in the chat as a card (ADR 0005): the caption and headline figures are built on the server. */
+export type ViewShow = {
+  view_id: string;
+  kind: string;
+  params: Record<string, unknown>;
+  focus: boolean;
+  caption: string;
+  summary: Record<string, unknown> | null;
+};
+export type Reply = { text: string; buttons: { label: string; data: string }[][]; views?: ViewShow[] };
+/** A view kept with a reply in the history: kind, params and focus, never figures. */
+export type StoredView = { kind: string; params: Record<string, unknown>; focus: boolean };
 /** The running chat as the user saw it, oldest first; notifications aren't part of it. */
 export type ChatHistory = {
-  lines: { id: number; role: "user" | "nexus"; text: string; channel: string | null; at: string }[];
+  lines: {
+    id: number;
+    role: "user" | "nexus";
+    text: string;
+    channel: string | null;
+    at: string;
+    views?: StoredView[];
+  }[];
   more: boolean;
   pending: Reply | null;
 };

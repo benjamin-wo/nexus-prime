@@ -4,13 +4,18 @@ turn's ops events, and how long the turn spent building its context (the graph's
 timings, token counts and error types: never the prompt or the reply."""
 
 import time
+from collections import Counter
 from typing import Any
 from uuid import UUID
 
 from langchain_core.callbacks import AsyncCallbackHandler
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import LLMResult
 
 from nexus.application import ops
+
+# A turn slower than this is logged as a warning, with what it did (never what was said).
+SLOW_TURN_SECONDS = 15.0
 
 
 def _model_of(serialized: dict[str, Any] | None, params: dict[str, Any] | None) -> str:
@@ -115,3 +120,26 @@ def _tokens(response: LLMResult) -> dict[str, int]:
         "tokens_out": usage.get("completion_tokens"),
     }
     return {k: int(v) for k, v in found.items() if isinstance(v, int)}
+
+
+def record_turn(
+    seconds: float, new: list[BaseMessage], timer: TurnTimer, error: str | None = None
+) -> None:
+    """The turn as an ops event: its time split into the model's and the rest (tools,
+    database, prompt building), the tools by name, and whether the fallback answered."""
+    tools = Counter(call["name"] for m in new if isinstance(m, AIMessage) for call in m.tool_calls)
+    ms = seconds * 1000
+    ops.emit(
+        "turn",
+        ops.current_channel() or "chat",
+        ok=error is None,
+        ms=ms,
+        error=error,
+        model_calls=len(timer.calls),
+        model_ms=timer.model_ms,
+        other_ms=max(0, int(ms) - timer.model_ms),
+        model_errors=timer.failures or None,
+        fallback=timer.fell_back or None,
+        tools=dict(tools) or None,
+        slow=seconds >= SLOW_TURN_SECONDS or None,
+    )

@@ -131,6 +131,7 @@ class SqlMemoryRepository:
                         "text": line.text,
                         "channel": line.channel,
                         "created_at": line.created_at,
+                        "views": line.views,
                     }
                     for line in lines
                 ]
@@ -156,6 +157,7 @@ class SqlMemoryRepository:
                 text=r.text,
                 channel=r.channel,
                 created_at=r.created_at,
+                views=r.views,
             )
             for r in rows
         ]

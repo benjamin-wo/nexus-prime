@@ -250,3 +250,4 @@ GET /api/shared/trips/{token}/photo
 GET /api/ops/report
 GET /api/ops/costs
 POST /api/ops/tickets
+GET /api/views/{kind}

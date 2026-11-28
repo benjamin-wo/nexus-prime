@@ -14,6 +14,7 @@ are wellness only: a summary says what the numbers are and which way a trend wen
 what they mean.
 """
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -21,7 +22,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from nexus.application.budgets import BudgetStatus
 from nexus.application.energy import WeightOverview
@@ -44,6 +45,27 @@ SUMMARY_ROWS = 5
 # At most this many views a turn, and at most one of them the focus (ADR 0005).
 MAX_PER_TURN = 3
 
+# How many adjustments a month outlook takes (the same limit as the tool).
+MAX_ADJUSTMENTS = 20
+
+# What the prompt says about presenting a view: shown only when views are switched on.
+PRESENT_RULE = (
+    "- The web app can show a view of the user's data (a card) under your reply. Call present "
+    "when the user asks about something a view shows (their month, budgets, spending, a "
+    "trip's money, portfolio, today's food and workout, weight trend, a workout or records): "
+    "call the tool that answers first, then present. At most 3 views a turn, one of them "
+    "the focus (focus true, the one that answers); any others get focus false. Present only "
+    "the views that answer what was asked, never a neighbour of them: a trip's budget is "
+    "travel.trip_budget, not also the trips list (travel.trips is only for 'show my trips'); "
+    "what they ate today is health.today, not also the workout. Default to one view: add a "
+    "second only when they asked about two different things (money and food in one message "
+    "is two; a question about weight or food alone gets no money view, nor the reverse). "
+    "Never present for a write (logging, setting a budget, deleting) or for small talk, "
+    "thanks or a question about "
+    "what you can do. The card carries its own figures: say only the figures a tool "
+    "gave you, never ones from present.\n"
+)
+
 # Headline figures, JSON-ready: money as {"amount", "currency"} as the web API sends it.
 type Summary = dict[str, Any]
 
@@ -61,6 +83,34 @@ class ViewKind(StrEnum):
     WEIGHT_TREND = "health.weight_trend"
     WORKOUT = "health.workout"
     RECORDS = "health.records"
+
+
+@dataclass(frozen=True, slots=True)
+class ViewRef:
+    """A view as a turn shows it: what it is (kind and params), whether it is the focus, and
+    its caption and headline figures, both built by code from the use case's result."""
+
+    kind: ViewKind
+    view_id: str
+    params: dict[str, Any]  # JSON-ready, unset fields left out
+    focus: bool
+    caption: str
+    summary: dict[str, Any] | None
+
+    def event(self) -> dict[str, Any]:
+        """The ``view.show`` frame's data (and a reply's ``views`` entry)."""
+        return {
+            "view_id": self.view_id,
+            "kind": self.kind.value,
+            "params": self.params,
+            "focus": self.focus,
+            "caption": self.caption,
+            "summary": self.summary,
+        }
+
+    def stored(self) -> dict[str, Any]:
+        """What is kept with a reply: kind, params and focus, never figures."""
+        return {"kind": self.kind.value, "params": self.params, "focus": self.focus}
 
 
 class ViewStatus(StrEnum):
@@ -90,6 +140,29 @@ class MonthParams(ViewParams):
     month: Month
 
 
+class Adjustment(ViewParams):
+    """An amount the user mentioned that isn't in their data yet, as ``month_outlook`` takes
+    it: signed, in the home currency, as text ("-2000", "+2,308.42")."""
+
+    amount: Annotated[str, Field(min_length=1, max_length=40)]
+    label: Annotated[str, Field(max_length=80)] = ""
+
+
+class OutlookParams(MonthParams):
+    adjustments: tuple[Adjustment, ...] = Field((), max_length=MAX_ADJUSTMENTS)
+
+    @field_validator("adjustments", mode="before")
+    @classmethod
+    def _from_text(cls, value: Any) -> Any:
+        """Over the web the list arrives as a JSON string (a query parameter)."""
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except ValueError as exc:
+                raise ValueError("adjustments must be a JSON list") from exc
+        return value
+
+
 class SpendingParams(ViewParams):
     month: Month
     category_id: str | None = None
@@ -105,6 +178,9 @@ class DayParams(ViewParams):
 
 class WorkoutParams(ViewParams):
     state: Literal["suggested", "open"] = "open"
+    suggestion_id: str | None = Field(
+        None, description="With state suggested: the id of the suggestion the card shows"
+    )
 
 
 class RecordsParams(ViewParams):
@@ -270,6 +346,26 @@ def month_label(month: str) -> str:
     return f"{date.fromisoformat(month + '-01'):%B %Y}"
 
 
+def _adjusted(a: Adjustment) -> str:
+    """ "2,000 for the sofa" for a purchase (negative), "+4,000 carry-over" for money."""
+    text = a.amount.strip().replace(",", "")
+    try:
+        value = Decimal(text)
+    except ArithmeticError:  # a written sum like "4000 + 798": shown as typed
+        return f"{a.amount.strip()} {a.label}".strip()
+    shown = f"{abs(value):,}"
+    if value < 0:
+        return f"{shown} for {a.label}" if a.label else shown
+    return f"+{shown} {a.label}".strip()
+
+
+def _outlook_caption(p: OutlookParams) -> str:
+    base = f"Your outlook for {month_label(p.month)}"
+    return base + (", with " + " and ".join(_adjusted(a) for a in p.adjustments)) * bool(
+        p.adjustments
+    )
+
+
 def _day_label(day: date | None) -> str:
     return "" if day is None else f", {day.day} {day:%b}"
 
@@ -302,6 +398,9 @@ class ViewSpec:
     status: ViewStatus
     tools: tuple[str, ...] = ()
     show: ShowText | None = None
+    # Views this one makes redundant: when both come from the safety net in one turn, the
+    # superseded one is dropped (a view Prime chose with ``present`` never is).
+    supersedes: tuple[ViewKind, ...] = ()
     key: Callable[[Any], str] = field(default=lambda _: "")
     version: int = VERSION
 
@@ -322,9 +421,9 @@ _SPECS: tuple[ViewSpec, ...] = (
         ViewKind.MONTH_OUTLOOK,
         "The month at a glance: money in and out so far, the bills and pay still to come, "
         "and what should be left at the end. Use it for how a month is going.",
-        MonthParams,
+        OutlookParams,
         "/accounting",
-        lambda p: f"Your outlook for {month_label(p.month)}",
+        _outlook_caption,
         _outlook_summary,
         ViewStatus.LIVE,
         ("month_outlook",),
@@ -341,6 +440,7 @@ _SPECS: tuple[ViewSpec, ...] = (
         ViewStatus.LIVE,
         ("list_budgets",),
         ShowText("Here are your budgets.", "Open budgets", "Finance, under Budgets"),
+        supersedes=(ViewKind.MONTH_OUTLOOK,),
     ),
     ViewSpec(
         ViewKind.SPENDING,
@@ -419,6 +519,7 @@ _SPECS: tuple[ViewSpec, ...] = (
         ViewStatus.LIVE,
         ("food_today", "log_food", "log_photo_meal"),
         ShowText("Here's your day.", "Open Today", "Health, under Today"),
+        supersedes=(ViewKind.WORKOUT,),  # the day already carries the workout
     ),
     ViewSpec(
         ViewKind.WEIGHT_TREND,
@@ -466,10 +567,12 @@ SURFACING: dict[str, ViewKind] = {t: spec.name for spec in _SPECS for t in spec.
 
 # Every other tool. Writes open nothing unless a spec says so; neither do lookups, the
 # calculator, a currency check, the tools that read something no view shows yet, and
-# ``show`` (it names its view itself: see ``surfaced``). ``spending_summary`` is a supporting
-# lookup the model adds to other answers, so it opens nothing.
+# ``show`` and ``present`` (they name their view themselves: see ``surfaced``).
+# ``spending_summary`` is a supporting lookup the model adds to other answers, so it opens
+# nothing.
 NON_SURFACING = frozenset(
     {
+        "present",
         "add_bill", "add_category", "add_to_itinerary", "add_to_trip", "add_trip_cover",
         "add_trip_todo", "add_wallet", "answer_email", "apply_adjustments", "calculate",
         "cash_flow", "change_itinerary_entry", "combine_duplicate_transactions",
@@ -507,11 +610,11 @@ def is_classified(tool: str) -> bool:
 
 def surfaced(tool: str, args: Mapping[str, object] | None = None) -> ViewKind | None:
     """The view a call to ``tool`` opens: its mapping (``query_ledger`` only when grouped by
-    category: any other ledger question has no view yet), or for ``show`` the view it names.
-    None when it opens nothing (or the view it names isn't in the catalog)."""
+    category: any other ledger question has no view yet), or for ``show`` and ``present`` the
+    view they name. None when it opens nothing (or the view it names isn't in the catalog)."""
     if tool == "query_ledger":  # only an answer grouped by category is "where the money went"
         return SURFACING[tool] if (args or {}).get("group_by") == "category" else None
-    if tool == "show":
+    if tool in {"show", "present"}:
         try:
             return ViewKind(str((args or {}).get("view")))
         except ValueError:

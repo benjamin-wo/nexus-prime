@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from nexus.agent.service import Reply
 from nexus.application import demo as demo_cases
@@ -321,9 +321,21 @@ class ButtonOut(Model):
     data: str
 
 
+class ReplyViewOut(Model):
+    """A view shown with a reply (ADR 0005): what ``view.show`` carries."""
+
+    view_id: str
+    kind: str
+    params: dict[str, Any]
+    focus: bool
+    caption: str
+    summary: dict[str, Any] | None
+
+
 class ReplyOut(Model):
     text: str
     buttons: list[list[ButtonOut]]
+    views: list[ReplyViewOut] = Field(default_factory=list)  # empty unless views are switched on
 
 
 def replies_out(replies: list[Reply]) -> list[ReplyOut]:
@@ -331,6 +343,7 @@ def replies_out(replies: list[Reply]) -> list[ReplyOut]:
         ReplyOut(
             text=r.text,
             buttons=[[ButtonOut(label=b.label, data=b.data) for b in row] for row in r.buttons],
+            views=[ReplyViewOut(**v.event()) for v in r.views],
         )
         for r in replies
     ]

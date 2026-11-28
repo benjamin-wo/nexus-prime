@@ -60,6 +60,10 @@ The transcript is tidied in code before the agent reads it (`domain/transcript.p
 
 Limits: 2 minutes and 5 MB (refused before downloading on Telegram, 413 on the web), 30 voice notes an hour per user (in memory, like the message limit; 429 on the web). Audio is held in memory only for the call: it is never stored or logged, and no log line holds a transcript. A log line carries the model, the audio's seconds and the cost. The chat log keeps the words, not the recording.
 
+## Views in the chat (ADR 0005)
+
+`VIEWS_ENABLED=true` turns on Prime's views: the `present` tool and its prompt rule, the safety net (a tool that answered opens its view), `event: view.show` frames before `replies` on `POST /api/chat/stream`, a `views` list on every reply (`POST /chat`, `/chat/voice`), the refs kept in `chat_log.views` (kind, params, focus; never figures) and returned by `GET /api/chat/history`, and `GET /api/views/{kind}` for a card's figures. On Telegram a reply with views gets one "Open in Nexus" link button. Off (the default) none of that exists and behaviour is as before; `/api/config` says which as `views_enabled`. Turn it on for the owner first and watch `chat_log.views` and the `tool` ops events for `present` errors. The stored refs are personal data: delete-my-data covers them (it is a column of `chat_log`).
+
 ## Live progress and Stop in the web chat
 
 A typed message in the web chat goes to `POST /api/chat/stream`, which runs the same turn as `POST /api/chat` and answers as a server-sent event stream (`text/event-stream`), so the chat can show what Nexus is doing while a long turn runs instead of only "Nexus is typing". `POST /api/chat` is unchanged (Telegram, the trip page's "Type it" and the fallback below use the same turn; voice notes and button presses still use their own requests). The stream has the same sign-in, origin and CSRF checks as `/api/chat`, the same body (`{"message": ...}`, 1 to 2000 characters) and the same limits: the per-user message limit and a public demo's message allowance and spend cap are applied inside the turn, so a refused message comes back as an ordinary `replies` event with the usual sentence.

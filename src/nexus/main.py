@@ -438,6 +438,7 @@ async def _telegram_runtime(
             prices=prices,
             zones=zones,
             origin=settings.public_origin,
+            views=settings.views_enabled,
         )
     )
     graph = agent_graph.compile(checkpointer)
@@ -502,6 +503,7 @@ async def _telegram_runtime(
             demo=demo,
             meals=meals,
             origin=settings.public_origin,
+            views=settings.views_enabled,
         ),
         client=client,
     )
@@ -651,9 +653,7 @@ def _lookup(settings: Settings, overrides: Overrides, web: Web | None) -> WebLoo
     None without web search."""
     if overrides.lookup is not None:
         return overrides.lookup
-    if web is None:
-        return None
-    return web_lookup(settings, web)
+    return None if web is None else web_lookup(settings, web)
 
 
 def web_lookup(settings: Settings, web: Web, clock: Callable[[], datetime] = utcnow) -> WebLookup:

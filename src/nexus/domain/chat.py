@@ -5,6 +5,7 @@ Telegram. Kept so the web chat can show the conversation again; notifications
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from nexus.domain.ledger import UserId
 
@@ -25,6 +26,8 @@ class ChatLine:
     channel: str | None  # "web" or "telegram"
     created_at: datetime
     id: int | None = None  # set once kept; later lines have larger ids
+    # The views shown with a Nexus reply (ADR 0005): kind, params and focus, never figures.
+    views: list[dict[str, Any]] | None = None
 
 
 def clip(text: str) -> str:

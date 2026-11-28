@@ -79,7 +79,7 @@ async def test_a_skill_brings_its_tools_then_lapses(uow: UowFactory, alice: obje
     )
     agent = build(uow, model)
     await agent.handle_text(alice, "hello", "tg:1:1")  # type: ignore[arg-type]
-    assert model.bound == [set(CORE_TOOLS)]
+    assert model.bound == [set(CORE_TOOLS) - {"present"}]
 
     await agent.handle_text(alice, "remind me about a bill", "tg:1:2")  # type: ignore[arg-type]
     assert await _skills(agent, alice) == {"bills": SKILL_TURNS}

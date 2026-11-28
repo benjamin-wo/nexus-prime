@@ -458,7 +458,7 @@ python -m nexus.evals --model <model> --area views --repeat 3
 python -m nexus.evals --area views --dry-run     # list the cases and what each turn expects; no keys
 ```
 
-`present` does not exist yet, so views here are derived from the tools the model called through the catalog's mapping (the safety net), plus `show` (the view it names); a tool that returned an error opens nothing. This is the floor ADR 0005 builds on; the same cases measure `present` once it exists.
+The baseline below ran before `present` existed: views were derived from the tools the model called through the catalog's mapping (the safety net), plus `show`; a tool that returned an error opens nothing. With `VIEWS_ENABLED=true` (see "With `present`" below) the figures count the views each turn really showed: `present` calls plus the safety net, deduped and capped at 3 by the turn, as the web stream sends them.
 
 **Baseline.** Model `deepseek/deepseek-v4.1-flash` (the production `OPENROUTER_MODEL`), `--repeat 3`, 28 September 2026 clock, 27 November 2026. 177 of 180 case runs passed their tool checks; cost about $0.11 a run.
 
@@ -488,3 +488,53 @@ Values are mean (min-max over the 3 rounds). The one mapping fix between the col
 | `views-health-workout-suggest` (1/3) | nothing, wanted `health.workout` | routing: the model looked up exercises and never called `suggest_workout` |
 
 The two spending cases are the open mapping question: either `spending_summary` is a card (and month questions over-surface) or it is not (and "where did my money go" under-surfaces). The honest fix is `present`: the model names the view when it means to show it. No prompt or tool routing was changed in this step. The distractor figure (75%) is one of the four distractor cases, `views-distract-gym-budget`, failing for the routing reason in the first row; the Health views did not leak into money questions, and money views did not open for the two expense-logging distractors (log lunch, log gym membership).
+
+### With `present` (27 November 2026, Step D)
+
+`VIEWS_ENABLED=true`, model `deepseek/deepseek-v4.1-flash` (production `OPENROUTER_MODEL`), `--repeat 3`, 28 September 2026 clock. `present` is offered, `PRESENT_RULE` is in the prompt, and the safety net opens views after tools that answered. The figures count what the turn really showed. Cases pass 177, 176 and 176 of 180 (tool checks); cost about $0.09 to $0.17 a run.
+
+| Figure | Gate | Run 1 (first wording) | Run 2 (neighbours) | Run 3 (one view) |
+|---|---|---|---|---|
+| Precision (micro) | at least 95% | 93.6% (91-95) fail | 94.7% (90-98) fail | 94.6% (94-95) fail |
+| Recall (micro) | at least 85% | 98.1% (98-98) pass | 97.5% (96-98) pass | 97.5% (94-100) pass |
+| Exact-set match | at least 85% | 93.0% (91-94) pass | 94.5% (90-99) pass | 93.5% (91-96) pass |
+| Correct silence | at least 95% | 100% (100-100) pass | 98.0% (94-100) pass | 100% (100-100) pass |
+| Over-surfacing | at most 5% | 5.5% (4-7) fail | 4.5% (1-9) pass | 4.5% (4-4) pass |
+| Under-surfacing | (none) | 1.5% | 2.0% | 2.0% |
+| Follow-up carry-over (exact) | (none) | 95% (86-100) | 90% (86-100) | 86% (71-100) |
+| Distractor cases (exact) | (none) | 92% (75-100) | 83% (50-100) | 75% (75-75) |
+
+Values are mean (min-max over the 3 rounds). What changed between runs, `PRESENT_RULE` wording only (no other prompt, no tool routing):
+
+- Run 1: the rule as first written (present when the user asks about something a view shows; at most 3 a turn; one focus; never for writes or small talk). Misses: `travel.trips` presented beside `travel.trip_budget` (6 turns), `month_outlook` called before `list_budgets` (4), `health.workout` beside `health.today` (2).
+- Run 2: added "present only the views that answer what was asked, never a neighbour" with the trips and workout examples. The trips extras went away; one `finance.budgets` after a budget write and one `health.today` for a weight-and-money question appeared.
+- Run 3: added "default to one view", the budget write as a write, and money views not going with weight or food questions alone. Silence back to 100%.
+
+**Run 4, after the supersede rules and adjusted outlooks (same setup, `--repeat 3`, 178 of 180 case runs passed, $0.09):** the catalog now says `finance.budgets` supersedes `finance.month_outlook` and `health.today` supersedes `health.workout`: a view only the safety net opened is dropped when the superseding view is in the turn (a view Prime chose with `present` never is). The prompt was not changed.
+
+| Figure | Gate | Run 4 |
+|---|---|---|
+| Precision (micro) | at least 95% | 98.2% (95-100) pass |
+| Recall (micro) | at least 85% | 97.5% (96-98) pass |
+| Exact-set match | at least 85% | 97.5% (96-99) pass |
+| Correct silence | at least 95% | 100% (100-100) pass |
+| Over-surfacing | at most 5% | 1.5% (0-4) pass |
+| Under-surfacing | (none) | 2.0% |
+| Follow-up carry-over (exact) | (none) | 86% (86-86) |
+| Distractor cases (exact) | (none) | 92% (75-100) |
+
+All five gates pass. What still misses, one turn each: `views-followup-budgets-august` (nothing, and spending), `views-followup-july` (nothing), `views-trip-and-month` (an extra trips list), `views-distract-weight-money` (weight trend for a money question). The budget and day misses of run 3 are gone.
+
+The gate status above is as of run 3.
+
+**Gate status: precision fails in all three runs (94.6% in the last, 0.4 points short); the other four gates pass in run 3.** What is left is routing, not `present` wording, and I stopped at the two re-runs allowed:
+
+| Case | Opened vs wanted | Likely cause |
+|---|---|---|
+| `views-budgets-dining-left`, `views-distract-gym-budget` (3/3 rounds) | budgets and month outlook, wanted budgets | routing: the model calls `month_outlook` first, then `list_budgets`; the safety net opens both |
+| `views-health-show-day`, `views-health-workout-today` | today and workout, wanted one | mapping: `todays_workout` and `food_today` are both opened by a "my day" question, and `health.today` already carries the workout |
+| `views-followup-budgets-august` (2/3), `views-health-workout-suggest` (1/3) | nothing, wanted a view | routing: answered from `spending_summary`, or `suggest_workout` never called |
+
+Options for the owner: let `list_budgets` or `present finance.budgets` replace the safety net's `month_outlook` card in a turn that has both, or stop `todays_workout` opening `health.workout` when `health.today` is also in the turn. Both are mapping changes, not prompt changes, and need a decision.
+
+**No regression elsewhere** (`--area health-routing --area gym --area food`, `--repeat 3`, 27 cases): views on 22.7/27 (84%, min 22, max 24), views off 22.3/27 (83%, min 21, max 24). The failing cases (`gym-bench-pr`, `food-purchase-is-an-expense`, the `health-route-*` money-versus-food cases) fail the same way with views off.

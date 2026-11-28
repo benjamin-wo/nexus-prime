@@ -145,8 +145,8 @@ def test_a_turn_is_logged_with_what_it_did_never_what_was_said() -> None:
 
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-    from nexus.agent.ops_timing import TurnTimer
-    from nexus.agent.service import SLOW_TURN_SECONDS, _log_turn
+    from nexus.agent.ops_timing import SLOW_TURN_SECONDS, TurnTimer
+    from nexus.agent.service import _log_turn
 
     new = [
         HumanMessage(content="lunch at foodcourt abc 6.50"),

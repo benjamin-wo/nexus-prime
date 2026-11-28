@@ -737,9 +737,8 @@ memories = Table(
     Index("ix_memories_user_id_updated_at", "user_id", "updated_at"),
 )
 
-# The chat as the user saw it, on the web or Telegram: their messages and Nexus's
-# replies, so the web chat can show the conversation again. Notifications aren't
-# kept here. The newest CHAT_KEEP per user are kept.
+# The chat as the user saw it (web or Telegram, no notifications), kept to show again: the
+# newest CHAT_KEEP lines per user. views: a Nexus reply's [{kind, params, focus}], no figures.
 chat_log = Table(
     "chat_log",
     metadata,
@@ -750,6 +749,7 @@ chat_log = Table(
     Column("text", Text, nullable=False),
     Column("channel", Text),
     Column("created_at", TZ, nullable=False),
+    Column("views", JSONB(none_as_null=True)),
     ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     CheckConstraint("role IN ('user', 'nexus')", name="role"),
     CheckConstraint("length(text) BETWEEN 1 AND 4000", name="text_length"),
