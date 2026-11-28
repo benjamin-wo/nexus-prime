@@ -4,7 +4,7 @@ and name but no kcal or macros."""
 
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -150,6 +150,7 @@ class ItemOut(Model):
     grams: str
     label: str
     kind: EstimateKind
+    source_detail: Literal["db", "ai_estimate"]  # where the nutrients came from
     cooking: Cooking | None
     note: str | None
     nutrients: NutrientsOut | None  # None in numbers-free mode
@@ -239,6 +240,7 @@ def _meal(entry: MealEntry, names: dict[str, str], hidden: bool) -> MealOut:
                 name=names.get(i.food_id or "") or i.name,
                 grams=str(i.grams.normalize()),
                 label=i.label,
+                source_detail=i.source_detail,
                 kind=i.kind,
                 cooking=i.cooking,
                 note=i.note,
