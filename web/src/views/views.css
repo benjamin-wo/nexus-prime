@@ -1,0 +1,29 @@
+/* Views in the chat (ADR 0005): a compact, read-only section under Prime's line. It is Paper's own section (a soft
+   block, no edge, no shadow) with rows and a small figure; nothing here nests another card. Figures are tabular. */
+.msg-views { display: grid; gap: var(--space-3); margin-left: 36px; max-width: calc(100% - 36px); min-width: 0; }
+.view-card { min-width: 0; font-variant-numeric: tabular-nums lining-nums; }
+.view-card .block { margin: 0; }
+.view-card .block-head h2 { font-size: 1rem; }
+.view-card[data-focus="true"] .block-head h2 { font-size: 1.1875rem; }
+.view-card .block > .card { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-3); align-content: start; min-height: 72px; }
+.view-card .block > .card:has(> :is(ul, ol, .row-list):first-child) { padding-block: var(--space-1); }
+.view-card .state { padding: 0; }
+.view-card .btn { justify-self: start; }
+
+.vc-spark { width: 100%; height: 40px; overflow: visible; }
+.vc-spark polyline { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.vc-inout { display: grid; gap: var(--space-1); }
+.vc-inout { gap: var(--space-2); }
+.vc-bar-line { display: grid; gap: var(--space-1); }
+.vc-bar-label { font-size: 0.8125rem; color: var(--text-secondary); }
+.vc-in, .vc-out { display: block; height: 8px; border-radius: 999px; min-width: 2px; }
+.vc-in { background: var(--accent); }
+.vc-out { background: var(--text-muted); }
+
+.vc-split { height: 10px; }
+
+.back-to-chat {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; min-height: 40px;
+  padding: 0 var(--space-3); background: var(--bg-frame); border-bottom: 1px solid var(--border-subtle);
+}

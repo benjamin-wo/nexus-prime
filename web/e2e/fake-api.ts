@@ -127,6 +127,28 @@ const CLOSED_MONTHS: Record<string, { out: number; in: number; put: number; food
   "2026-10": { out: 2140, in: 5200, put: 1000, food: 900, foodCount: 12, count: 31 },
   "2026-09": { out: 2320, in: 4200, put: 800, food: 700, foodCount: 9, count: 27 },
 };
+const sgd = (amount: string) => ({ amount, currency: "SGD" });
+/** The views Prime can show in the chat, with made-up figures: what GET /views/{kind} answers and the frame it sends. */
+const VIEWS: Record<string, { params: Record<string, unknown>; caption: string; summary: Record<string, unknown>; show: Record<string, unknown> }> = (() => {
+  const make = (kind: string, params: Record<string, unknown>, caption: string, summary: Record<string, unknown>) => ({
+    params,
+    caption,
+    summary,
+    show: { view_id: kind, kind, params, focus: true, caption, summary },
+  });
+  return {
+    "finance.month_outlook": make("finance.month_outlook", { month: "2026-09" }, "Your outlook for September 2026", {
+      status: "ok",
+      received: sgd("5000.00"),
+      spent: sgd("2100.50"),
+      overall: sgd("2899.50"),
+      headroom: sgd("900.00"),
+      shortfall: null,
+    }),
+    "health.today": make("health.today", {}, "Your day", { day: "2026-09-27", meals: 1, kcal: "675", protein_g: "30", kcal_target: null }),
+  };
+})();
+
 /** Months before those, for the chart. */
 const EARLIER_SPENDING: Record<string, number> = { "2026-06": 2210, "2026-07": 1190.25, "2026-08": 1655 };
 
@@ -193,6 +215,9 @@ export async function fakeApi(
     /** Pretend today is this day (YYYY-MM-DD) for the Money overview: its chart ends with that month
      * and the months before it have the made-up figures above. The spec sets the page's clock to match. */
     today = null as string | null,
+    /** Prime shows views as cards in the chat (GET /config says so): "how am I doing this month?" brings the month
+     * outlook and "had chicken rice" the day's food, each with GET /views/{kind} behind it (made-up figures). */
+    views = false,
     /** Whether the "Track which card paid" preference starts on (GET /me and PUT /settings/preferences). */
     trackCards = true,
     /** Whether Invest and Travel are in the menu (GET /me preferences, and PUT /settings/preferences): true shows
@@ -214,6 +239,8 @@ export async function fakeApi(
 ) {
   let session = signedIn || demo;
   /** Whether the session is the demo account (signing out ends it). */
+  // The chat lines the server keeps for turns that showed views (the history sends them back).
+  const viewLines: Record<string, unknown>[] = [];
   let demoSession = demo;
   let demoLeft = demoMessages;
   /** When the demo ends: just under a day from the first ask. */
@@ -916,7 +943,12 @@ export async function fakeApi(
       return json(route, { detail: "guests can only open the trips they are on" }, 403);
     }
     if (path === "/config")
-      return json(route, { bot_username: "nexus_test_bot" });
+      return json(route, { bot_username: "nexus_test_bot", views_enabled: views });
+    if (path.startsWith("/views/") && views) {
+      const kind = path.slice("/views/".length);
+      const view = VIEWS[kind];
+      return view ? json(route, { view_id: kind, kind, params: view.params, caption: view.caption, summary: view.summary }) : json(route, { detail: "no such view" }, 404);
+    }
     if (path === "/me") {
       if (!session) return json(route, { detail: "not signed in" }, 401);
       return json(route, meBody());
@@ -3440,6 +3472,7 @@ export async function fakeApi(
           ]
         : [];
       const before = url.searchParams.get("before");
+      if (viewLines.length > 0 && !before) return json(route, { lines: viewLines, more: false, pending: null });
       if (before) {
         return json(route, {
           lines: [{ id: 1, role: "user", text: "hello from last week", channel: "web", at: "2026-09-20T01:00:00Z" }],
@@ -3452,7 +3485,7 @@ export async function fakeApi(
     if (path === "/chat" || path === "/chat/stream") {
       // The stream sends the same replies as the plain endpoint, after one made-up step: the chat
       // reads both the same way.
-      const answer = (r: Route, replies: unknown) =>
+      const answer = (r: Route, replies: unknown, shown: unknown[] = []) =>
         path === "/chat"
           ? json(r, replies)
           : r.fulfill({
@@ -3462,6 +3495,7 @@ export async function fakeApi(
                 ": open\n\n" +
                 `event: step\ndata: ${JSON.stringify({ label: "Working on it", state: "running" })}\n\n` +
                 `event: step\ndata: ${JSON.stringify({ label: "Working on it", state: "done" })}\n\n` +
+                shown.map((v) => `event: view.show\ndata: ${JSON.stringify(v)}\n\n`).join("") +
                 `event: replies\ndata: ${JSON.stringify(replies)}\n\n`,
             });
       state.chatSent.push(String(body.message));
@@ -3470,6 +3504,25 @@ export async function fakeApi(
         if (demoLeft <= 0) return answer(route, [{ text: "That's the end of the demo's messages. Sign in with Telegram to keep going.", buttons: [] }]);
         demoLeft -= 1;
         return answer(route, [{ text: "Here's what I found in the demo data.", buttons: [] }]);
+      }
+      // What the server keeps with a turn: the person's line and Prime's, with the views' kind, params and focus only.
+      const keep = (reply: string, shown: Record<string, unknown>[]) => {
+        const at = new Date().toISOString();
+        const id = viewLines.length + 1;
+        viewLines.push(
+          { id, role: "user", text: String(body.message), channel: "web", at },
+          { id: id + 1, role: "nexus", text: reply, channel: "web", at, views: shown.map(({ kind, params, focus }) => ({ kind, params, focus })) },
+        );
+      };
+      if (views && /this month/.test(String(body.message))) {
+        const shown = [VIEWS["finance.month_outlook"].show];
+        keep("You're on track this month.", shown);
+        return answer(route, [{ text: "You're on track this month.", buttons: [], views: shown }], shown);
+      }
+      if (views && /chicken rice/.test(String(body.message))) {
+        const shown = [VIEWS["health.today"].show];
+        keep("Logged chicken rice.", shown);
+        return answer(route, [{ text: "Logged chicken rice.", buttons: [], views: shown }], shown);
       }
       if (String(body.message).startsWith("How much is a PS6")) {
         // A web answer: its sources come as src: buttons, two to a row, for the chat to draw as chips.

@@ -162,3 +162,25 @@ describe("Today", () => {
     expect(calls.find((c) => c.method === "POST")?.body).toEqual({ kind: "weight", value: "82.1", unit: "kg" });
   });
 });
+
+describe("opened from a card in the chat", () => {
+  it("shows the day in the address, asking for that day's food", async () => {
+    const calls = home();
+    renderWithProviders(<HealthHome />, "/health?day=2026-11-20");
+    expect(await screen.findByText("Food on 20 Nov 2026")).toBeInTheDocument();
+    expect(calls.find((c) => c.path === "/health/day")).toBeDefined();
+    await waitFor(() => expect(calls.some((c) => c.path === "/health/day")).toBe(true));
+  });
+
+  it("reads a day that isn't a date as today", async () => {
+    home();
+    renderWithProviders(<HealthHome />, "/health?day=nonsense");
+    expect(await screen.findByText("Today's food")).toBeInTheDocument();
+  });
+
+  it("opens the weight trend with ?weight=trend", async () => {
+    home({ "GET /health/weight": () => weight() });
+    renderWithProviders(<HealthHome />, "/health?weight=trend");
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+});

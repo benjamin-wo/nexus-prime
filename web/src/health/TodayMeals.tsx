@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { LoadError } from "../components/LoadError";
 import { Toast } from "../components/Toast";
 import { Button, Row, RowList, Section } from "../components/ui";
+import { formatDate } from "../format";
 import { healthKey } from "./api";
 import { bodyApi, type Meal } from "./bodyApi";
 import { gramsRange, kcalRange, slotLabel } from "./bodyFormat";
@@ -25,7 +26,10 @@ function figures(m: Meal): string | undefined {
 export function TodayMeals() {
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const day = useDay(null);
+  // `?day=YYYY-MM-DD` (a card's Open sends it) shows that day; no day, or one that isn't a date, is today.
+  const asked = params.get("day");
+  const date = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? asked : null;
+  const day = useDay(date);
   const [sheet, setSheet] = useState<Meal | "new" | null>(null);
   const [removed, setRemoved] = useState<Meal | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +67,7 @@ export function TodayMeals() {
     <>
       <Section
         id="home-food"
-        title="Today's food"
+        title={date ? `Food on ${formatDate(date, "UTC")}` : "Today's food"}
         action={
           <Button variant="text" onClick={() => setSheet("new")}>
             Add food
@@ -71,11 +75,11 @@ export function TodayMeals() {
         }
       >
         {day.isError ? (
-          <LoadError message="Couldn't load today's food." query={day} />
+          <LoadError message={date ? "Couldn't load that day's food." : "Couldn't load today's food."} query={day} />
         ) : !d ? (
           <p className="state">Loading…</p>
         ) : d.meals.length === 0 ? (
-          <p className="muted">Nothing logged yet.</p>
+          <p className="muted">Nothing logged{date ? "" : " yet"}.</p>
         ) : (
           <>
             <RowList aria-label="Meals today">
@@ -93,7 +97,7 @@ export function TodayMeals() {
           {error}
         </p>
       )}
-      {sheet && <MealSheet meal={sheet === "new" ? undefined : sheet} day={null} onClose={close} onDeleted={setRemoved} />}
+      {sheet && <MealSheet meal={sheet === "new" ? undefined : sheet} day={date} onClose={close} onDeleted={setRemoved} />}
       {removed && <Toast message="Meal deleted." action={restore(removed) ? { label: "Undo", run: () => void undo() } : undefined} onClose={closeToast} />}
     </>
   );
