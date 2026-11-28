@@ -448,3 +448,43 @@ Users can pick how Nexus talks (Default, Chill friend, Straight to the point, Hy
 ## Voice notes (26 October 2026)
 
 Speech-to-text was chosen on 144 made-up clips (12 phrases, 2 voices, clean and noisy, in Telegram, Android and iPhone formats): `openai/gpt-4o-mini-transcribe` with a short formatting prompt got the amount exactly right in 96% of clips (the next best 78%), at about 1 s and $0.00015 a note; every model heard the digits but wrote some as clock times ("8:40"), which the transcript is tidied for. Live, on this branch, 13 voice-note cases ran three times: every amount logged was right in every run, voice turns took a median 2.4 s (transcription 0.5 s), and the heard line showed on every change and never on a question. Full set 271/274; everything but voice notes 258/258. The three failures were the cases, not the replies (a split counted against Ann's existing 40; a one-off "move 300 to savings" that Nexus rightly can't do), and splits now show the heard line on the confirm prompt too. Still to watch: the speech model writes "Ann" as "Anne", and in 3 of 8 splits the model filed the half under a new "Anne".
+
+## Views (27 November 2026)
+
+The `views` area (`--area views`, 60 cases, 67 scored turns a round) measures which hand-built views a turn would bring into the chat ([ADR 0005](adr/0005-prime-views.md)). Cases are in `src/nexus/evals/view_cases.py`: Finance (outlook, budgets, spending), Travel (a trip's money), Investments, Health (food log, the day, weight trend, workout, records), "show me", composites ("can I afford", two domains in one turn), distractors (Health is on but the question is about money, and the reverse), follow-ups ("and last month?") and 17 turns that should open nothing ("thanks", "what can you do", writes). Expected views come from the expected tools through the catalog (`agent/views.py`) unless a case states them. A wrong view set never fails a case: the figures sit beside the pass rate (`view_metrics.py`).
+
+```
+python -m nexus.evals --model <model> --area views --repeat 3
+python -m nexus.evals --area views --dry-run     # list the cases and what each turn expects; no keys
+```
+
+`present` does not exist yet, so views here are derived from the tools the model called through the catalog's mapping (the safety net), plus `show` (the view it names); a tool that returned an error opens nothing. This is the floor ADR 0005 builds on; the same cases measure `present` once it exists.
+
+**Baseline.** Model `deepseek/deepseek-v4.1-flash` (the production `OPENROUTER_MODEL`), `--repeat 3`, 28 September 2026 clock, 27 November 2026. 177 of 180 case runs passed their tool checks; cost about $0.11 a run.
+
+| Figure | Gate | First run | After one mapping fix |
+|---|---|---|---|
+| Precision (micro) | at least 95% | 91% (90-93%) fail | 94% (93-96%) fail |
+| Recall (micro) | at least 85% | 95% (94-96%) pass | 93% (91-94%) pass |
+| Exact-set match | at least 85% | 90% (90-91%) pass | 91% (88-94%) pass |
+| Correct silence | at least 95% | 98% (94-100%) pass | 100% (100-100%) pass |
+| Over-surfacing | at most 5% | 7% (6-9%) fail | 4% (3-6%) pass |
+| Under-surfacing | (none) | 4% (3-4%) | 6% (4-7%) |
+| Follow-up carry-over (exact) | (none) | 76% (71-86%) | 86% (86-86%) |
+| Distractor cases (exact) | (none) | 75% (75-75%) | 75% (75-75%) |
+| F1 (micro / macro) | (none) | 93% / 86% | 93% / 86% |
+
+Values are mean (min-max over the 3 rounds). The one mapping fix between the columns: `spending_summary`, which the model adds as a supporting lookup to answers about a month, no longer opens `finance.spending`; `query_ledger` opens it only when grouped by category.
+
+**What fails (second run), and why.** Precision is one point short; the other gates pass.
+
+| Case | Opened vs wanted | Likely cause |
+|---|---|---|
+| `views-budgets-dining-left`, `views-distract-gym-budget` (3/3 rounds) | budgets and month outlook, wanted budgets | routing: the model calls `month_outlook` first, then `list_budgets` |
+| `views-followup-budgets-august` (3/3) | nothing, wanted budgets | routing: "and in august?" is answered from `spending_summary`, not `list_budgets` |
+| `views-spending-where`, `views-spending-by-category` (2/3 rounds each) | nothing, wanted spending | mapping gap: the model answers with `spending_summary`, which is now non-surfacing; mapping it again over-surfaces on month questions (the first run) |
+| `views-health-show-day` (2/3) | nothing, wanted `health.today` | routing: the model searched the ledger instead of calling `show` |
+| `views-outlook-august`, `views-followup-july`, `views-show-trip` (1 round each) | an extra view: spending or the trips list | the model adds a `query_ledger` by category, or `show travel.trips` beside `trip_status` |
+| `views-health-workout-suggest` (1/3) | nothing, wanted `health.workout` | routing: the model looked up exercises and never called `suggest_workout` |
+
+The two spending cases are the open mapping question: either `spending_summary` is a card (and month questions over-surface) or it is not (and "where did my money go" under-surfaces). The honest fix is `present`: the model names the view when it means to show it. No prompt or tool routing was changed in this step. The distractor figure (75%) is one of the four distractor cases, `views-distract-gym-budget`, failing for the routing reason in the first row; the Health views did not leak into money questions, and money views did not open for the two expense-logging distractors (log lunch, log gym membership).

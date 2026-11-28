@@ -7,6 +7,9 @@ Reads the JSON that ``python -m nexus.evals`` writes (a single run or ``--repeat
 prints each case's pass rate in both, side by side. A case is flagged when its rates differ
 by 2 or more out of N, N being the larger number of runs (so one run each never flags).
 Cases that passed every time in both files are left out unless ``--all`` is given.
+
+When either file recorded views (``view_metrics``), the view figures follow, each as its
+mean with the min and max round, for both files side by side.
 """
 
 import argparse
@@ -15,6 +18,8 @@ import sys
 from collections.abc import Sequence
 from fractions import Fraction
 from pathlib import Path
+
+from nexus.evals import view_metrics
 
 DIFFERENCE = 2  # out of N runs
 
@@ -30,6 +35,43 @@ def load_rates(path: Path) -> Rates:
         passed, total = rates.get(run["id"], (0, 0))
         rates[run["id"]] = (passed + bool(run["passed"]), total + 1)
     return rates
+
+
+def load_views(path: Path) -> list[view_metrics.TurnViews]:
+    """Every turn's views, from a results file of either shape; empty for a file written
+    before they were recorded."""
+    data = json.loads(path.read_text())
+    runs = data["runs"] if isinstance(data, dict) else data
+    return [
+        t
+        for run in runs
+        for turn in run.get("turns", [])
+        if (t := view_metrics.from_json(turn, int(run.get("round", 1)))) is not None
+    ]
+
+
+def views_report(
+    a: list[view_metrics.TurnViews], b: list[view_metrics.TurnViews], names: tuple[str, str]
+) -> str:
+    """The view figures of both files side by side; empty when neither has any."""
+    if not (view_metrics.counted(a) or view_metrics.counted(b)):
+        return ""
+    shown = []
+    for turns in (a, b):
+        rounds = view_metrics.by_round(turns)
+        figures = view_metrics.spread(rounds)
+        shown.append({k: view_metrics.show(figures[k], len(rounds)) for k in figures})
+    width = max(len(label) for label in view_metrics.LABELS.values())
+    cols = [max(len(n), *(len(s[k]) for k in s)) for n, s in zip(names, shown, strict=True)]
+    lines = [
+        "Views:",
+        f"{'':<{width}}  {names[0]:>{cols[0]}}  {names[1]:>{cols[1]}}",
+        *(
+            f"{label:<{width}}  {shown[0][k]:>{cols[0]}}  {shown[1][k]:>{cols[1]}}"
+            for k, label in view_metrics.LABELS.items()
+        ),
+    ]
+    return "\n".join(lines)
 
 
 def differs(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -93,9 +135,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         rates = [load_rates(p) for p in (args.first, args.second)]
+        views = [load_views(p) for p in (args.first, args.second)]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         sys.exit(f"can't read the results: {type(exc).__name__}: {exc}")
-    print(report(rates[0], rates[1], (args.first.stem, args.second.stem), show_all=args.all))
+    names = (args.first.stem, args.second.stem)
+    print(report(rates[0], rates[1], names, show_all=args.all))
+    extra = views_report(views[0], views[1], names)
+    if extra:
+        print("\n" + extra)
     return 0
 
 

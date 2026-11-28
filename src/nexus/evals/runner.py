@@ -38,13 +38,12 @@ from nexus.agent.trip_reader import LlmTripReader
 from nexus.application.fx import Rate
 from nexus.application.ports import SpeechToText, UnitOfWork
 from nexus.application.web_lookup import WebLooker
-from nexus.domain import health_texts
-from nexus.domain.health_texts import Signpost
 from nexus.domain.ledger import User
 from nexus.domain.source_links import PREFIX as SOURCE_PREFIX
-from nexus.evals import clips, photos, seed
+from nexus.evals import clips, photos, seed, view_cases, view_metrics
 from nexus.evals.cases import WRITES, Call, Case, Has, Turn, is_health, searches_web
 from nexus.evals.checks import World, mentions_amount, unsupported_numbers
+from nexus.evals.fixed_texts import fixed_health_texts
 from nexus.evals.prices import CannedPrices
 from nexus.evals.web import CannedLookup
 from nexus.infra.db import tables
@@ -122,6 +121,13 @@ class TurnLog:
     memory_failed: bool = False
     memory_input_tokens: int = 0  # the memory writer's, priced as the memory model
     memory_output_tokens: int = 0
+    # The views the turn opened, as the catalog maps its tool calls (ADR 0005's safety net).
+    views: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def opened(self) -> frozenset[str]:
+        """The kinds of view the turn opened."""
+        return frozenset(v["view"] for v in self.views)
 
     @property
     def last_reply(self) -> str:
@@ -164,6 +170,9 @@ class CaseResult:
     @property
     def memory_output_tokens(self) -> int:
         return sum(t.memory_output_tokens for t in self.turns)
+
+    def view_turns(self) -> list[view_metrics.TurnViews]:
+        return view_cases.turn_views(self.case.id, [t.opened for t in self.turns], self.round_no)
 
 
 def quick(model: BaseChatModel) -> BaseChatModel:
@@ -308,7 +317,8 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
     log.replies = [r.text for r in all_replies]
     log.buttons = [b.data for row in (all_replies[-1].buttons if all_replies else []) for b in row]
     log.model_down = any(r.text.startswith(MODEL_DOWN) for r in all_replies)
-    for message in [m for m in await agent.messages(user) if m.id not in before]:
+    fresh = [m for m in await agent.messages(user) if m.id not in before]
+    for message in fresh:
         if isinstance(message, ToolMessage) and text_of(message.content):
             log.results.append(text_of(message.content))
         if not isinstance(message, AIMessage) or message.additional_kwargs.get(KERNEL):
@@ -320,6 +330,7 @@ async def _turn(agent: Agent, user: User, turn: Turn, ref: str) -> TurnLog:
             log.output_tokens += message.usage_metadata.get("output_tokens", 0)
             details = message.usage_metadata.get("input_token_details") or {}
             log.cached_tokens += details.get("cache_read", 0)
+    log.views = view_cases.opened_in(fresh, skip=KERNEL)
     return log
 
 
@@ -401,26 +412,6 @@ def _in_reply(reply: str, wanted: str | tuple[str, ...]) -> bool:
     options = (wanted,) if isinstance(wanted, str) else wanted
     text = reply.casefold()
     return any(o.casefold() in text for o in options)
-
-
-def fixed_health_texts() -> list[str]:
-    """The fixed referral texts and signposts (``domain.health_texts``): code's own words, so
-    their numbers (995, 1767) are as good as a tool's."""
-    found: list[str] = []
-
-    def add(value: object) -> None:
-        if isinstance(value, str):
-            found.append(value)
-        elif isinstance(value, Signpost):
-            found.extend((value.name, value.contact, value.note))
-        elif isinstance(value, tuple):
-            for item in value:
-                add(item)
-
-    for name, value in vars(health_texts).items():
-        if name.isupper():
-            add(value)
-    return found
 
 
 def provenance_failures(turns: Sequence[TurnLog]) -> list[str]:
@@ -667,6 +658,9 @@ class Summary:
         """Cases that passed in some rounds and failed in others."""
         return [k for k, (w, t) in self.per_case().items() if 0 < w < t]
 
+    def view_turns(self) -> list[view_metrics.TurnViews]:
+        return [t for r in self.results for t in r.view_turns()]
+
     def always_failing(self) -> list[str]:
         """Cases that failed in every round."""
         return [k for k, (w, _) in self.per_case().items() if w == 0]
@@ -685,6 +679,11 @@ class Summary:
             "per_case": {k: {"passed": w, "runs": t} for k, (w, t) in per_case.items()},
             "flaky": self.flaky(),
             "always_failing": self.always_failing(),
+            **(
+                {"views": view_metrics.as_json(turns)}
+                if view_metrics.counted(turns := self.view_turns())
+                else {}
+            ),
         }
 
     def by(self, key: Callable[[CaseResult], str | None]) -> dict[str, tuple[int, int]]:
@@ -774,6 +773,7 @@ class Summary:
         if common:
             shown = ", ".join(f'"{o}" {share:.0%}' for o, share in common)
             lines += ["", f"Openers after a change ({len(wrote)} replies): {shown}"]
+        lines += view_metrics.section(self.view_turns())
         failed = [r for r in self.results if not r.passed]
         if failed:
             lines += ["", "Failures:", ""]

@@ -10,6 +10,8 @@ never printed. Every case uses made-up data only.
 
     python -m nexus.evals ... --repeat 3            # every case 3 times: pass rates, flaky cases
     python -m nexus.evals compare main.json branch.json   # two result files, side by side
+    python -m nexus.evals --area views --dry-run   # list the view cases; no model or keys
+    python -m nexus.evals --area views --model ... --repeat 3   # how well turns open views
 
 Web search (the web_search tool) is canned by default: offline, free, the same every time.
 
@@ -39,7 +41,8 @@ from sqlalchemy.engine import make_url
 from nexus.evals.cases import CASES, Case
 from nexus.evals.compare import main as compare_main
 from nexus.evals.live_web import live_lookup, live_settings
-from nexus.evals.runner import CaseResult, Pricing, Summary, run_cases
+from nexus.evals.runner import CaseResult, Pricing, Summary, TurnLog, run_cases
+from nexus.evals.view_cases import LABELS, VIEW_CASES, expected_views
 from nexus.infra.db.engine import make_engine
 from nexus.infra.db.migrations import alembic_config
 from nexus.infra.speech.openrouter import OpenRouterSpeech
@@ -143,12 +146,42 @@ def _results_json(summary: Summary) -> str:
 def _pick(ids: list[str], areas: list[str]) -> list[Case]:
     cases = [
         c
-        for c in CASES
+        for c in (*CASES, *VIEW_CASES)
         if (not ids or any(c.id.startswith(i) for i in ids)) and (not areas or c.area in areas)
     ]
     if not cases:
         sys.exit("no cases match")
     return cases
+
+
+def _view_fields(result: CaseResult, n: int, turn: TurnLog) -> dict[str, object]:
+    """What the view figures need of a turn, for the results file (``view_metrics.from_json``);
+    nothing for a case with no view label."""
+    labelled = LABELS.get(result.case.id)
+    if labelled is None:
+        return {}
+    wanted = expected_views(labelled)[n]
+    return {
+        "views": turn.views,
+        "expected_views": None if wanted is None else sorted(wanted),
+        "follow_up": n > 0,
+        "distractor": labelled.distractor,
+    }
+
+
+def _listing(cases: list[Case]) -> str:
+    """The selected cases, one a line with the views each turn expects, for --dry-run."""
+    lines = []
+    for case in cases:
+        labelled = LABELS.get(case.id)
+        wanted = expected_views(labelled) if labelled else [None] * len(case.turns)
+        parts = []
+        for turn, views in zip(case.turns, wanted, strict=True):
+            shown = "unscored" if views is None else ", ".join(sorted(views)) or "none"
+            parts.append(f"{turn.text!r} -> {shown}")
+        lines.append(f"{case.id} [{case.area}]: " + " | ".join(parts))
+    lines.append(f"{len(cases)} cases")
+    return "\n".join(lines)
 
 
 def _as_json(result: CaseResult, *, rounds: bool = False) -> dict[str, object]:
@@ -173,8 +206,9 @@ def _as_json(result: CaseResult, *, rounds: bool = False) -> dict[str, object]:
                 "memory_input_tokens": t.memory_input_tokens,
                 "memory_output_tokens": t.memory_output_tokens,
                 "memory_failed": t.memory_failed,
+                **_view_fields(result, n, t),
             }
-            for t in result.turns
+            for n, t in enumerate(result.turns)
         ],
     }
 
@@ -183,14 +217,14 @@ async def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["compare"]:
         return compare_main(argv[1:])
-    areas = sorted({c.area for c in CASES})
+    areas = sorted({c.area for c in (*CASES, *VIEW_CASES)})
     parser = argparse.ArgumentParser(
         prog="python -m nexus.evals",
         description=__doc__,
         epilog="areas: " + ", ".join(areas),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--model", action="append", required=True, help="OpenRouter model id")
+    parser.add_argument("--model", action="append", default=[], help="OpenRouter model id")
     parser.add_argument("--case", action="append", default=[], help="case id or id prefix")
     parser.add_argument(
         "--area",
@@ -239,7 +273,18 @@ async def main(argv: list[str] | None = None) -> int:
         "time, so 'today' is the day the web is on (the other cases stay on 28 September "
         "2026). Default: a canned answer citing one made-up page",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="list the selected cases and the views each turn expects, then stop (no model, "
+        "database or keys needed)",
+    )
     args = parser.parse_args(argv)
+    if args.dry_run:
+        print(_listing(_pick(args.case, args.area)))
+        return 0
+    if not args.model:
+        parser.error("--model is required")
     reasoning = REASONING[args.reasoning]
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
