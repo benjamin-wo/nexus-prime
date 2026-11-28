@@ -21,6 +21,7 @@ from nexus.agent.tools.health import (
     local_day,
     log_day,
     need_consent,
+    opens,
 )
 from nexus.application import gym as gym_cases
 from nexus.domain import gym_entry
@@ -102,6 +103,7 @@ async def _find_exercise(ctx: ToolContext, a: FindExerciseArgs) -> ToolResult:
     return ToolResult("Best matches first:\n" + "\n".join(lines))
 
 
+@opens("health.workout")
 async def _todays_workout(ctx: ToolContext, _: NoArgs) -> ToolResult:
     if (blocked := await ai_blocked(ctx)) is not None:
         return blocked
@@ -183,6 +185,7 @@ class OptionalExerciseArgs(Args):
     )
 
 
+@opens("health.records")
 async def _personal_records(ctx: ToolContext, a: OptionalExerciseArgs) -> ToolResult:
     if (blocked := await ai_blocked(ctx)) is not None:
         return blocked

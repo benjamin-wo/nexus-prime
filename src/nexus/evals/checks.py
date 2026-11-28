@@ -4,13 +4,14 @@ user's data through the use cases and says, in words, what it looked for."""
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import UTC, date, datetime, time
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Protocol
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from nexus.application import gym as gym_cases
+from nexus.application import health as health_cases
 from nexus.application import memory as memory_cases
 from nexus.application import notifications as notification_cases
 from nexus.application import splits as split_cases
@@ -20,6 +21,7 @@ from nexus.application import wallets as wallet_cases
 from nexus.application.categories import list_categories
 from nexus.application.category_rules import list_rules
 from nexus.application.ports import LedgerQuery, UnitOfWork
+from nexus.domain.health import Goal, SampleKind
 from nexus.domain.ledger import Transaction, User
 
 type UowFactory = Callable[[], UnitOfWork]
@@ -761,6 +763,58 @@ class TodoAdded:
             for trip in trips
             for t in trip.todos
         )
+
+
+@dataclass(frozen=True, slots=True)
+class WeightLogged:
+    """A weigh-in of this many kg was logged from chat (the seed has none)."""
+
+    kg: str
+
+    def describe(self) -> str:
+        return f"logged a weight of {self.kg} kg"
+
+    async def holds(self, world: World) -> bool:
+        found = await health_cases.samples(  # the whole of time: the case's clock is its own
+            world.uow(),
+            world.user.id,
+            SampleKind.WEIGHT,
+            start=datetime(2000, 1, 1, tzinfo=UTC),
+            end=datetime(2100, 1, 1, tzinfo=UTC),
+            now=datetime.now(UTC),
+        )
+        return any(s.weight_kg == Decimal(self.kg) for s in found)
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileIs:
+    """The saved health profile has this height and birth year."""
+
+    height_cm: str
+    birth_year: int
+
+    def describe(self) -> str:
+        return f"saved a height of {self.height_cm} cm and a birth year of {self.birth_year}"
+
+    async def holds(self, world: World) -> bool:
+        found = await health_cases.profile(world.uow(), world.user.id, now=datetime.now(UTC))
+        return (
+            found is not None
+            and found.height_cm == Decimal(self.height_cm)
+            and found.birth_year == self.birth_year
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class NoLossGoal:
+    """No weight-loss goal is saved (none, or one held back by the safety gates)."""
+
+    def describe(self) -> str:
+        return "saved no weight-loss goal"
+
+    async def holds(self, world: World) -> bool:
+        found = await health_cases.profile(world.uow(), world.user.id, now=datetime.now(UTC))
+        return found is None or found.goal is not Goal.LOSE
 
 
 @dataclass(frozen=True, slots=True)

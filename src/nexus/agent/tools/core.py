@@ -53,6 +53,8 @@ class ToolContext:
     # Shared by everything the tools change in one chat turn, so Undo reverses it together.
     # None outside a turn: each change then stands alone.
     batch: UUID | None = None
+    # The web app's origin, for buttons that open a page; None: no such buttons.
+    origin: str | None = None
     # What the user said lately (their last few messages), for a tool that must not act on
     # pain or injury. Empty outside a chat turn.
     message: str = ""
@@ -80,6 +82,9 @@ class ToolResult:
     buttons: list[list[tuple[str, str]]] | None = None
     # For an expected failure (run_tool): its coarse class, like "NotFound". Never the message.
     error: str | None = None
+    # True when the write has its own Undo among ``buttons``, so the turn needs no shared
+    # Undo for it (which would reverse money or trips instead).
+    own_undo: bool = False
 
 
 @dataclass(frozen=True, slots=True)

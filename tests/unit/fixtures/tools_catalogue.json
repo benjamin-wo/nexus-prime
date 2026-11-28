@@ -1407,12 +1407,12 @@
     },
     {
       "name": "log_food",
-      "description": "Log what the user ate, as foods with a serving or a weight. Calories and macros are worked out by code from the food database: never state or estimate them yourself. If a food isn't found or is unclear it says what to ask the user. Asks the user to confirm.",
+      "description": "Log what the user ate, straight away (no confirmation), as foods with a serving or a weight. Calories and macros come from the food database. For each item also pass your rough estimate (est_kcal, est_protein_g, est_carbs_g, est_fat_g, for the item as eaten): it is used only when the food isn't in the database. The reply carries Undo and Edit buttons. Quote its text as it is.",
       "schema": {
         "type": "function",
         "function": {
           "name": "log_food",
-          "description": "Log what the user ate, as foods with a serving or a weight. Calories and macros are worked out by code from the food database: never state or estimate them yourself. If a food isn't found or is unclear it says what to ask the user. Asks the user to confirm.",
+          "description": "Log what the user ate, straight away (no confirmation), as foods with a serving or a weight. Calories and macros come from the food database. For each item also pass your rough estimate (est_kcal, est_protein_g, est_carbs_g, est_fat_g, for the item as eaten): it is used only when the food isn't in the database. The reply carries Undo and Edit buttons. Quote its text as it is.",
           "parameters": {
             "properties": {
               "foods": {
@@ -1475,6 +1475,54 @@
                         "type": "string"
                       },
                       "type": "array"
+                    },
+                    "est_kcal": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your rough estimate of the kcal in this item as eaten. Used only when the food isn't in the database; with est_protein_g, est_carbs_g and est_fat_g, in line with each other"
+                    },
+                    "est_protein_g": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your estimate of protein, grams"
+                    },
+                    "est_carbs_g": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your estimate of carbohydrate, grams"
+                    },
+                    "est_fat_g": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your estimate of fat, grams"
                     }
                   },
                   "required": [
@@ -1523,7 +1571,24 @@
         }
       },
       "exposed": true,
-      "confirms": true
+      "confirms": false
+    },
+    {
+      "name": "undo_last_meal",
+      "description": "Remove the meal the user just logged (logged in the last 30 minutes), for 'undo that' or 'remove that' right after a meal. Not for money or trips (undo_last_change).",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "undo_last_meal",
+          "description": "Remove the meal the user just logged (logged in the last 30 minutes), for 'undo that' or 'remove that' right after a meal. Not for money or trips (undo_last_change).",
+          "parameters": {
+            "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
     },
     {
       "name": "log_photo_meal",
@@ -1596,6 +1661,54 @@
                       },
                       "type": "array"
                     },
+                    "est_kcal": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your rough estimate of the kcal in this item as eaten. Used only when the food isn't in the database; with est_protein_g, est_carbs_g and est_fat_g, in line with each other"
+                    },
+                    "est_protein_g": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your estimate of protein, grams"
+                    },
+                    "est_carbs_g": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your estimate of carbohydrate, grams"
+                    },
+                    "est_fat_g": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Your estimate of fat, grams"
+                    },
                     "shown": {
                       "anyOf": [
                         {
@@ -1652,7 +1765,7 @@
         }
       },
       "exposed": false,
-      "confirms": true
+      "confirms": false
     },
     {
       "name": "food_today",
@@ -1694,6 +1807,342 @@
           "description": "The user's daily energy use (maintenance calories, TDEE) as a range, whether it is estimated from their profile or from their logs, and today's targets if any, as worked out by code. Quote it exactly: never estimate it yourself. If it asks for profile details, tell the user to set them in the Health profile. Read-only.",
           "parameters": {
             "properties": {},
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "log_weight",
+      "description": "Log the user's weight straight away (no confirmation), for 'I weigh 82 kg', 'I'm 180 lb' or 'weighed in at 74.5 this morning'. Its reply says what was logged and which way the trend is going, with an Undo button: quote it as it is, and add no figures of your own.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "log_weight",
+          "description": "Log the user's weight straight away (no confirmation), for 'I weigh 82 kg', 'I'm 180 lb' or 'weighed in at 74.5 this morning'. Its reply says what was logged and which way the trend is going, with an Undo button: quote it as it is, and add no figures of your own.",
+          "parameters": {
+            "properties": {
+              "value": {
+                "description": "The weight, the number only: 82.4",
+                "type": "string"
+              },
+              "unit": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "kg",
+                      "lb"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only if the user said it; left out, the unit they use in the app"
+              },
+              "when": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "The day, if not today and the user said so: 2026-09-14 or yesterday"
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "update_health_profile",
+      "description": "Save what the user said about themselves, straight away and without asking: height, birth year (from an age), sex, how active they are, a weight goal and pace, hiding numbers, or an eating-disorder history. Pass only what they said. The app's safety rules apply, and its reply says what was saved and any goal that was held back, with an Undo button: quote it as it is. Never ask the user to fill in a profile.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "update_health_profile",
+          "description": "Save what the user said about themselves, straight away and without asking: height, birth year (from an age), sex, how active they are, a weight goal and pace, hiding numbers, or an eating-disorder history. Pass only what they said. The app's safety rules apply, and its reply says what was saved and any goal that was held back, with an Undo button: quote it as it is. Never ask the user to fill in a profile.",
+          "parameters": {
+            "properties": {
+              "height_cm": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Height in centimetres: 180"
+              },
+              "birth_year": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Year of birth: 1990 (from an age, work it out)"
+              },
+              "sex": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "female",
+                      "male",
+                      "unspecified"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Used only for the energy estimate"
+              },
+              "activity_level": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "sedentary",
+                      "light",
+                      "moderate",
+                      "active",
+                      "very_active"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "How active the user is day to day"
+              },
+              "goal": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "lose",
+                      "maintain",
+                      "gain",
+                      "performance"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "What the user wants to do about their weight"
+              },
+              "target_rate": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Percent of body weight per week, only if the user named a pace"
+              },
+              "numbers_free": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "True to hide numbers (calories, weights), false to show them again"
+              },
+              "ed_history": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "True only if the user said they have had an eating disorder"
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "show",
+      "description": "Bring up a screen of the app for 'show me my weight trend', 'open my budgets', 'show my trips'. Reads nothing out: it says one line and gives an Open button. Views: health.today, health.weight_trend, health.workout, health.records, finance.month_outlook, finance.budgets, travel.trips, invest.portfolio. For a question about figures, use the tool that answers it instead.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "show",
+          "description": "Bring up a screen of the app for 'show me my weight trend', 'open my budgets', 'show my trips'. Reads nothing out: it says one line and gives an Open button. Views: health.today, health.weight_trend, health.workout, health.records, finance.month_outlook, finance.budgets, travel.trips, invest.portfolio. For a question about figures, use the tool that answers it instead.",
+          "parameters": {
+            "properties": {
+              "view": {
+                "description": "Which screen to bring up",
+                "enum": [
+                  "health.today",
+                  "health.weight_trend",
+                  "health.workout",
+                  "health.records",
+                  "finance.month_outlook",
+                  "finance.budgets",
+                  "travel.trips",
+                  "invest.portfolio"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "view"
+            ],
+            "type": "object"
+          }
+        }
+      },
+      "exposed": true,
+      "confirms": false
+    },
+    {
+      "name": "suggest_workout",
+      "description": "Suggest a workout for today ('a back workout', 'legs, 30 minutes') and show it as a card with Start and Shuffle buttons. Pick 4 to 6 exercises from the catalogue for the focus and the time, with sets, reps (or seconds) and rest. Time and place (gym or home) come from the user or their saved profile: if the tool says one is missing, ask just that, then call again. Code checks the equipment and the length. Nothing is started until the user taps Start. Wellness only: refuses for pain, injury and under-18s.",
+      "schema": {
+        "type": "function",
+        "function": {
+          "name": "suggest_workout",
+          "description": "Suggest a workout for today ('a back workout', 'legs, 30 minutes') and show it as a card with Start and Shuffle buttons. Pick 4 to 6 exercises from the catalogue for the focus and the time, with sets, reps (or seconds) and rest. Time and place (gym or home) come from the user or their saved profile: if the tool says one is missing, ask just that, then call again. Code checks the equipment and the length. Nothing is started until the user taps Start. Wellness only: refuses for pain, injury and under-18s.",
+          "parameters": {
+            "properties": {
+              "focus": {
+                "description": "What to train today, in the user's words: back, legs...",
+                "type": "string"
+              },
+              "exercises": {
+                "description": "4 to 6 exercises, in order, from the catalogue",
+                "items": {
+                  "properties": {
+                    "exercise": {
+                      "description": "The exercise as the user would say it ('lat pulldown')",
+                      "type": "string"
+                    },
+                    "sets": {
+                      "description": "Working sets",
+                      "type": "integer"
+                    },
+                    "reps": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Target reps per set (not with seconds)"
+                    },
+                    "seconds": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Target seconds per set, for holds"
+                    },
+                    "rest_seconds": {
+                      "default": 90,
+                      "description": "Rest between sets, in seconds",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "exercise",
+                    "sets"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 12,
+                "type": "array"
+              },
+              "minutes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "How long the user has, if they said"
+              },
+              "place": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "gym or home, if the user said"
+              },
+              "equipment": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Only what the user said they have at home: dumbbell, bands..."
+              }
+            },
+            "required": [
+              "focus",
+              "exercises"
+            ],
             "type": "object"
           }
         }
@@ -6002,6 +6451,7 @@
     "place_info",
     "plan_record",
     "query_ledger",
+    "show",
     "show_dividends",
     "show_pay_schedule",
     "show_plan",
@@ -6038,6 +6488,7 @@
     "list_trips": "travel",
     "log_food": "health",
     "log_sets": "health",
+    "log_weight": "health",
     "personal_records": "health",
     "plan_record": "invest",
     "record_trade": "invest",
@@ -6055,12 +6506,14 @@
     "split_trip_costs": "travel",
     "stock_levels": "invest",
     "suggest_adjustments": "health",
+    "suggest_workout": "health",
     "they_paid": "travel",
     "todays_workout": "health",
     "trade_history": "invest",
     "trip_status": "travel",
     "undo_last_set": "health",
     "unwatch_stock": "invest",
+    "update_health_profile": "health",
     "update_trip": "travel",
     "watch_stock": "invest",
     "weekly_volume": "health",
@@ -6096,10 +6549,9 @@
     "log_sets",
     "finish_workout",
     "undo_last_set",
-    "log_food",
-    "log_photo_meal",
     "food_today",
     "energy_estimate",
+    "show",
     "draft_training_plan",
     "suggest_adjustments",
     "apply_adjustments",

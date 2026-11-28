@@ -4,7 +4,7 @@ and name but no kcal or macros."""
 
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +24,7 @@ from nexus.domain.nutrition import (
     MealSlot,
     MealTotals,
     Nutrients,
+    check_ai_estimate,
 )
 
 router = APIRouter(prefix="/api/health")
@@ -93,13 +94,24 @@ async def get_food(food_id: str, auth: Auth, web: Runtime) -> FoodOut:
 # --- meals ----------------------------------------------------------------------------------
 
 
+class EstimateIn(Model):
+    """The figures of a food that isn't in the database (an AI estimate): for the whole item."""
+
+    kcal: str = Field(max_length=12)
+    protein_g: str = Field(max_length=12)
+    carbs_g: str = Field(max_length=12)
+    fat_g: str = Field(max_length=12)
+
+
 class ItemIn(Model):
-    food_id: str = Field(max_length=100)
+    food_id: str | None = Field(None, max_length=100)  # None with ``estimate``
     grams: str = Field(max_length=12)
     label: str | None = Field(None, max_length=100)  # "1 cup"; "<grams> g" when left out
     kind: EstimateKind = EstimateKind.WEIGHED
     cooking: Cooking | None = None
     note: str | None = Field(None, max_length=200)
+    estimate: EstimateIn | None = None  # with no food_id: puts back an AI-estimated item
+    name: str | None = Field(None, max_length=100)  # the user's own word for it
 
 
 class MealIn(Model):
@@ -133,11 +145,12 @@ class TotalsOut(Model):
 
 class ItemOut(Model):
     id: str | None
-    food_id: str
+    food_id: str | None  # None for an AI estimate: no row in the food database
     name: str | None
     grams: str
     label: str
     kind: EstimateKind
+    source_detail: Literal["db", "ai_estimate"]  # where the nutrients came from
     cooking: Cooking | None
     note: str | None
     nutrients: NutrientsOut | None  # None in numbers-free mode
@@ -169,14 +182,31 @@ def _inputs(items: list[ItemIn]) -> list[nutrition_cases.ItemInput]:
     out = []
     for i in items:
         grams = _grams(i.grams)
+        label = i.label or f"{grams.normalize():f} g"
+        if i.food_id is None:
+            if i.estimate is None:
+                raise InvalidInput("a food needs a food_id or an estimate")
+            figures = check_ai_estimate(
+                _grams(i.estimate.kcal),
+                _grams(i.estimate.protein_g),
+                _grams(i.estimate.carbs_g),
+                _grams(i.estimate.fat_g),
+            )
+            out.append(
+                nutrition_cases.ItemInput(
+                    None,
+                    grams,
+                    label,
+                    EstimateKind.AI_ESTIMATE,
+                    note=i.note,
+                    name=i.name,
+                    estimate=figures,
+                )
+            )
+            continue
         out.append(
             nutrition_cases.ItemInput(
-                i.food_id,
-                grams,
-                i.label or f"{grams.normalize():f} g",
-                i.kind,
-                i.cooking,
-                note=i.note,
+                i.food_id, grams, label, i.kind, i.cooking, note=i.note, name=i.name
             )
         )
     return out
@@ -207,9 +237,10 @@ def _meal(entry: MealEntry, names: dict[str, str], hidden: bool) -> MealOut:
             ItemOut(
                 id=None if i.id is None else str(i.id),
                 food_id=i.food_id,
-                name=names.get(i.food_id),
+                name=names.get(i.food_id or "") or i.name,
                 grams=str(i.grams.normalize()),
                 label=i.label,
+                source_detail=i.source_detail,
                 kind=i.kind,
                 cooking=i.cooking,
                 note=i.note,

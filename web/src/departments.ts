@@ -72,11 +72,9 @@ export const DEPARTMENTS: DepartmentView[] = [
     menu: "show_health",
     icon: "",
     path: "/health",
-    blurb: "Food, weight and gym workouts.",
+    blurb: "A daily log of food, weight and workouts.",
     tabs: [
       { to: "/health", label: "Today", end: true },
-      { to: "/health/food", label: "Food" },
-      { to: "/health/weight", label: "Weight" },
       { to: "/health/gym", label: "Gym" },
     ],
   },

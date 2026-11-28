@@ -467,6 +467,9 @@ async def grade(case: Case, turns: list[TurnLog], world: World, changed: bool) -
         failures.append("changed data")
     if case.confirms is not None and (last.confirmations > 0) != case.confirms:
         failures.append("asked to confirm" if last.confirmations else "didn't ask to confirm")
+    for prefix in case.has_buttons:
+        if not any(b.startswith(prefix) for b in last.buttons):
+            failures.append(f"the reply has no {prefix} button")
     for wanted in case.reply:
         if not _in_reply(last.last_reply, wanted):
             failures.append(f"reply lacks {wanted!r}")

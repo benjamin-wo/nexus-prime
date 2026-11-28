@@ -599,3 +599,27 @@ async def test_two_users_over_http_never_meet(world: World) -> None:
 
     await member.send("DELETE", "/api/health/consent")  # the member's consent is their own
     assert (await owner.get("/api/health/consents")).json()["health_consented_at"] is not None
+
+
+# --- one-tap turn on ----------------------------------------------------------------------------
+
+
+async def test_turn_on_sets_the_master_consent_and_ai_processing_and_is_idempotent(
+    uow: UowFactory, alice: UserId
+) -> None:
+    first = await consent_cases.turn_on(uow(), alice, now=NOW)
+    assert first.health_at == NOW
+    assert {s.scope for s in first.scopes if s.active} == {ConsentScope.AI_PROCESSING}
+    assert await consent_cases.may_send_to_ai(uow(), alice)
+    later = NOW + timedelta(days=1)
+    again = await consent_cases.turn_on(uow(), alice, now=later)
+    assert again.health_at == NOW
+    [ai] = [s for s in again.scopes if s.scope is ConsentScope.AI_PROCESSING]
+    assert ai.granted_at == NOW
+
+
+async def test_turn_on_gives_a_withdrawn_scope_back(uow: UowFactory, alice: UserId) -> None:
+    await consent_cases.turn_on(uow(), alice, now=NOW)
+    await consent_cases.withdraw(uow(), alice, ConsentScope.AI_PROCESSING, now=NOW)
+    await consent_cases.turn_on(uow(), alice, now=NOW + timedelta(days=1))
+    assert await consent_cases.may_send_to_ai(uow(), alice)

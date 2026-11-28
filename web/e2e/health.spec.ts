@@ -40,7 +40,11 @@ async function healthApi(page: Page) {
     meals: [] as Record<string, unknown>[],
     weighIns: [] as string[],
     checkIn: false,
+    planned: false,
   };
+  const ROUTINE = "11111111-1111-1111-1111-111111111111";
+  const routine = { id: ROUTINE, name: "Push day", slots: [{ exercise_id: bench.id, sets: 3, reps: 8, seconds: null, rest_seconds: 120, note: null }], created_at: "", updated_at: "" };
+  const workoutBody = () => ({ id: WORKOUT, routine_id: state.planned ? ROUTINE : null, started_at: new Date().toISOString(), finished_at: null, note: null });
   const json = (route: import("@playwright/test").Route, body: unknown, status = 200) =>
     route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.route("**/api/health/**", async (route) => {
@@ -52,16 +56,20 @@ async function healthApi(page: Page) {
       state.consented = true;
       return json(route, { consented_at: "2026-11-20T08:00:00Z" }, 201);
     }
-    if (path === "/today") {
-      const workout = { id: WORKOUT, routine_id: null, started_at: new Date().toISOString(), finished_at: null, note: null };
-      return json(route, { routine: null, in_progress: state.open && !state.finished ? workout : null });
+    if (path === "/consent/all") {
+      state.consented = true;
+      return json(route, { health_consented_at: "2026-11-20T08:00:00Z", scopes: [{ scope: "ai_processing", active: true, granted_at: "2026-11-20T08:00:00Z", withdrawn_at: null }], ai_provider: { name: "OpenRouter", country: "United States" }, wellness_statement: WELLNESS }, 201);
     }
+    if (path === "/today") {
+      return json(route, { routine: state.planned ? routine : null, in_progress: state.open && !state.finished ? workoutBody() : null });
+    }
+    if (path === `/routines/${ROUTINE}`) return json(route, routine);
     if (path === "/workouts" && method === "POST") {
       state.open = true;
-      return json(route, { id: WORKOUT, routine_id: null, started_at: new Date().toISOString(), finished_at: null, note: null }, 201);
+      return json(route, workoutBody(), 201);
     }
     if (path === `/workouts/${WORKOUT}`) {
-      return json(route, { id: WORKOUT, routine_id: null, started_at: new Date().toISOString(), finished_at: null, note: null, sets: state.sets });
+      return json(route, { ...workoutBody(), sets: state.sets });
     }
     if (path === `/workouts/${WORKOUT}/sets` && method === "POST") {
       const b = JSON.parse(req.postData() ?? "{}");
@@ -106,7 +114,7 @@ async function healthApi(page: Page) {
       ];
       return json(route, { hidden: false, trend_words: "slowly down", points, trend_kg: "82.4", rate_kg_per_week: "-0.3", rate_pct_per_week: "-0.4", rate_text: "about 0.3 kg a week down over the last 2 weeks", last_weigh_in: { at: "2026-11-23T07:00:00Z", kg: "82.1" } });
     }
-    if (path === "/consents") return json(route, { health_consented_at: "2026-11-20T08:00:00Z", scopes: [], ai_provider: { name: "OpenRouter", country: "United States" }, wellness_statement: WELLNESS });
+    if (path === "/consents") return json(route, { health_consented_at: state.consented ? "2026-11-20T08:00:00Z" : null, scopes: [], ai_provider: { name: "OpenRouter", country: "United States" }, wellness_statement: WELLNESS });
     if (path === "/profile") return json(route, null);
     if (path === "/exercises") return json(route, [bench]);
     if (path === "/preferences") return json(route, { unit: "kg" });
@@ -120,21 +128,25 @@ async function healthApi(page: Page) {
   return state;
 }
 
-test("turn on Health, start an empty workout, log a set and finish", async ({ page }) => {
+test("turn on Health in one tap, start an empty workout, log a set and finish", async ({ page }) => {
   await fakeApi(page, { showHealth: true });
-  await healthApi(page);
+  const state = await healthApi(page);
   await page.goto("/health");
 
   await expect(page.getByText(/not medical advice/i)).toBeVisible();
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/health-consent.png`, fullPage: true });
+  await expect(page.getByText(/through OpenRouter in the United States/)).toBeVisible();
+  await page.waitForTimeout(500);
+  if (SHOTS) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${SHOTS}/simple-consent.png`, fullPage: true });
+  }
   await expect(page.getByText(WELLNESS)).toBeVisible();
   await page.getByRole("button", { name: "Turn on Health" }).click();
+  expect(state.consented).toBe(true);
 
   await expect(page.getByRole("heading", { name: "Health", level: 1 })).toBeVisible();
   await page.getByRole("link", { name: "Gym", exact: true }).click();
   await expect(page.getByRole("button", { name: "Start an empty workout" })).toBeVisible();
-  await page.waitForTimeout(800);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/health-today.png`, fullPage: true });
   await page.getByRole("button", { name: "Start an empty workout" }).click();
 
   await page.getByRole("button", { name: "Add exercise" }).first().click();
@@ -166,33 +178,26 @@ test("a library exercise opens in a sheet with its steps and body map", async ({
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/health-library-detail.png` });
 });
 
-test("log a food and see its range; log a weight", async ({ page }) => {
+test("Today shows a meal, the weight line, and logs a weight", async ({ page }) => {
   await fakeApi(page, { showHealth: true });
   const state = await healthApi(page);
   state.consented = true;
+  const item = (name: string, source_detail: string, food_id: string | null) => ({ id: null, food_id, source_detail, name, grams: "350", label: "1 plate", kind: "portion", cooking: null, note: null, nutrients: nut("675") });
+  state.meals.push(
+    { id: "m1", meal: "lunch", eaten_at: new Date().toISOString(), source: "chat", note: null, items: [item("Chicken rice", "db", "rice-1")], totals: { point: nut("675"), low: nut("600"), high: nut("750") } },
+    { id: "m2", meal: "dinner", eaten_at: new Date().toISOString(), source: "chat", note: null, items: [item("Laksa", "ai_estimate", null)], totals: { point: nut("675"), low: nut("600"), high: nut("750") } },
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/health");
-  await expect(page.getByRole("heading", { name: "Food so far" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open chat" })).toContainText("Snap your food or tell Nexus what you ate.");
+  const meals = page.getByRole("list", { name: "Meals today" });
+  await expect(meals).toContainText("Lunch · Chicken rice");
+  await expect(meals).toContainText("about 600–750 kcal");
+  await expect(meals.getByRole("button", { name: "Open Dinner" })).toContainText("rough guide");
+  await expect(page.getByText("82.4 kg, slowly down")).toBeVisible();
+  await page.waitForTimeout(800);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/simple-today.png`, fullPage: true });
 
-  await page.getByRole("link", { name: "Food", exact: true }).click();
-  await page.getByRole("button", { name: "Log food" }).first().click();
-  const sheet = page.getByRole("dialog", { name: "Log food" });
-  await sheet.getByRole("radio", { name: "Lunch" }).click();
-  await sheet.getByRole("searchbox", { name: "Search foods" }).fill("chicken");
-  await sheet.getByRole("button", { name: "Choose Chicken rice" }).click();
-  await sheet.getByRole("radio", { name: "Stir-fried" }).click();
-  await sheet.getByRole("button", { name: "Add to meal" }).click();
-  await sheet.getByRole("button", { name: "Save meal" }).click();
-  await expect(page.getByRole("status")).toContainText("Lunch saved: about 600–750 kcal.");
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("list", { name: "Meals" })).toContainText("about 600–750 kcal");
-  await page.waitForTimeout(500);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/h7-food.png`, fullPage: true });
-
-  await page.getByRole("link", { name: "Weight", exact: true }).click();
-  await expect(page.getByRole("img", { name: /Weight trend/ })).toBeVisible();
-  await page.waitForTimeout(500);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/h7-weight.png`, fullPage: true });
   await page.getByRole("button", { name: "Log weight" }).click();
   const weigh = page.getByRole("dialog", { name: "Log weight" });
   await weigh.getByLabel("Weight (kg)").fill("82.1");
@@ -200,22 +205,46 @@ test("log a food and see its range; log a weight", async ({ page }) => {
   await expect(weigh.getByRole("status")).toHaveText("Saved 82.1 kg");
   expect(state.weighIns).toEqual(["82.1"]);
   await weigh.getByRole("button", { name: "Done" }).click();
-
-  await page.getByRole("link", { name: "Today", exact: true }).first().click();
-  await expect(page.getByRole("list", { name: "Meals today" })).toContainText("about 600–750 kcal");
-  await expect(page.getByRole("list", { name: "Weight trend" })).toContainText("Slowly down");
-  await page.waitForTimeout(800);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/h7-today.png`, fullPage: true });
+  await page.getByRole("button", { name: "See trend" }).click();
+  await expect(page.getByRole("dialog", { name: "Weight trend" }).getByRole("img", { name: /Weight trend/ })).toBeVisible();
 });
 
-test("with numbers hidden, weight shows only words and nothing echoes a number", async ({ page }) => {
+test("start a planned workout from Today", async ({ page }) => {
+  await fakeApi(page, { showHealth: true });
+  const state = await healthApi(page);
+  state.consented = true;
+  state.planned = true;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/health");
+  await page.getByRole("link", { name: /Push day/ }).click();
+  await expect(page).toHaveURL(/\/health\/gym$/);
+  await page.getByRole("button", { name: "Start Push day" }).click();
+  await expect(page.getByLabel("Reps, set 3 of Barbell bench press")).toHaveValue("8");
+  await page.waitForTimeout(800);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/simple-gym-planned.png`, fullPage: true });
+  await page.getByLabel("Weight (kg), set 1 of Barbell bench press").fill("60");
+  await page.getByRole("button", { name: "Log set 1 of Barbell bench press" }).click();
+  await expect(page.getByText("Logged 60 kg × 8.")).toBeVisible();
+});
+
+test("the old Food and Weight addresses open Today", async ({ page }) => {
+  await fakeApi(page, { showHealth: true });
+  const state = await healthApi(page);
+  state.consented = true;
+  for (const old of ["/health/food", "/health/weight"]) {
+    await page.goto(old);
+    await expect(page).toHaveURL(/\/health$/);
+    await expect(page.getByRole("heading", { name: "Health", level: 1 })).toBeVisible();
+  }
+});
+
+test("with numbers hidden, Today shows only words and nothing echoes a number", async ({ page }) => {
   await fakeApi(page, { showHealth: true });
   const state = await healthApi(page);
   state.consented = true;
   state.hidden = true;
-  await page.goto("/health/weight");
-  await expect(page.getByText("slowly down")).toBeVisible();
-  await expect(page.getByRole("img")).toHaveCount(0);
+  await page.goto("/health");
+  await expect(page.getByText("Slowly down")).toBeVisible();
   await page.getByRole("button", { name: "Log weight" }).click();
   const weigh = page.getByRole("dialog", { name: "Log weight" });
   await weigh.getByLabel("Weight (kg)").fill("82.1");
@@ -229,7 +258,7 @@ test("the soft check-in shows once", async ({ page }) => {
   state.consented = true;
   state.checkIn = true;
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/health/food");
+  await page.goto("/health");
   const sheet = page.getByRole("dialog", { name: "Checking in" });
   await expect(sheet).toContainText(CHECK_IN);
   await expect(sheet.getByRole("link", { name: "1767, or WhatsApp 9151 1767" })).toHaveAttribute("href", "tel:1767");
@@ -239,6 +268,6 @@ test("the soft check-in shows once", async ({ page }) => {
   await sheet.getByRole("button", { name: "Close" }).last().click();
   await expect(sheet).toHaveCount(0);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Food", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Health", level: 1 })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Checking in" })).toHaveCount(0);
 });

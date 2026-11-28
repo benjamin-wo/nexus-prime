@@ -4,12 +4,17 @@ Every figure in the Health tools' text comes from the application layer; the mod
 and never works it out.
 """
 
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
+from nexus.agent.links import app_link
 from nexus.agent.tools.core import ToolContext, ToolResult
 from nexus.agent.tools.helpers import parse_day
-from nexus.application import food_entry
+from nexus.agent.view_links import VIEWS
+from nexus.application import food_entry, health_menu
 from nexus.application import gym as gym_cases
 from nexus.domain.errors import ConsentRequired, InvalidInput
 
@@ -63,3 +68,44 @@ def log_day(ctx: ToolContext, when: str | None) -> datetime | None:
     if local_day(ctx, at) > ctx.today():
         raise InvalidInput("can't log a workout in the future")
     return at if local_day(ctx, at) < ctx.today() else None
+
+
+HEALTH_OFF_TAP = (
+    "Error: Health is off, so nothing was changed. The reply has a Turn on Health button: tell "
+    "the user to tap it (it agrees to Nexus keeping their health data), then say it again."
+)
+
+
+def health_off_tap() -> ToolResult:
+    """Health is off, with the one-tap button that turns it on."""
+    button = health_menu.health_on_button()
+    return ToolResult(
+        HEALTH_OFF_TAP, error="ConsentRequired", buttons=[[(button.label, button.data)]]
+    )
+
+
+def open_row(ctx: ToolContext, view: str) -> list[tuple[str, str]]:
+    """The "Open ..." button for a view: one button, or none when the web app's origin isn't
+    known."""
+    shown = VIEWS[view]
+    link = app_link(ctx.origin, shown.path)
+    return [(shown.button, link)] if link else []
+
+
+type Run = Callable[[ToolContext, Any], Awaitable[ToolResult]]
+
+
+def opens(view: str) -> Callable[[Run], Run]:
+    """A read tool whose good answer also carries the "Open ..." button of ``view``."""
+
+    def wrap(run: Run) -> Run:
+        async def opened(ctx: ToolContext, a: Any) -> ToolResult:
+            result = await run(ctx, a)
+            if result.error is not None or result.text.startswith("Error:"):
+                return result
+            row = open_row(ctx, view)
+            return replace(result, buttons=[row]) if row else result
+
+        return opened
+
+    return wrap

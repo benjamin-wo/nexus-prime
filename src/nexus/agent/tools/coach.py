@@ -14,13 +14,14 @@ from nexus.agent.tools.health import (
     need_consent,
 )
 from nexus.application import coach as coach_cases
+from nexus.application import gym as gym_cases
 from nexus.domain import coach as coach_rules
 from nexus.domain.errors import (
     ConsentRequired,
     InvalidInput,
     NexusError,
 )
-from nexus.domain.gym import Equipment
+from nexus.domain.gym import Equipment, Exercise
 from nexus.domain.health_safety import red_flags
 from nexus.domain.ledger import MenuSection
 
@@ -110,22 +111,123 @@ async def _training_profile(ctx: ToolContext, a: DraftPlanArgs) -> coach_rules.T
         saved.experience if saved else None
     )
     focus = enum_value(coach_rules.Focus, a.focus, "focus") or (saved.focus if saved else None)
-    if days is None or minutes is None or equipment is None or not experience or not focus:
-        missing = [
-            name
-            for name, value in (
-                ("days per week", days),
-                ("session length in minutes", minutes),
-                ("equipment (body weight only is fine)", equipment),
-                ("experience (beginner, intermediate or advanced)", experience),
-                ("focus (strength, hypertrophy or general)", focus),
-            )
-            if value is None
-        ]
+    profile = coach_rules.TrainingProfile(
+        days, minutes, equipment, experience, focus, saved.place if saved else None
+    )
+    if missing := profile.missing():
         raise InvalidInput(
             "ask the user for: " + "; ".join(missing) + ". Don't guess them. Then call again."
         )
-    return coach_rules.TrainingProfile(days, minutes, equipment, experience, focus)
+    return profile
+
+
+SUGGEST_NEEDS = (
+    "ask the user just this, in one short question, and nothing else: {what}. Then call "
+    "suggest_workout again with {args}."
+)
+
+
+class SuggestSlotArgs(Args):
+    exercise: str = Field(description="The exercise as the user would say it ('lat pulldown')")
+    sets: int = Field(description="Working sets")
+    reps: int | None = Field(None, description="Target reps per set (not with seconds)")
+    seconds: int | None = Field(None, description="Target seconds per set, for holds")
+    rest_seconds: int = Field(90, description="Rest between sets, in seconds")
+
+
+class SuggestWorkoutArgs(Args):
+    focus: str = Field(description="What to train today, in the user's words: back, legs...")
+    exercises: list[SuggestSlotArgs] = Field(
+        max_length=coach_rules.MAX_SLOTS_PER_ROUTINE,
+        description="4 to 6 exercises, in order, from the catalogue",
+    )
+    minutes: int | None = Field(None, description="How long the user has, if they said")
+    place: str | None = Field(None, description="gym or home, if the user said")
+    equipment: list[str] | None = Field(
+        None, description="Only what the user said they have at home: dumbbell, bands..."
+    )
+
+
+async def _top_exercise(ctx: ToolContext, said: str) -> Exercise:
+    """The exercise a name means; of several matches, the best one (nobody is asked)."""
+    try:
+        return await resolve_exercise(ctx, said)
+    except InvalidInput:
+        found = await gym_cases.find_exercises(ctx.uow(), text=said.strip(), limit=1)
+        if not found:
+            raise
+        return found[0]
+
+
+async def _suggest_workout(ctx: ToolContext, a: SuggestWorkoutArgs) -> ToolResult:
+    if not await has_consent(ctx):
+        return health_off()
+    if coach_rules.mentions_pain(ctx.message) or red_flags(ctx.message) is not None:
+        raise InvalidInput(NO_PROGRAMMING_FOR_PAIN)
+    year = await coach_cases.birth_year(ctx.uow(), ctx.user.id)
+    if coach_cases.is_under_18(year, ctx.now.year):  # no birth year is fine for a workout
+        raise InvalidInput(UNDER_18)
+    saved = await coach_cases.training_profile(ctx.uow(), ctx.user.id)
+    minutes = a.minutes if a.minutes is not None else (saved.session_minutes if saved else None)
+    place = enum_value(coach_rules.Place, a.place, "place") or (saved.place if saved else None)
+    asks = [
+        (what, arg)
+        for what, arg, value in (
+            ("how long they have", "minutes", minutes),
+            ("whether they are at the gym or at home", "place (gym or home)", place),
+        )
+        if value is None
+    ]
+    if asks or minutes is None or place is None:
+        raise InvalidInput(
+            SUGGEST_NEEDS.format(
+                what=" and ".join(w for w, _ in asks), args=" and ".join(g for _, g in asks)
+            )
+        )
+    said = tuple(
+        e for e in (enum_value(Equipment, x, "kind of equipment") for x in a.equipment or []) if e
+    )
+    equipment = said or coach_rules.suggestion_equipment(place, saved.equipment if saved else None)
+    problems: list[str] = []
+    planned: list[coach_rules.PlannedSlot] = []
+    for n, s in enumerate(a.exercises, 1):
+        try:
+            found = await _top_exercise(ctx, s.exercise)
+        except NexusError as exc:
+            problems.append(f"exercise {n}: {exc}")
+            continue
+        planned.append(coach_rules.PlannedSlot(found, s.sets, s.reps, s.seconds, s.rest_seconds))
+    if not problems:  # numbers are judged once every exercise is known
+        problems = coach_rules.validate_session(planned, minutes=minutes, equipment=equipment)
+    if problems:
+        raise InvalidInput(
+            "the workout can't be shown yet. Fix these and call again (don't ask the user):\n"
+            + "\n".join(f"- {p}" for p in problems)
+        )
+    await coach_cases.remember_training(
+        ctx.uow(),
+        ctx.user.id,
+        minutes=minutes,
+        place=place,
+        equipment=said or None,
+        now=ctx.now,
+    )
+    stored = await coach_cases.save_suggestion(
+        ctx.uow(),
+        ctx.user.id,
+        focus=a.focus,
+        slots=[p.slot() for p in planned],
+        minutes=minutes,
+        now=ctx.now,
+    )
+    return ToolResult(
+        coach_rules.suggestion_card(a.focus, planned)
+        + "\nThe card has Start and Shuffle buttons. Quote the card as it is; the user taps "
+        "Start to begin.",
+        buttons=[
+            [("Start", f"workout:start:{stored.id}"), ("Shuffle", f"workout:shuffle:{stored.id}")]
+        ],
+    )
 
 
 async def _gate_coach(ctx: ToolContext, birth_year: int | None) -> None:
@@ -264,6 +366,18 @@ async def _apply_adjustments(ctx: ToolContext, a: AcceptArgs) -> ToolResult:
 
 SPECS = (
     ToolSpec(
+        "suggest_workout",
+        "Suggest a workout for today ('a back workout', 'legs, 30 minutes') and show it as a "
+        "card with Start and Shuffle buttons. Pick 4 to 6 exercises from the catalogue for the "
+        "focus and the time, with sets, reps (or seconds) and rest. Time and place (gym or "
+        "home) come from the user or their saved profile: if the tool says one is missing, ask "
+        "just that, then call again. Code checks the equipment and the length. Nothing is "
+        "started until the user taps Start. Wellness only: refuses for pain, injury and "
+        "under-18s.",
+        SuggestWorkoutArgs,
+        _suggest_workout,
+    ),
+    ToolSpec(
         "draft_training_plan",
         "Draft a training plan (routines and a weekly or rotation schedule) for the user and "
         "show it for them to confirm; nothing is saved until they do. Exercises are looked up in "
@@ -305,6 +419,7 @@ MENU: dict[str, MenuSection] = dict.fromkeys(
         "apply_adjustments",
         "draft_training_plan",
         "suggest_adjustments",
+        "suggest_workout",
     ),
     MenuSection.HEALTH,
 )

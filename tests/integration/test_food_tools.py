@@ -1,12 +1,14 @@
-"""Prime's food tools: logging by chat behind a confirm card, and the day's log for the model.
+"""Prime's food tools: logging by chat straight away (with Undo), and the day's log for the model.
 Every name and figure is made up. Figures in a tool's text come from the application layer."""
 
 import json
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from langchain_core.messages import ToolMessage
 
 from nexus.agent.tools import READ_ONLY, LogFoodArgs, ToolContext, build_tools, run_tool
 from nexus.application import gym as gym_cases
@@ -16,10 +18,10 @@ from nexus.application import nutrition as nutrition_cases
 from nexus.application.users import get_user
 from nexus.domain.health import ActivityLevel, ConsentScope, SampleKind, Sex
 from nexus.domain.ledger import UserId
-from nexus.domain.nutrition import EntrySource, MealSlot
+from nexus.domain.nutrition import EntrySource, EstimateKind, MealSlot
 from tests.fakes import NOW, call, say, scripted
 from tests.integration.conftest import UowFactory
-from tests.integration.test_agent import build, only
+from tests.integration.test_agent import build, ledger, only
 from tests.integration.test_nutrition import item, stocked
 
 pytestmark = pytest.mark.integration
@@ -68,28 +70,119 @@ async def test_food_today_needs_ai_processing(uow: UowFactory, alice: UserId) ->
     assert error is None and "Test Feast" in text and "400 kcal" in text
 
 
-async def test_a_chat_log_asks_first_then_saves_with_figures_from_the_database(
+async def run_ctx(
+    uow: UowFactory, user: UserId, tool: str, origin: str | None = None, **args: Any
+) -> Any:
+    ctx = ToolContext(await get_user(uow(), user), uow, NOW, origin=origin)
+    return await run_tool(build_tools(lambda _: "")[tool], ctx, args)
+
+
+async def test_a_chat_log_is_immediate_with_figures_from_the_database_and_buttons(
     uow: UowFactory, alice: UserId
 ) -> None:
     await agree(uow, alice)
     model = scripted(call("log_food", foods=[PLATE], meal="lunch"), say("Logged."))
     agent = build(uow, model)
-    ask = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
-    assert ask.text.startswith("Log lunch: banquet (1 plate, about ") and "kcal" in ask.text
-    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
-    done = only(await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True))
-    assert "Logged." in done.text
+    done = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
     (meal,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
     assert meal.meal is MealSlot.LUNCH and meal.source is EntrySource.CHAT
     assert str(meal.totals.point.kcal) == "400.000"
     assert (await get_user(uow(), alice)).show_health is True
+    # Its own Undo, not the shared one (which would undo money).
+    assert [b.data for row in done.buttons for b in row] == [f"meal:undo:{meal.id}"]
+    assert "A rough guide" in tool_text(model)
+
+
+def tool_text(model: Any) -> str:
+    return " ".join(str(m.content) for m in model.seen[-1] if isinstance(m, ToolMessage))
+
+
+async def test_the_meal_buttons_are_undo_and_an_edit_link_when_the_origin_is_known(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    result = await run_ctx(uow, alice, "log_food", "https://app.test/", foods=[PLATE])
+    (meal,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    assert result.own_undo and result.buttons == [
+        [
+            ("Undo", f"meal:undo:{meal.id}"),
+            ("Edit", f"url:https://app.test/health/food?meal={meal.id}"),
+        ]
+    ]
+    bare = await run_ctx(uow, alice, "log_food", foods=[PLATE])
+    assert [label for label, _ in bare.buttons[0]] == ["Undo"]
+
+
+async def test_meal_undo_removes_only_that_meal_and_leaves_the_money_alone(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    model = scripted(
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
+        say("Logged 5.50."),
+        call("log_food", foods=[PLATE], meal="lunch"),
+        say("Logged."),
+    )
+    agent = build(uow, model)
+    await agent.handle_text(alice, "starbucks 5.50", "m1")
+    done = only(await agent.handle_text(alice, "had the banquet", "m2"))
+    data = done.buttons[0][0].data
+    assert data.startswith("meal:undo:")
+    removed = only(await agent.press(alice, data))
+    assert removed.text == "Removed." and not removed.buttons
+    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
+    assert await ledger(uow, alice) == [("out", Decimal("5.5"))]
+    again = only(await agent.press(alice, data))
+    assert "already gone" in again.text
+    other = only(await agent.press(alice, f"meal:undo:{uuid4()}"))
+    assert "already gone" in other.text
+
+
+async def test_a_meal_and_an_expense_in_one_turn_keep_the_shared_undo(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    model = scripted(
+        call("log_food", foods=[PLATE], meal="lunch"),
+        call("log_expense", amount="5.50", merchant="Starbucks", category="Dining Out"),
+        say("Both logged."),
+    )
+    done = only(await build(uow, model).handle_text(alice, "banquet and a coffee", "m1"))
+    data = [b.data for row in done.buttons for b in row]
+    assert "act:undo" in data and any(d.startswith("meal:undo:") for d in data)
+
+
+async def test_undo_last_meal_removes_a_recent_meal_and_says_when_there_is_none(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    text, _ = await run(uow, alice, "undo_last_meal")
+    assert "no meal" in text.lower()
+    await run(uow, alice, "log_food", foods=[PLATE], meal="lunch")
+    model = scripted(call("undo_last_meal"), say("Removed."))
+    done = only(await build(uow, model).handle_text(alice, "undo that", "m1"))
+    assert "Removed your lunch" in tool_text(model) and not done.buttons
+    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
+    # An older meal (logged more than 30 minutes ago) is left alone.
+    await nutrition_cases.log_meal(
+        uow(),
+        alice,
+        [item("custom:feast", "400")],
+        MealSlot.LUNCH,
+        None,
+        EntrySource.CHAT,
+        now=NOW - timedelta(hours=2),
+    )
+    text, _ = await run(uow, alice, "undo_last_meal")
+    assert "no meal" in text.lower()
+    assert len(await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)) == 1
 
 
 async def test_the_tool_result_reports_what_was_logged(uow: UowFactory, alice: UserId) -> None:
     await agree(uow, alice)
     text, error = await run(uow, alice, "log_food", foods=[PLATE], meal="snack")
-    assert error is None and text.startswith("Logged snack: banquet (1 plate, about ")
-    assert text.endswith(".")
+    assert error is None and text.startswith("Logged snack: banquet, about ")
+    assert " · ~" in text and text.endswith("A rough guide.")
 
 
 async def test_an_earlier_day_and_the_default_meal_from_the_time_of_day(
@@ -102,13 +195,97 @@ async def test_an_earlier_day_and_the_default_meal_from_the_time_of_day(
     assert meal.meal is MealSlot.LUNCH  # logged at noon local time
 
 
-async def test_a_dish_not_in_the_database_asks_for_its_parts(
+async def test_a_dish_with_no_match_and_no_estimate_asks_what_it_is(
     uow: UowFactory, alice: UserId
 ) -> None:
     await agree(uow, alice)
     text, error = await run(uow, alice, "log_food", foods=[{"food": "zzzz laksa"}], meal="lunch")
     assert error == "NeedsAnswer" and text.startswith("Error: no food matching")
-    assert "Singapore database" in text and "Never estimate calories" in text
+    assert "est_kcal" in text
+    assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
+
+
+HAWKER = {
+    "food": "zzzz laksa",
+    "portion": "1 bowl",
+    "est_kcal": 600,
+    "est_protein_g": 25,
+    "est_carbs_g": 70,
+    "est_fat_g": 25,
+}
+
+
+async def test_a_dish_with_no_match_is_logged_from_the_estimate_as_ai_estimate(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    text, error = await run(uow, alice, "log_food", foods=[HAWKER], meal="lunch")
+    # 600 kcal, plus or minus 40%: 360 to 840.
+    assert error is None and "zzzz laksa, about 360\u2013840 kcal" in text
+    assert "~25 g protein · 70 g carbs · 25 g fat" in text
+    (entry,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    (it,) = entry.items
+    assert it.food_id is None and it.source_detail == "ai_estimate"
+    assert it.kind is EstimateKind.AI_ESTIMATE and str(it.nutrients.kcal) == "600.000"
+    day, _ = await run(uow, alice, "food_today")
+    assert "zzzz laksa (1 bowl)" in day
+
+
+async def test_the_database_wins_over_the_estimate_and_the_best_match_is_taken(
+    uow: UowFactory, alice: UserId
+) -> None:
+    await agree(uow, alice)
+    row = {**PLATE, "est_kcal": 5, "est_protein_g": 0, "est_carbs_g": 1, "est_fat_g": 0}
+    await run(uow, alice, "log_food", foods=[row], meal="lunch")
+    # "rice" matches several foods: the top-ranked one is used, nothing is asked.
+    text, error = await run(uow, alice, "log_food", foods=[{"food": "rice", "grams": "100"}])
+    assert error is None and text.startswith("Logged ")
+    # Both are at the same moment, so their order isn't fixed: tell them apart by their kcal.
+    first, second = sorted(
+        await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW),
+        key=lambda m: m.totals.point.kcal,
+        reverse=True,
+    )
+    assert str(first.totals.point.kcal) == "400.000" and second.items[0].source_detail == "db"
+
+
+async def test_a_weak_database_match_loses_to_the_estimate(uow: UowFactory, alice: UserId) -> None:
+    """ "chicken rice" once became "Babyfood, dinner, chicken and rice" at 140-270 kcal: a match
+    that doesn't name the food outright must not beat the model's estimate of the dish."""
+    await agree(uow, alice)
+    dish = {
+        "food": "chicken rice",
+        "portion": "1 plate",
+        "est_kcal": 600,
+        "est_protein_g": 30,
+        "est_carbs_g": 75,
+        "est_fat_g": 20,
+    }
+    text, error = await run(uow, alice, "log_food", foods=[dish], meal="lunch")
+    assert error is None and text.startswith("Logged ")
+    (meal,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
+    item = meal.items[0]
+    assert item.source_detail == "ai_estimate" and item.food_id is None
+    assert "babyfood" not in text.casefold()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"est_kcal": 0, "est_protein_g": 0, "est_carbs_g": 0, "est_fat_g": 0},
+        {"est_kcal": 2600, "est_protein_g": 100, "est_carbs_g": 300, "est_fat_g": 110},
+        {"est_kcal": 600, "est_protein_g": -5, "est_carbs_g": 100, "est_fat_g": 25},
+        {"est_kcal": 600, "est_protein_g": 5, "est_carbs_g": 5, "est_fat_g": 5},  # adds to 85
+        {"est_kcal": 600},  # the macros are missing
+    ],
+)
+async def test_an_estimate_out_of_bounds_is_rejected_and_the_user_is_asked(
+    uow: UowFactory, alice: UserId, bad: dict[str, Any]
+) -> None:
+    await agree(uow, alice)
+    row = {"food": "zzzz laksa", "portion": "1 bowl", **bad}
+    text, error = await run(uow, alice, "log_food", foods=[row], meal="lunch")
+    assert error == "NeedsAnswer" and "no usable estimate" in text
     assert await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW) == []
 
 
@@ -118,16 +295,15 @@ async def test_a_missing_amount_is_asked_for(uow: UowFactory, alice: UserId) -> 
     assert error == "NeedsAnswer" and "How much of Test Feast" in text
 
 
-async def test_numbers_free_mode_has_no_numbers_in_confirm_log_or_day(
+async def test_numbers_free_mode_has_no_numbers_in_the_log_or_day(
     uow: UowFactory, alice: UserId
 ) -> None:
     await agree(uow, alice)
     await health_cases.save_profile(uow(), alice, numbers_free=True, now=NOW)
-    model = scripted(call("log_food", foods=[PLATE], meal="lunch"), say("Logged."))
-    agent = build(uow, model)
-    ask = only(await agent.handle_text(alice, "had the banquet for lunch", "m1"))
-    assert ask.text == "Log lunch: banquet (1 plate)?"
-    await agent.resolve(alice, ask.buttons[0][0].data.split(":")[1], True)
+    text, _ = await run(uow, alice, "log_food", foods=[PLATE], meal="lunch")
+    assert text == "Logged lunch: banquet."
+    text, _ = await run(uow, alice, "log_food", foods=[HAWKER], meal="lunch")
+    assert text == "Logged lunch: zzzz laksa."
     text, _ = await run(uow, alice, "food_today")
     assert "banquet (1 plate)" in text and "kcal" not in text and "protein" not in text
 
@@ -149,8 +325,8 @@ async def test_a_logged_meal_keeps_the_users_word_and_the_usda_id(
     await agree(uow, alice)
     foods = [{"food": "rice", "grams": "150"}, {"food": "chicken breast", "grams": "150"}]
     text, error = await run(uow, alice, "log_food", foods=foods, meal="lunch")
-    assert error is None and text.startswith("Logged lunch: rice (150 g, about ")
-    assert "chicken breast (150 g, about " in text
+    assert error is None and text.startswith("Logged lunch:\n- rice, about ")
+    assert "\n- chicken breast, about " in text and "\nTotal: about " in text
     (entry,) = await nutrition_cases.meals(uow(), alice, day=NOW.date(), now=NOW)
     assert [(i.name, i.food_id) for i in entry.items] == [
         ("rice", "usda:168878"),

@@ -6,7 +6,7 @@ master one. Withdrawing consent keeps what is stored, so deleting a sample never
 first write turns Health on in the menu (``users.show_health``), as Gym's does.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -238,3 +238,84 @@ async def save_profile_checked(
         await note_health_write(uow, user_id)
         await uow.commit()
     return ProfileSaved(new, gate)
+
+
+# --- a profile changed from chat, with Undo -------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileUpdated:
+    saved: ProfileSaved
+    previous: HealthProfile | None
+    undo_token: str
+    asked_goal: Goal  # the goal the user asked for (what is stored may differ: see the gate)
+
+
+async def update_profile(
+    new_uow: Callable[[], UnitOfWork],
+    user_id: UserId,
+    *,
+    now: datetime,
+    sex_for_equations: Sex | None = None,
+    birth_year: int | None = None,
+    height_cm: Decimal | None = None,
+    activity_level: ActivityLevel | None = None,
+    goal: Goal | None = None,
+    target_rate_pct_per_week: Decimal | None = None,
+    numbers_free: bool | None = None,
+    ed_history: bool | None = None,
+) -> ProfileUpdated:
+    """Change only the fields given (the rest stay as they were) through
+    ``save_profile_checked``, so the safety gates and floors apply, and keep the profile as it
+    was for ``undo_profile``. A loss goal the gates block is stored as "maintain"; the saved
+    result carries the gate's reason."""
+    previous = await profile(new_uow(), user_id, now=now)
+    old = previous
+    new_ed = old.ed_history if ed_history is None and old else bool(ed_history)
+    kept_goal = old.goal if old else Goal.MAINTAIN
+    asked = goal if goal is not None else kept_goal
+    rate = target_rate_pct_per_week
+    if rate is None and goal is None and old:
+        rate = old.target_rate_pct_per_week
+    # Telling Prime about an eating-disorder history turns numbers off, as it does in the app;
+    # otherwise the choice is kept.
+    hide = numbers_free
+    if hide is None:
+        hide = True if ed_history else (old.numbers_free if old else None)
+    saved = await save_profile_checked(
+        new_uow(),
+        user_id,
+        sex_for_equations=sex_for_equations or (old.sex_for_equations if old else Sex.UNSPECIFIED),
+        birth_year=birth_year if birth_year is not None else (old.birth_year if old else None),
+        height_cm=height_cm if height_cm is not None else (old.height_cm if old else None),
+        activity_level=activity_level or (old.activity_level if old else None),
+        goal=asked,
+        target_rate_pct_per_week=rate,
+        numbers_free=hide,
+        ed_history=new_ed,
+        unit_system=old.unit_system if old else UnitSystem.METRIC,
+        # A goal the user already confirmed in the app, despite the history they gave, stays.
+        confirm_ed_override=bool(old and old.ed_history and new_ed and old.goal is Goal.LOSE),
+        now=now,
+    )
+    token = uuid4().hex
+    async with new_uow() as uow:
+        await uow.health.add_profile_undo(user_id, token, previous, now)
+        await uow.commit()
+    return ProfileUpdated(saved, previous, token, asked)
+
+
+async def undo_profile(uow: UnitOfWork, user_id: UserId, token: str, *, now: datetime) -> bool:
+    """Put the profile back as it was before the change this token names; False when the token
+    is unknown, used or over 30 minutes old."""
+    async with uow:
+        found, previous = await uow.health.take_profile_undo(user_id, token, now=now)
+        if not found:
+            return False
+        if previous is None:
+            await uow.health.delete_profile(user_id)
+        else:
+            await require_consent(uow, user_id, None)
+            await uow.health.save_profile(previous)
+        await uow.commit()
+    return True

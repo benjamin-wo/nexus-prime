@@ -18,7 +18,7 @@ from nexus.domain.access import Invite, Session
 from nexus.domain.alerts import AlertKind, MarketAlert
 from nexus.domain.bookings import Booking, BookingDraft
 from nexus.domain.chat import ChatLine
-from nexus.domain.coach import TrainingProfile
+from nexus.domain.coach import TrainingProfile, WorkoutSuggestion
 from nexus.domain.departments import Run, Usage
 from nexus.domain.destination_photos import DestinationPhoto
 from nexus.domain.email import (
@@ -1116,6 +1116,13 @@ class GymRepository(Protocol):
         """Insert or replace the user's coach inputs."""
         ...
 
+    async def add_workout_suggestion(self, suggestion: WorkoutSuggestion) -> None: ...
+    async def get_workout_suggestion(
+        self, user_id: UserId, suggestion_id: UUID, *, since: datetime
+    ) -> WorkoutSuggestion | None:
+        """The user's suggestion, unless it was made before ``since``."""
+        ...
+
 
 class FoodRepository(Protocol):
     """Food logging: the shared food database and one user's meals. Every meal query filters
@@ -1139,6 +1146,10 @@ class FoodRepository(Protocol):
 
     async def delete_meal(self, user_id: UserId, meal_id: UUID) -> bool: ...
     async def get_meal(self, user_id: UserId, meal_id: UUID) -> MealEntry | None: ...
+    async def latest_meal_since(self, user_id: UserId, since: datetime) -> MealEntry | None:
+        """The meal the user logged (``created_at``) most recently, if at or after ``since``."""
+        ...
+
     async def list_meals(
         self, user_id: UserId, *, start: datetime, end: datetime, limit: int
     ) -> list[MealEntry]:
@@ -1207,6 +1218,21 @@ class HealthRepository(Protocol):
     async def get_profile(self, user_id: UserId) -> HealthProfile | None: ...
     async def save_profile(self, profile: HealthProfile) -> None:
         """Insert or replace the user's one profile."""
+        ...
+
+    async def delete_profile(self, user_id: UserId) -> None: ...
+    async def add_profile_undo(
+        self, user_id: UserId, token: str, previous: HealthProfile | None, at: datetime
+    ) -> None:
+        """Keep the profile as it was (None: there was none) under ``token``, for an Undo
+        button. Also clears this user's entries past the 30 minutes they last."""
+        ...
+
+    async def take_profile_undo(
+        self, user_id: UserId, token: str, *, now: datetime
+    ) -> tuple[bool, HealthProfile | None]:
+        """Use up an entry under 30 minutes old: (True, the profile it was, None for none), or
+        (False, None) when it is unknown, used or too old."""
         ...
 
     async def last_safety_event(self, user_id: UserId, kind: str) -> datetime | None:

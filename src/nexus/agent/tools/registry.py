@@ -7,6 +7,7 @@ from typing import Any
 
 from nexus.agent.tools import (
     bills,
+    body,
     budgets,
     categories,
     coach,
@@ -57,6 +58,7 @@ READ_ONLY = frozenset(
     {
         "load_skill",
         *bills.READ_ONLY,
+        *body.READ_ONLY,
         *budgets.READ_ONLY,
         *categories.READ_ONLY,
         *email.READ_ONLY,
@@ -83,6 +85,7 @@ READ_ONLY = frozenset(
 # themselves work the same for everyone: the menu only decides what the web app shows.
 MENU_OF: dict[str, MenuSection] = {
     **investments.MENU,
+    **body.MENU,
     **coach.MENU,
     **food.MENU,
     **gym.MENU,
@@ -135,9 +138,14 @@ ORDER = (
     "finish_workout",
     "undo_last_set",
     "log_food",
+    "undo_last_meal",
     "log_photo_meal",
     "food_today",
     "energy_estimate",
+    "log_weight",
+    "update_health_profile",
+    "show",
+    "suggest_workout",
     "draft_training_plan",
     "suggest_adjustments",
     "apply_adjustments",
@@ -226,6 +234,7 @@ def build_tools(load_skill: Callable[[str], str]) -> dict[str, ToolSpec]:
         spec.name: spec
         for spec in [
             *bills.SPECS,
+            *body.SPECS,
             *budgets.SPECS,
             *categories.SPECS,
             *email.SPECS,

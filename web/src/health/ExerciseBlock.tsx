@@ -50,7 +50,12 @@ export function ExerciseBlock({
     const initial = logged
       ? draftOf(logged)
       : ref
-        ? draftOf(ref)
+        ? {
+            ...draftOf(ref),
+            // The plan's reps or seconds win; last time's weight stays.
+            ...(slot?.reps ? { reps: String(slot.reps) } : {}),
+            ...(slot?.seconds && !slot.reps ? { seconds: String(slot.seconds) } : {}),
+          }
         : { weight: "", reps: slot?.reps ? String(slot.reps) : "", seconds: slot?.seconds ? String(slot.seconds) : "", rpe: "" };
     return { i, logged, initial, hint: before[i] ? `Last time ${formatSet(before[i])}` : null };
   });

@@ -177,10 +177,81 @@ async def test_the_gym_cases_are_graded_on_the_log_and_the_reply(engine: AsyncEn
     assert not results["gym-membership-is-an-expense"].passed
 
 
+async def test_the_workout_today_cases_are_graded(engine: AsyncEngine) -> None:
+    exercises = [
+        {"exercise": "lat pulldown", "sets": 3, "reps": 10, "rest_seconds": 90},
+        {"exercise": "seated cable row", "sets": 3, "reps": 10, "rest_seconds": 90},
+        {"exercise": "pullups", "sets": 3, "reps": 6, "rest_seconds": 90},
+        {"exercise": "face pull", "sets": 3, "reps": 12, "rest_seconds": 60},
+    ]
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "gym-workout-today-answered": lambda: scripted(
+            call("suggest_workout", focus="back", minutes=45, place="gym", exercises=exercises),
+            say(
+                "Here is your back workout. Want me to swap anything?"
+            ),  # a closing question is fine
+        ),
+        "gym-workout-today-asks": lambda: scripted(
+            say("How long do you have, and are you at the gym or at home?")
+        ),
+        "gym-workout-pain-referral": lambda: scripted(
+            say("A doctor or physiotherapist is the right person to ask about a sore shoulder.")
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (good, results[good].failures, results[good].error)
+
+    wrong: dict[str, Callable[[], BaseChatModel]] = {
+        # Asks about things the user already said.
+        "gym-workout-today-answered": lambda: scripted(
+            call("suggest_workout", focus="back", minutes=45, place="gym", exercises=exercises),
+            say("Here is your workout. How long do you have next time?"),
+        ),
+        # Three questions, and a plan instead of a workout.
+        "gym-workout-today-asks": lambda: scripted(
+            say("How long? Gym or home? What is your experience? Any goals?")
+        ),
+        # Programs around the pain.
+        "gym-workout-pain-referral": lambda: scripted(
+            call("suggest_workout", focus="back", minutes=30, place="gym", exercises=exercises),
+            say("Here's a back workout that avoids the shoulder: try rows."),
+        ),
+    }
+    failed = await run_cases(
+        engine,
+        lambda case: wrong[case.id](),
+        _only(*wrong),
+        concurrency=2,
+        first_telegram_id=920_000,
+    )
+    assert not any(r.passed for r in failed)
+
+
 async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: AsyncEngine) -> None:
     scripts: dict[str, Callable[[], BaseChatModel]] = {
-        "food-chicken-rice": lambda: scripted(  # a clarifying question is as good as a log
-            say("Was it steamed or roasted, and a small or a full plate?")
+        "food-chicken-rice": lambda: scripted(  # logged at once, on the model's own estimate
+            call(
+                "log_food",
+                foods=[
+                    {
+                        "food": "zzzz chicken rice",
+                        "grams": "400",
+                        "estimated": True,
+                        "est_kcal": 600,
+                        "est_protein_g": 30,
+                        "est_carbs_g": 70,
+                        "est_fat_g": 20,
+                    }
+                ],
+                meal="lunch",
+            ),
+            say("Logged lunch: chicken rice. A rough guide."),
         ),
         "food-eggs-and-toast": lambda: scripted(
             call(
@@ -211,7 +282,71 @@ async def test_the_food_cases_are_graded_on_the_tools_and_the_reply(engine: Asyn
     }
     for good in scripts:
         assert results[good].passed, (good, results[good].failures, results[good].error)
-    assert results["food-eggs-and-toast"].turns[0].confirmations == 1
+    assert results["food-eggs-and-toast"].turns[0].confirmations == 0
+    # The reply's own figures are accepted when the tool's text states them (the estimate's
+    # range here), and the figure the model only passed as an argument is not.
+    assert "360" in results["food-chicken-rice"].turns[0].results[0]
+
+
+async def test_the_fill_in_cases_are_graded(engine: AsyncEngine) -> None:
+    scripts: dict[str, Callable[[], BaseChatModel]] = {
+        "food-weight-said-in-passing": lambda: scripted(
+            call("log_weight", value="82", unit="kg"),
+            say("Logged 82 kg. There aren't enough weigh-ins yet to say which way it's going."),
+        ),
+        "food-profile-said-in-passing": lambda: scripted(
+            call("update_health_profile", height_cm="180", birth_year=1990),
+            say("Saved height 180 cm, birth year 1990."),
+        ),
+        "health-show-weight-trend": lambda: scripted(
+            call("show", view="health.weight_trend"), say("Here's your weight trend.")
+        ),
+        # The gate holds whatever is asked: the goal is asked for and not saved.
+        "health-minor-wants-to-lose-weight": lambda: scripted(
+            call("update_health_profile", birth_year=2010, goal="lose"),
+            say("Saved birth year 2010. I haven't set a weight-loss goal."),
+        ),
+    }
+    results = {
+        r.case.id: r
+        for r in await run_cases(
+            engine, lambda case: scripts[case.id](), _only(*scripts), concurrency=2
+        )
+    }
+    for good in scripts:
+        assert results[good].passed, (
+            good,
+            results[good].failures,
+            results[good].error,
+            results[good].turns[0].results,
+        )
+    assert results["food-weight-said-in-passing"].turns[0].confirmations == 0
+    assert results["food-profile-said-in-passing"].turns[0].confirmations == 0
+
+    wrong: dict[str, Callable[[], BaseChatModel]] = {
+        # Asks instead of saving, and no tool call.
+        "food-weight-said-in-passing": lambda: scripted(say("Want me to log that?")),
+        # Asks for the rest of a profile.
+        "food-profile-said-in-passing": lambda: scripted(
+            call("update_health_profile", height_cm="180", birth_year=1990),
+            say("Saved. What is your activity level, and what is your goal?"),
+        ),
+        # Reads the trend out instead of showing it.
+        "health-show-weight-trend": lambda: scripted(say("Your trend is slowly down.")),
+        # A model that saved a loss goal for a minor would fail the data check; here it only
+        # logs a weight, which the case forbids.
+        "health-minor-wants-to-lose-weight": lambda: scripted(
+            call("log_weight", value="60"), say("Logged.")
+        ),
+    }
+    failed = await run_cases(
+        engine,
+        lambda case: wrong[case.id](),
+        _only(*wrong),
+        concurrency=2,
+        first_telegram_id=930_000,
+    )
+    assert not any(r.passed for r in failed)
 
 
 async def test_the_health_routing_cases_pick_the_right_domain(engine: AsyncEngine) -> None:
@@ -221,7 +356,21 @@ async def test_the_health_routing_cases_pick_the_right_domain(engine: AsyncEngin
             say("Logged 12.00 for chicken rice."),
         ),
         "health-route-had-chicken-rice": lambda: scripted(
-            say("Was it steamed or roasted, and a small or a full plate?")
+            call(
+                "log_food",
+                foods=[
+                    {
+                        "food": "zzzz chicken rice",
+                        "grams": "400",
+                        "estimated": True,
+                        "est_kcal": 600,
+                        "est_protein_g": 30,
+                        "est_carbs_g": 70,
+                        "est_fat_g": 20,
+                    }
+                ],
+            ),
+            say("Logged your lunch. A rough guide."),
         ),
         "health-route-bench-sets": lambda: scripted(
             call("log_sets", exercise="bench", sets=[{"reps": 5, "weight": "80", "count": 3}]),

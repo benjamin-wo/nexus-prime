@@ -4,6 +4,7 @@ isolation between users, the intake provider that feeds the energy estimate, the
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -428,10 +429,9 @@ async def test_resolve_picks_matches_portions_and_asks_when_unsure(
 
     with pytest.raises(entry_cases.NeedsAnswer, match="no food matching"):
         await entry_cases.resolve(uow, [req("zzzz qqqq", grams=D(5))])
-    with pytest.raises(entry_cases.NeedsAnswer) as ambiguous:
-        await entry_cases.resolve(uow, [req("chicken", grams=D(100))])
-    text = str(ambiguous.value)
-    assert text.startswith("Error:") and "several foods" in text and text.count("(id usda:") == 5
+    # Several matches: the top-ranked one is taken, nothing is asked.
+    best = await entry_cases.resolve(uow, [req("chicken", grams=D(100))])
+    assert best.foods[0] is not None and best.foods[0].id.startswith("usda:")
     with pytest.raises(entry_cases.NeedsAnswer, match="How much of Test Feast"):
         await entry_cases.resolve(uow, [req("banquet")])
     with pytest.raises(entry_cases.NeedsAnswer, match="not a portion I know") as unknown:
@@ -439,7 +439,7 @@ async def test_resolve_picks_matches_portions_and_asks_when_unsure(
     assert "1 plate" in str(unknown.value)
 
 
-async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
+async def test_logged_text_is_built_from_code_and_hides_numbers_when_asked(
     uow: UowFactory, alice: UserId
 ) -> None:
     await stocked(uow)
@@ -451,15 +451,15 @@ async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
             )
         ],
     )
-    text = entry_cases.confirm_text(r, MealSlot.LUNCH, hidden=False)
+    text = entry_cases.logged_text(r, MealSlot.LUNCH, hidden=False)
     # 350 g of a 100 kcal food is 350 kcal; an estimate with a modifier is +-45%: 192.5 to 507.5.
-    assert text == (
-        f"Log lunch: banquet (a big bowl, about 190{EN_DASH}510 kcal)? I estimated the portion. "
-        "Noted: Test Feast: extra (the range is wider for it)."
+    assert text.startswith(f"Logged lunch: banquet, about 190{EN_DASH}510 kcal \u00b7 ~")
+    assert text.endswith("A rough guide. Noted: Test Feast: extra (the range is wider for it).")
+    assert "from your photo" in entry_cases.logged_text(r, MealSlot.LUNCH, hidden=False, photo=True)
+    quiet = entry_cases.logged_text(r, MealSlot.LUNCH, hidden=True)
+    assert quiet.startswith("Logged lunch: banquet.") and not any(
+        ch.isdigit() for ch in quiet.replace("a big bowl", "")
     )
-    assert "I estimated the portion." in text
-    quiet = entry_cases.confirm_text(r, MealSlot.LUNCH, hidden=True)
-    assert "kcal" not in quiet and not any(ch.isdigit() for ch in quiet.replace("a big bowl", ""))
     two = await entry_cases.resolve(
         uow,
         [
@@ -467,7 +467,8 @@ async def test_confirm_text_is_built_from_code_and_hides_numbers_when_asked(
             entry_cases.FoodRequest("banquet", grams=D(100)),
         ],
     )
-    assert "in all" in entry_cases.confirm_text(two, MealSlot.SNACK, hidden=False)
+    many = entry_cases.logged_text(two, MealSlot.SNACK, hidden=False)
+    assert many.startswith("Logged snack:\n- ") and "\nTotal: about " in many
 
 
 async def test_the_ai_gate_and_the_day_text(uow: UowFactory, alice: UserId) -> None:
@@ -544,6 +545,7 @@ async def test_meals_endpoints_end_to_end(world: World) -> None:
         and meal["items"][0]["nutrients"]["kcal"] == "260"
     )
     assert meal["items"][1]["cooking"] == "fried" and meal["items"][0]["label"] == "200 g"
+    assert {i["source_detail"] for i in meal["items"]} == {"db"}  # the web marks estimates by this
 
     listed = (await owner.get("/api/health/meals")).json()
     assert [m["id"] for m in listed] == [meal["id"]]
@@ -584,6 +586,53 @@ async def test_meals_endpoints_end_to_end(world: World) -> None:
     assert (await owner.get(f"/api/health/meals/{meal['id']}")).status_code == 404
     assert (await owner.send("DELETE", f"/api/health/meals/{meal['id']}")).status_code == 404
     assert (await owner.get("/api/health/meals/nonsense")).status_code == 404
+
+
+async def test_a_deleted_ai_estimate_meal_can_be_posted_back_as_it_was(world: World) -> None:
+    owner = world.browser()
+    await owner.login(OWNER)
+    await owner.send("POST", "/api/health/consent")
+    figures = {"kcal": "600", "protein_g": "25", "carbs_g": "60", "fat_g": "26"}
+    estimate: dict[str, Any] = {
+        "food_id": None,
+        "grams": "350",
+        "label": "1 bowl",
+        "name": "Laksa",
+        "estimate": figures,
+    }
+    made = await owner.send("POST", "/api/health/meals", {"meal": "dinner", "items": [estimate]})
+    assert made.status_code == 201, made.json()
+    item = made.json()["items"][0]
+    assert item["food_id"] is None and item["name"] == "Laksa" and item["kind"] == "ai_estimate"
+    # What the web's Undo sends after a delete: the item's own figures, read from the meal.
+    back = {
+        "meal": "dinner",
+        "items": [
+            {
+                "food_id": None,
+                "grams": item["grams"],
+                "label": item["label"],
+                "kind": item["kind"],
+                "name": item["name"],
+                "estimate": {
+                    k: item["nutrients"][k] for k in ("kcal", "protein_g", "carbs_g", "fat_g")
+                },
+            }
+        ],
+    }
+    assert (await owner.send("DELETE", f"/api/health/meals/{made.json()['id']}")).status_code == 204
+    again = await owner.send("POST", "/api/health/meals", back)
+    assert again.status_code == 201, again.json()
+    restored = again.json()["items"][0]
+    assert restored["food_id"] is None and restored["kind"] == "ai_estimate"
+    assert restored["nutrients"] == item["nutrients"] and restored["name"] == "Laksa"
+    # A food with neither an id nor an estimate, or an estimate that doesn't add up, is refused.
+    bare = {"meal": "dinner", "items": [{"food_id": None, "grams": "100"}]}
+    assert (await owner.send("POST", "/api/health/meals", bare)).status_code == 422
+    odd = {**estimate, "estimate": {**figures, "kcal": "50"}}
+    assert (
+        await owner.send("POST", "/api/health/meals", {"meal": "dinner", "items": [odd]})
+    ).status_code == 422
 
 
 async def test_numbers_free_mode_shows_foods_but_no_figures(world: World) -> None:

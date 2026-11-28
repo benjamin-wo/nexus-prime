@@ -641,6 +641,19 @@
  },
  {
   "methods": [
+   "POST"
+  ],
+  "path": "/api/health/consent/all",
+  "endpoint": "turn_on_health",
+  "dependencies": [
+   "authenticated",
+   "runtime"
+  ],
+  "response_model": "ConsentsOut",
+  "status_code": 201
+ },
+ {
+  "methods": [
    "GET"
   ],
   "path": "/api/health/consents",

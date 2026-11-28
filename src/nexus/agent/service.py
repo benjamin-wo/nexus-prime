@@ -23,6 +23,7 @@ from nexus.agent.graph import (
     IMAGE,
     MEAL,
     MENU_ADDED,
+    OWN_UNDO,
     RECEIPT,
     REF,
     SENT_AT,
@@ -42,19 +43,25 @@ from nexus.agent.image_look import (
     meal_caption,
     route,
 )
+from nexus.agent.links import app_link
 from nexus.agent.meal_reader import MealReader
 from nexus.agent.ops_timing import TurnTimer
 from nexus.agent.progress import StepSink
 from nexus.agent.receipts import ReceiptDraft, ReceiptReader, ReceiptTextReader, caption_date
-from nexus.agent.tools import UowFactory
+from nexus.agent.tools import HEALTH_OFF, UowFactory
 from nexus.agent.trip_reader import TripReader, drafts
 from nexus.application import bills as bill_cases
 from nexus.application import bookings as booking_cases
 from nexus.application import category_rules as rule_cases
-from nexus.application import costs, food_entry, found_cards, ops
+from nexus.application import coach as coach_cases
+from nexus.application import costs, food_entry, found_cards, health_menu, ops
 from nexus.application import departments as department_cases
 from nexus.application import email as email_cases
+from nexus.application import gym as gym_cases
+from nexus.application import health as health_cases
+from nexus.application import health_consent as health_consent_cases
 from nexus.application import investments as investment_cases
+from nexus.application import nutrition as nutrition_cases
 from nexus.application import plans as plan_cases
 from nexus.application import receipts as receipt_cases
 from nexus.application import salary as salary_cases
@@ -75,8 +82,9 @@ from nexus.application.people import known_people
 from nexus.application.ports import ReceiptStore, SpeechError, SpeechToText
 from nexus.application.users import get_user
 from nexus.domain.chat import CHAT_KEEP, ChatLine, Speaker, channel_of, clip
+from nexus.domain.coach import workout_title
 from nexus.domain.departments import RunStatus
-from nexus.domain.errors import DuplicateSource, InvalidInput, NexusError, NotFound
+from nexus.domain.errors import Conflict, DuplicateSource, InvalidInput, NexusError, NotFound
 from nexus.domain.investments import Position, clean_quantity, clean_symbol
 from nexus.domain.ledger import Direction, MenuSection, Transaction, UserId
 from nexus.domain.money import Money
@@ -343,8 +351,11 @@ class AgentService:
         receipt_text: ReceiptTextReader | None = None,
         demo: DemoGate | None = None,
         meals: MealReader | None = None,
+        origin: str | None = None,
     ) -> None:
         self._graph = graph
+        # The web app's origin, for buttons that open a page; None: no such buttons.
+        self.origin = origin
         # Reads meal photos into foods and portions; None: a meal photo is read as before.
         self._meals = meals
         # Public-demo accounts' allowances and spend cap; None: not counted (tests, evals).
@@ -439,8 +450,13 @@ class AgentService:
             buttons = [[Button("Confirm", f"hitl:{pid}:y"), Button("Cancel", f"hitl:{pid}:n")]]
             return [Reply(_with_notes(summary, notes), buttons)]
         self._condense_soon(actor)
+        # The shared Undo reverses money and trips: a turn whose only writes have an Undo of
+        # their own (a meal) doesn't get it.
         wrote = any(
-            isinstance(m, AIMessage | ToolMessage) and m.additional_kwargs.get(WROTE) for m in new
+            isinstance(m, AIMessage | ToolMessage)
+            and m.additional_kwargs.get(WROTE)
+            and not m.additional_kwargs.get(OWN_UNDO)
+            for m in new
         )
         final = next(
             (m for m in reversed(new) if isinstance(m, AIMessage) and not m.tool_calls), None
@@ -1173,6 +1189,18 @@ class AgentService:
             replies = await self.resolve(actor, confirmation_id, choice == "y")
             await self._keep(actor, "Confirm" if choice == "y" else "Cancel", replies, None)
             return replies
+        if data.startswith("meal:undo:"):
+            replies = [await self._meal_undo(actor, data.removeprefix("meal:undo:"))]
+            await self._keep(actor, "Undo", replies, None)
+            return replies
+        if data.startswith("weight:undo:"):
+            replies = [await self._weight_undo(actor, data.removeprefix("weight:undo:"))]
+            await self._keep(actor, "Undo", replies, None)
+            return replies
+        if data.startswith("profile:undo:"):
+            replies = [await self._profile_undo(actor, data.removeprefix("profile:undo:"))]
+            await self._keep(actor, "Undo", replies, None)
+            return replies
         if data == "act:undo":
             replies = await self.quick_action(actor, "undo")
             await self._keep(actor, "Undo", replies, None)
@@ -1197,16 +1225,91 @@ class AgentService:
         if data.startswith("hold:"):
             _, action, draft_id = [*data.split(":"), "", ""][:3]
             return [await self._holdings_button(actor, action, draft_id)]
+        if data == health_menu.HEALTH_ON_DATA:
+            return [await self._health_on(actor)]
         if data.startswith("run:cancel:"):
             return [await self._cancel_run(actor, data.removeprefix("run:cancel:"))]
         if data.startswith("plan:mute:"):
             return [await self._mute_plan(actor, data.removeprefix("plan:mute:"))]
+        if data.startswith("workout:"):
+            _, action, suggestion_id = [*data.split(":"), "", ""][:3]
+            return await self._workout_button(actor, action, suggestion_id)
         if data.startswith("trip:research:"):
             return [await self._research_trip(actor, data.removeprefix("trip:research:"))]
         if data.startswith("trip:book:"):
             booking_id, _, trip_id = data.removeprefix("trip:book:").partition(":")
             return [await self._booking_trip(actor, booking_id, trip_id)]
         return [Reply("I don't know that button.")]
+
+    async def _meal_undo(self, actor: UserId, meal_id: str) -> Reply:
+        """Remove the one meal a meal's Undo button names, and nothing else."""
+        try:
+            found = UUID(meal_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            await nutrition_cases.delete_meal(self._uow(), actor, found)
+        except NotFound:
+            return Reply("That meal is already gone.")
+        return Reply("Removed.")
+
+    async def _weight_undo(self, actor: UserId, sample_id: str) -> Reply:
+        """Remove the one weigh-in a weight's Undo button names, and nothing else."""
+        try:
+            found = UUID(sample_id)
+        except ValueError:
+            return Reply("I don't know that button.")
+        try:
+            await health_cases.delete_sample(self._uow(), actor, found, now=self._clock())
+        except NotFound:
+            return Reply("That weigh-in is already gone.")
+        return Reply("Removed.")
+
+    async def _profile_undo(self, actor: UserId, token: str) -> Reply:
+        """Put the profile back as it was before the change the button names."""
+        if await health_cases.undo_profile(self._uow(), actor, token, now=self._clock()):
+            return Reply("Put your profile back.")
+        return Reply("That's too old to undo here. You can change your profile in Health.")
+
+    async def _workout_button(self, actor: UserId, action: str, suggestion_id: str) -> list[Reply]:
+        """Start / Shuffle on a suggested workout (see ``suggest_workout``)."""
+        try:
+            found = UUID(suggestion_id)
+        except ValueError:
+            return [Reply("I don't know that button.")]
+        if action not in ("start", "shuffle"):
+            return [Reply("I don't know that button.")]
+        now = self._clock()
+        if await gym_cases.consent(self._uow(), actor) is None:
+            return [Reply(HEALTH_OFF.removeprefix("Error: "))]
+        try:
+            suggested = await coach_cases.suggestion(self._uow(), actor, found, now=now)
+        except NotFound:
+            return [Reply("That workout has expired. Ask me for a new one.")]
+        if action == "shuffle":
+            return await self.handle_text(
+                actor, f"Give me a different {suggested.focus} workout", f"shuffle:{suggestion_id}"
+            )
+        link = app_link(self.origin, "/health/gym")
+        buttons = [[Button("Open workout", link)]] if link else []
+        try:
+            await gym_cases.start_workout(
+                self._uow(), actor, planned_slots=suggested.slots, now=now
+            )
+        except Conflict:
+            return [
+                Reply(
+                    "You already have a workout open. Finish it first, then start this one.",
+                    buttons,
+                )
+            ]
+        title = workout_title(suggested.focus).lower()
+        return [Reply(f"Started your {title}.", buttons)]
+
+    async def _health_on(self, actor: UserId) -> Reply:
+        """The Turn on Health button: the master consent and ai_processing in one tap."""
+        await health_consent_cases.turn_on(self._uow(), actor, now=self._clock())
+        return Reply("Health is on. Send me a food photo or ask for a workout.")
 
     async def _research_trip(self, actor: UserId, run_id: str) -> Reply:
         """Make it a trip, on the message with a trip's research."""

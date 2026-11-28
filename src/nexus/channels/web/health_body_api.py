@@ -296,12 +296,15 @@ class TrainingIn(Model):
 async def get_training(auth: Auth, web: Runtime) -> TrainingIn | None:
     """What the Gym coach plans around, or null until it is set."""
     found = await coach_cases.training_profile(web.uow(), auth.user.id)
-    return None if found is None else TrainingIn(**found.as_dict())
+    if found is None or found.missing():  # a partly filled one (from a workout) isn't set yet
+        return None
+    return TrainingIn(**{k: v for k, v in found.as_dict().items() if k != "place"})
 
 
 @router.put("/profile/training")
 async def save_training(body: TrainingIn, auth: Auth, web: Runtime) -> TrainingIn:
     """Replace the coach inputs (needs the Health consent, like every health write)."""
+    before = await coach_cases.training_profile(web.uow(), auth.user.id)
     saved = await coach_cases.save_training_profile(
         web.uow(),
         auth.user.id,
@@ -311,10 +314,11 @@ async def save_training(body: TrainingIn, auth: Auth, web: Runtime) -> TrainingI
             tuple(body.equipment),
             body.experience,
             body.focus,
+            place=before.place if before else None,  # where the user trains is kept
         ),
         now=web.clock(),
     )
-    return TrainingIn(**saved.as_dict())
+    return TrainingIn(**{k: v for k, v in saved.as_dict().items() if k != "place"})
 
 
 # --- consents -------------------------------------------------------------------------------
@@ -347,7 +351,10 @@ def _scope(s: consent_cases.ScopeState) -> ScopeOut:
 
 @router.get("/consents")
 async def get_consents(auth: Auth, web: Runtime) -> ConsentsOut:
-    state = await consent_cases.overview(web.uow(), auth.user.id)
+    return _consents_out(await consent_cases.overview(web.uow(), auth.user.id), web)
+
+
+def _consents_out(state: consent_cases.ConsentOverview, web: Runtime) -> ConsentsOut:
     settings = web.settings
     name, country = provider_disclosure(
         settings.llm_provider.value, settings.ai_provider_name, settings.ai_provider_country
@@ -358,6 +365,13 @@ async def get_consents(auth: Auth, web: Runtime) -> ConsentsOut:
         ai_provider=ProviderOut(name=name, country=country),
         wellness_statement=WELLNESS_STATEMENT,
     )
+
+
+@router.post("/consent/all", status_code=201)
+async def turn_on_health(auth: Auth, web: Runtime) -> ConsentsOut:
+    """One tap: the master consent and ``ai_processing``. Doing it again changes nothing."""
+    state = await consent_cases.turn_on(web.uow(), auth.user.id, now=web.clock())
+    return _consents_out(state, web)
 
 
 def _consent_scope(value: str) -> ConsentScope:

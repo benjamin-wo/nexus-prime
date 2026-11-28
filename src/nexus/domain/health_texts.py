@@ -95,3 +95,14 @@ TEXT_CHECK_IN = (
     "at all. If you'd like to talk to someone, the contacts below are there for you, and I'll "
     "keep calorie targets switched off for now."
 )
+
+
+# Why a weight-loss goal wasn't set, by the gate's reason code, in plain words. The same
+# sentences as ``web/src/health/safety.ts``: keep the two in step.
+GATE_TEXT: dict[str, str] = {
+    "under_18": "Weight-loss goals aren't available under 18.",
+    "low_bmi": "Weight-loss goals aren't available when BMI is below 18.5.",
+    "ed_history": "A weight-loss goal is off because you told me about an eating-disorder history.",
+    "age_unknown": "Add your birth year to set a weight-loss goal.",
+    "bmi_unknown": "Add your height and a weigh-in to set a weight-loss goal.",
+}

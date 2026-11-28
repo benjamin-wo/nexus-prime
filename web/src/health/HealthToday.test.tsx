@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mockApi, renderWithProviders } from "../testing";
 import type { SetEntry, Workout } from "./api";
+import { consents } from "./bodyFixtures";
 import { bench, exercises, push, setEntry, workout } from "./fixtures";
 import { HealthToday } from "./HealthToday";
 import { RestTimer } from "./RestTimer";
@@ -52,21 +53,27 @@ function gym({ routine = null as typeof push | null, open = null as Workout | nu
 afterEach(() => vi.restoreAllMocks());
 
 describe("Health consent", () => {
-  it("shows a plain consent screen until Turn on Health is pressed", async () => {
+  it("shows one plain consent screen and turns Health on with one tap", async () => {
     let given: string | null = null;
     const calls = mockApi({
       "GET /health/consent": () => ({ consented_at: given }),
-      "POST /health/consent": () => (given = "2026-11-24T08:00:00Z") && { consented_at: given },
+      "GET /health/consents": () => ({ ...consents, health_consented_at: given }),
+      "POST /health/consent/all": () => {
+        given = "2026-11-24T08:00:00Z";
+        return { ...consents, health_consented_at: given };
+      },
       "GET /health/today": () => ({ routine: null, in_progress: null }),
     });
     renderWithProviders(<HealthToday />);
     expect(await screen.findByText(/not medical advice/i)).toBeInTheDocument();
-    expect(screen.getByText(/workouts, food logs, body weight and other measurements, and your\s+health profile/i)).toBeInTheDocument();
+    expect(await screen.findByText(/through OpenRouter in the United States/)).toBeInTheDocument();
+    expect(screen.getByText(consents.wellness_statement)).toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(calls.some((c) => c.path === "/health/today")).toBe(false);
     await userEvent.click(screen.getByRole("button", { name: "Turn on Health" }));
     expect(await screen.findByRole("button", { name: "Start an empty workout" })).toBeInTheDocument();
-    expect(calls.filter((c) => c.method === "POST" && c.path === "/health/consent")).toHaveLength(1);
+    expect(calls.filter((c) => c.method === "POST" && c.path === "/health/consent/all")).toHaveLength(1);
+    expect(calls.some((c) => c.method === "POST" && c.path === "/health/consent")).toBe(false);
   });
 });
 
@@ -91,6 +98,21 @@ describe("Today", () => {
     renderWithProviders(<HealthToday />);
     expect(await screen.findByRole("button", { name: "Finish workout" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start an empty workout" })).toBeNull();
+  });
+});
+
+describe("a planned workout", () => {
+  it("lists the planned exercises and prefills sets, reps and rest, with last time's weight", async () => {
+    const planned = { exercise_id: bench.id, sets: 3, reps: 8, seconds: null, rest_seconds: 120 };
+    const { calls } = gym({ open: { ...workout, planned_slots: [planned] }, last: [setEntry({ weight: "80.00", reps: 5 })] });
+    renderWithProviders(<HealthToday />);
+    expect(await screen.findByText("Barbell bench press")).toBeInTheDocument();
+    expect(calls.some((c) => c.path.startsWith("/health/routines/"))).toBe(false);
+    await screen.findByLabelText("Weight (kg), set 3 of Barbell bench press");
+    expect(screen.getByLabelText("Reps, set 1 of Barbell bench press")).toHaveValue("8");
+    expect(screen.getByLabelText("Weight (kg), set 1 of Barbell bench press")).toHaveValue("80");
+    await userEvent.click(screen.getByRole("button", { name: "Log set 1 of Barbell bench press" }));
+    expect(await screen.findByText("Rest 2 minutes.")).toBeInTheDocument();
   });
 });
 

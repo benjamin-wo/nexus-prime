@@ -34,7 +34,9 @@ from nexus.domain.nutrition import (
     MealEntry,
     MealSlot,
     MealTotals,
+    Nutrients,
     daily_totals,
+    make_estimated_item,
     make_item,
     search,
 )
@@ -50,7 +52,7 @@ CANDIDATES = 2000  # foods fetched for ranking; the database returns the shortes
 class ItemInput:
     """One food to log: the food's id, how much, and how that amount was known."""
 
-    food_id: str
+    food_id: str | None  # None with ``estimate``: a food that isn't in the database
     grams: Decimal
     label: str  # "350 g", "1 cup", "1 plate"
     kind: EstimateKind
@@ -58,6 +60,7 @@ class ItemInput:
     extra_uncertainty: Decimal = Decimal(0)
     note: str | None = None
     name: str | None = None  # the user's own word for it ("rice"), shown instead of the food's
+    estimate: Nutrients | None = None  # the model's guess, checked; used when food_id is None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,24 +121,40 @@ async def _build_items(uow: UnitOfWork, items: Sequence[ItemInput]) -> tuple[Foo
         raise InvalidInput("a meal needs at least one food")
     if len(items) > MAX_ITEMS:
         raise InvalidInput(f"a meal has at most {MAX_ITEMS} foods")
-    known = await uow.food.get_foods(list(dict.fromkeys(i.food_id for i in items)))
+    known = await uow.food.get_foods(list(dict.fromkeys(i.food_id for i in items if i.food_id)))
     built = []
     for item in items:
-        found = known.get(item.food_id)
-        if found is None:
+        found = known.get(item.food_id) if item.food_id else None
+        if found is None and item.estimate is None:
             raise InvalidInput(f"no such food: {item.food_id}")
-        made = make_item(
-            found,
-            item.grams,
+        built.append(replace(build_item(found, item), id=uuid4()))
+    return tuple(built)
+
+
+def build_item(food: Food | None, item: ItemInput) -> FoodItem:
+    """The item for ``item``: from ``food``'s database figures, or, with no food, from the
+    item's checked estimate."""
+    if food is None:
+        if item.estimate is None:
+            raise InvalidInput("a food needs a database match or an estimate")
+        return make_estimated_item(
+            item.estimate,
             item.label,
-            item.kind,
-            cooking=item.cooking,
+            grams=item.grams,
             extra_uncertainty=item.extra_uncertainty,
             note=item.note,
             name=item.name,
         )
-        built.append(replace(made, id=uuid4()))
-    return tuple(built)
+    return make_item(
+        food,
+        item.grams,
+        item.label,
+        item.kind,
+        cooking=item.cooking,
+        extra_uncertainty=item.extra_uncertainty,
+        note=item.note,
+        name=item.name,
+    )
 
 
 def _clean_note(note: str | None) -> str | None:
@@ -234,6 +253,22 @@ async def delete_meal(uow: UnitOfWork, user_id: UserId, meal_id: UUID) -> None:
         await uow.commit()
 
 
+UNDO_WINDOW = timedelta(minutes=30)
+
+
+async def undo_latest_meal(uow: UnitOfWork, user_id: UserId, *, now: datetime) -> MealEntry | None:
+    """Delete the meal the user logged most recently, if that was in the last 30 minutes (by
+    when it was logged, not when it was eaten); the meal, or None when there is nothing recent.
+    Never needs consent."""
+    async with uow:
+        found = await uow.food.latest_meal_since(user_id, now - UNDO_WINDOW)
+        if found is None:
+            return None
+        await uow.food.delete_meal(user_id, found.id)
+        await uow.commit()
+    return found
+
+
 async def meal(uow: UnitOfWork, user_id: UserId, meal_id: UUID) -> MealEntry:
     async with uow:
         found = await uow.food.get_meal(user_id, meal_id)
@@ -253,10 +288,11 @@ async def numbers_hidden(uow: UnitOfWork, user_id: UserId) -> bool:
         return await _hidden(uow, user_id)
 
 
-async def food_names(uow: UnitOfWork, ids: Sequence[str]) -> dict[str, str]:
-    """Food id to name, for showing what a meal holds."""
+async def food_names(uow: UnitOfWork, ids: Sequence[str | None]) -> dict[str, str]:
+    """Food id to name, for showing what a meal holds (an AI estimate has no food)."""
+    wanted = list(dict.fromkeys(i for i in ids if i))
     async with uow:
-        return {i: f.name for i, f in (await uow.food.get_foods(list(dict.fromkeys(ids)))).items()}
+        return {i: f.name for i, f in (await uow.food.get_foods(wanted)).items()}
 
 
 def _span(first: date, last: date, tz: tzinfo) -> tuple[datetime, datetime]:
